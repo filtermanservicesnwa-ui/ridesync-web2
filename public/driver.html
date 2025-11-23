@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>RideSync Driver</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Google Maps -->
+  <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0"></script>
+  <!-- QR code library for boarding / dropoff codes -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #1d4ed8, #020617 55%);
+      color: #f9fafb;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+    }
+    .card {
+      background: rgba(15,23,42,0.96);
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,0.5);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.7);
+      width: 100%;
+      max-width: 640px;
+      max-height: 96vh;
+      padding: 20px 16px 16px;
+      overflow-y: auto;
+    }
+    h1, h2 { margin: 0 0 8px; text-align: center; }
+    h1 { font-size: 1.6rem; }
+    h2 { font-size: 1.1rem; }
+    .subtitle {
+      margin: 0 0 16px;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+    label {
+      font-size: 0.8rem;
+      display: block;
+      margin-bottom: 4px;
+      color: #e5e7eb;
+    }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid #4b5563;
+      background: #020617;
+      color: #f9fafb;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+    }
+    input:focus {
+      outline: 2px solid #2563eb;
+      outline-offset: 1px;
+    }
+    button {
+      padding: 9px 12px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+      .btn-primary { background: #22c55e; color: #022c22; }
+      .btn-secondary {
+        background: #020617;
+        color: #e5e7eb;
+        border: 1px solid #4b5563;
+      }
+      .btn-danger {
+        background: #7f1d1d;
+        color: #fee2e2;
+        border: 1px solid #fca5a5;
+      }
+    .btn-small { font-size: 0.78rem; padding: 6px 10px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .row > div { flex: 1 1 150px; }
+    .error { color: #fecaca; font-size: 0.8rem; min-height: 18px; margin-top: 2px; }
+    .success { color: #bbf7d0; font-size: 0.8rem; min-height: 18px; margin-top: 2px; }
+    .small { font-size: 0.75rem; color: #9ca3af; margin-top: 4px; }
+
+    #authView, #driverView { display: none; }
+    #authView.active, #driverView.active { display: block; }
+
+    .driver-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .driver-avatar {
+      width: 58px;
+      height: 58px;
+      border-radius: 999px;
+      border: 2px solid rgba(148,163,184,0.8);
+      object-fit: cover;
+      background: #020617;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      color: #9ca3af;
+      font-size: 1.1rem;
+      overflow: hidden;
+    }
+    .driver-header-text { flex: 1 1 auto; min-width: 0; }
+    .driver-name { font-size: 1rem; font-weight: 600; }
+    .driver-detail { font-size: 0.8rem; color: #9ca3af; }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #ef4444;
+      display: inline-block;
+      margin-right: 4px;
+    }
+    .status-dot.online { background: #22c55e; }
+
+    #map {
+      width: 100%;
+      height: 260px;
+      border-radius: 14px;
+      border: 1px solid #4b5563;
+      margin-bottom: 10px;
+    }
+
+    .section-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #9ca3af;
+      margin: 12px 0 6px;
+      border-top: 1px solid rgba(148,163,184,0.4);
+      padding-top: 8px;
+    }
+
+    .ride-card {
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.5);
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      background: rgba(15,23,42,0.95);
+      font-size: 0.8rem;
+    }
+    .ride-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 3px;
+      font-weight: 600;
+    }
+    .ride-line { margin-bottom: 2px; }
+    .ride-meta { color: #9ca3af; }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      border: 1px solid rgba(148,163,184,0.6);
+      margin-right: 4px;
+      margin-bottom: 2px;
+    }
+    .tag-basic { border-color:#3b82f6; color:#bfdbfe; }
+    .tag-uofa { border-color:#22c55e; color:#bbf7d0; }
+    .tag-nwa { border-color:#f97316; color:#fed7aa; }
+    .tag-pooled { border-color:#a855f7; color:#e9d5ff; }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.97);
+      display: none;
+      flex-direction: column;
+      padding: 14px;
+      z-index: 50;
+    }
+    .overlay.active { display: flex; }
+    .overlay-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:6px;
+    }
+    .overlay-title { font-size:1rem; font-weight:600; }
+    .overlay-tag { font-size:0.78rem; color: #9ca3af; }
+    .overlay-close {
+      border-radius:999px;
+      border:1px solid #4b5563;
+      background:#020617;
+      color:#e5e7eb;
+      padding:4px 10px;
+      cursor:pointer;
+      font-size:0.78rem;
+    }
+    #activeRideMap {
+      width:100%;
+      height:210px;
+      border-radius:14px;
+      border:1px solid #4b5563;
+      margin-bottom:8px;
+    }
+    #activeRideInfo { font-size:0.78rem; color:#e5e7eb; margin-bottom:6px; }
+    #activeRideError { color:#fecaca; font-size:0.78rem; min-height:18px; }
+
+    .pill {
+      display:inline-flex;
+      padding:2px 7px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,0.5);
+      font-size:0.7rem;
+      margin-left:4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <!-- AUTH VIEW -->
+    <div id="authView" class="active">
+      <h1>RideSync Driver</h1>
+      <p class="subtitle">Sign in to start receiving RideSync requests.</p>
+
+      <label for="email">Email</label>
+      <input id="email" type="email" placeholder="driver@example.com" autocomplete="email" />
+
+      <label for="password">Password</label>
+      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+
+      <button id="loginButton" class="btn-primary" style="width:100%;margin-top:6px;">Log in</button>
+      <div id="authError" class="error"></div>
+      <p class="small">Use your driver account (separate from rider login).</p>
+    </div>
+
+    <!-- DRIVER VIEW -->
+    <div id="driverView">
+      <h2>Driver console</h2>
+      <p class="subtitle">Go online to start receiving RideSync requests.</p>
+
+      <div class="driver-header">
+        <div id="driverAvatar" class="driver-avatar">DR</div>
+        <div class="driver-header-text">
+          <div class="driver-name" id="driverName">Driver</div>
+          <div class="driver-detail" id="driverDetail"></div>
+          <div class="driver-detail">
+            <span id="onlineDot" class="status-dot"></span>
+            <span id="onlineLabel">Offline</span>
+          </div>
+        </div>
+        <button id="logoutButton" class="btn-secondary btn-small">Log out</button>
+      </div>
+
+      <button id="toggleOnlineButton" class="btn-primary" style="width:100%;margin-bottom:4px;">
+        Sync online
+      </button>
+      <div id="driverMessage" class="success"></div>
+      <div id="driverError" class="error"></div>
+
+      <div class="section-title">Your map</div>
+      <div id="map"></div>
+
+      <div class="section-title">Available rides</div>
+      <div id="ridesList"></div>
+      <div class="small" id="ridesHint">
+        Rides with no driver and status pending/pooled will appear here while you are online.
+      </div>
+    </div>
+
+    <!-- ACTIVE RIDE OVERLAY -->
+    <div id="activeRideOverlay" class="overlay">
+      <div class="overlay-header">
+        <div>
+          <div id="activeRideTitle" class="overlay-title">Active ride</div>
+          <div id="activeRideTag" class="overlay-tag"></div>
+        </div>
+        <button id="closeActiveRideButton" class="overlay-close">Close</button>
+      </div>
+
+      <div id="activeRideMap"></div>
+      <div id="activeRideInfo"></div>
+
+      <div class="section-title">Ride controls</div>
+
+      <button id="markArrivedButton" class="btn-secondary" style="margin-top:4px;">
+        Mark arrived at pickup
+      </button>
+
+      <!-- Boarding QR (pickup) -->
+      <button id="showBoardingQrButton" class="btn-secondary" style="margin-top:4px;">
+        Show boarding QR
+      </button>
+      <canvas
+        id="boardingQrCanvas"
+        width="140"
+        height="140"
+        style="margin-top:6px; display:none;"
+      ></canvas>
+
+      <!-- Dropoff QR -->
+      <button id="showDropoffQrButton" class="btn-secondary" style="margin-top:4px;">
+        Show dropoff QR
+      </button>
+      <canvas
+        id="dropoffQrCanvas"
+        width="140"
+        height="140"
+        style="margin-top:6px; display:none;"
+      ></canvas>
+
+      <button id="startTripButton" class="btn-secondary" style="margin-top:4px;">
+        Start trip
+      </button>
+      <button id="completeTripButton" class="btn-primary" style="margin-top:4px;">
+        Complete trip
+      </button>
+        <button id="driverCancelButton" class="btn-danger" style="margin-top:4px;">
+          Cancel ride
+        </button>
+
+      <div id="activeRideError" class="error"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import {
+      getAuth,
+      onAuthStateChanged,
+      signInWithEmailAndPassword,
+      signOut
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      doc,
+      getDoc,
+      setDoc,
+      updateDoc,
+      onSnapshot,
+      query,
+      orderBy,
+      limit,
+      where,
+      getDocs,
+      serverTimestamp,
+      writeBatch
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA4BPyi7sDZtcsOZM-FDzl2DQ61wUTcejo",
+      authDomain: "ride-sync-nwa.firebaseapp.com",
+      projectId: "ride-sync-nwa",
+      storageBucket: "ride-sync-nwa.firebasestorage.app",
+      messagingSenderId: "221636626778",
+      appId: "1:221636626778:web:fe1afd1f95a16747898b63",
+      measurementId: "G-K3ZD4YWSZZ"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const authView = document.getElementById("authView");
+    const driverView = document.getElementById("driverView");
+    const loginButton = document.getElementById("loginButton");
+    const logoutButton = document.getElementById("logoutButton");
+    const authError = document.getElementById("authError");
+    const emailEl = document.getElementById("email");
+    const passwordEl = document.getElementById("password");
+
+    const driverAvatar = document.getElementById("driverAvatar");
+    const driverNameEl = document.getElementById("driverName");
+    const driverDetailEl = document.getElementById("driverDetail");
+    const onlineDot = document.getElementById("onlineDot");
+    const onlineLabel = document.getElementById("onlineLabel");
+    const toggleOnlineButton = document.getElementById("toggleOnlineButton");
+    const driverMessage = document.getElementById("driverMessage");
+    const driverError = document.getElementById("driverError");
+    const ridesList = document.getElementById("ridesList");
+
+    const activeRideOverlay = document.getElementById("activeRideOverlay");
+    const activeRideTitle = document.getElementById("activeRideTitle");
+    const activeRideTag = document.getElementById("activeRideTag");
+    const activeRideInfo = document.getElementById("activeRideInfo");
+    const activeRideError = document.getElementById("activeRideError");
+    const closeActiveRideButton = document.getElementById("closeActiveRideButton");
+    const markArrivedButton = document.getElementById("markArrivedButton");
+    const startTripButton = document.getElementById("startTripButton");
+    const completeTripButton = document.getElementById("completeTripButton");
+    const driverCancelButton = document.getElementById("driverCancelButton");
+
+    const showBoardingQrButton = document.getElementById("showBoardingQrButton");
+    const showDropoffQrButton = document.getElementById("showDropoffQrButton");
+    const boardingQrCanvas = document.getElementById("boardingQrCanvas");
+    const dropoffQrCanvas = document.getElementById("dropoffQrCanvas");
+
+    let currentUser = null;
+    let currentDriverProfile = null;
+    let map;
+    let driverMarker;
+    let ridesUnsub = null;
+    let isOnline = false;
+
+    let activeRideGroup = [];
+    let activeRideMapObj;
+    let activeRideMarkers = [];
+
+    let boardingQr = null;
+    let dropoffQr = null;
+
+    function showAuth() {
+      authView.classList.add("active");
+      driverView.classList.remove("active");
+    }
+    function showDriver() {
+      authView.classList.remove("active");
+      driverView.classList.add("active");
+    }
+
+    loginButton.addEventListener("click", async () => {
+      authError.textContent = "";
+      try {
+        await signInWithEmailAndPassword(
+          auth,
+          emailEl.value.trim(),
+          passwordEl.value.trim()
+        );
+      } catch (err) {
+        console.error(err);
+        authError.textContent = err.message || "Login failed.";
+      }
+    });
+
+    logoutButton.addEventListener("click", async () => {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.error(err);
+      }
+    });
+
+    onAuthStateChanged(auth, async (user) => {
+      currentUser = user;
+      if (!user) {
+        showAuth();
+        setOnline(false);
+        driverAvatar.textContent = "DR";
+        driverNameEl.textContent = "Driver";
+        driverDetailEl.textContent = "";
+        if (ridesUnsub) {
+          ridesUnsub();
+          ridesUnsub = null;
+        }
+        ridesList.innerHTML = "";
+        return;
+      }
+
+      showDriver();
+      await loadDriverProfile();
+      initMap();
+      subscribeToRides();
+    });
+
+    async function loadDriverProfile() {
+      try {
+        const ref = doc(db, "drivers", currentUser.uid);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          currentDriverProfile = snap.data();
+        } else {
+          currentDriverProfile = {
+            fullName: currentUser.email || "Driver",
+            phone: "",
+            vehicleMake: "",
+            vehicleModel: "",
+            vehicleColor: "",
+            licensePlate: ""
+          };
+          await setDoc(ref, {
+            ...currentDriverProfile,
+            createdAt: serverTimestamp()
+          }, { merge: true });
+        }
+
+        const name = currentDriverProfile.fullName || currentUser.email || "Driver";
+        driverNameEl.textContent = name;
+        driverDetailEl.textContent =
+          `${currentDriverProfile.vehicleYear || ""} ${currentDriverProfile.vehicleColor || ""} ${currentDriverProfile.vehicleMake || ""} ${currentDriverProfile.vehicleModel || ""}`.trim();
+
+        if (currentDriverProfile.profilePicUrl) {
+          const img = new Image();
+          img.src = currentDriverProfile.profilePicUrl;
+          img.onload = () => {
+            driverAvatar.innerHTML = "";
+            driverAvatar.appendChild(img);
+          };
+        } else {
+          driverAvatar.textContent = name.charAt(0).toUpperCase();
+        }
+      } catch (err) {
+        console.error("loadDriverProfile error", err);
+      }
+    }
+
+    function initMap() {
+      if (map) return;
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 36.0626, lng: -94.1574 },
+        zoom: 11,
+        disableDefaultUI: true
+      });
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude } = pos.coords;
+            const loc = { lat: latitude, lng: longitude };
+            map.setCenter(loc);
+            driverMarker = new google.maps.Marker({
+              map,
+              position: loc,
+              title: "You"
+            });
+          },
+          () => {}
+        );
+      }
+    }
+
+    function setOnline(val) {
+      isOnline = val;
+      if (val) {
+        onlineDot.classList.add("online");
+        onlineLabel.textContent = "Online";
+        toggleOnlineButton.textContent = "Sync offline";
+      } else {
+        onlineDot.classList.remove("online");
+        onlineLabel.textContent = "Offline";
+        toggleOnlineButton.textContent = "Sync online";
+      }
+    }
+
+    toggleOnlineButton.addEventListener("click", async () => {
+      setOnline(!isOnline);
+      driverMessage.textContent = isOnline ? "You are now online." : "You are offline.";
+      driverError.textContent = "";
+      try {
+        const ref = doc(db, "drivers", currentUser.uid);
+        await updateDoc(ref, {
+          isOnline,
+          lastOnlineAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    });
+
+    function subscribeToRides() {
+      if (ridesUnsub) {
+        ridesUnsub();
+        ridesUnsub = null;
+      }
+      const ridesRef = collection(db, "rideRequests");
+      const q = query(ridesRef, orderBy("createdAt", "desc"), limit(40));
+      ridesUnsub = onSnapshot(
+        q,
+        (snap) => {
+          const rides = [];
+          snap.forEach((docSnap) => {
+            const d = docSnap.data();
+            rides.push({ id: docSnap.id, ...d });
+          });
+          renderRides(rides);
+        },
+        (err) => {
+          console.error("rides snapshot error", err);
+          driverError.textContent = err.message || "Error loading rides.";
+        }
+      );
+    }
+
+    function membershipTag(m) {
+      if (m === "uofa_unlimited") return '<span class="tag tag-uofa">U of A Unlimited</span>';
+      if (m === "nwa_unlimited") return '<span class="tag tag-nwa">NWA Unlimited</span>';
+      if (m === "basic") return '<span class="tag tag-basic">Basic</span>';
+      if (!m) return '<span class="tag tag-basic">Unknown</span>';
+      return `<span class="tag tag-basic">${m}</span>`;
+    }
+
+    function renderRides(allRides) {
+      ridesList.innerHTML = "";
+      const allowedStatuses = ["pending_driver", "pool_searching", "pooled_pending_driver", "pending"];
+
+      const visible = allRides.filter((r) => {
+        if (!isOnline) return false;
+        if (r.driverId) return false;
+        const st = r.status || "pending";
+        return allowedStatuses.includes(st);
+      });
+
+      if (!visible.length) {
+        ridesList.innerHTML = '<div class="small">No rides waiting right now.</div>';
+        return;
+      }
+
+      visible.forEach((r) => {
+        const div = document.createElement("div");
+        div.className = "ride-card";
+        const st = r.status || "pending";
+
+        const isPool = !!r.isGroupRide || !!r.groupId;
+        const tags = [];
+        tags.push(membershipTag(r.membershipType || r.membership));
+        if (isPool) tags.push('<span class="tag tag-pooled">Pooled</span>');
+        if (r.poolType === "uofa") tags.push('<span class="tag tag-uofa">U of A</span>');
+
+        div.innerHTML = `
+          <div class="ride-header">
+            <span>${r.riderName || "Rider"}</span>
+            <span>${st}</span>
+          </div>
+          <div class="ride-line">${tags.join(" ")}</div>
+          <div class="ride-line ride-meta">
+            Dest: ${r.toDestination || r.toAddress || "Unknown"}
+          </div>
+          <div class="ride-line ride-meta">
+            Group: ${r.groupId || "(none)"} • Riders: ${r.numRiders || r.riderCount || 1}
+          </div>
+          <div style="margin-top:4px;display:flex;justify-content:flex-end;gap:6px;">
+            <button class="btn-secondary btn-small" data-decline-id="${r.id}">Decline</button>
+            <button class="btn-primary btn-small" data-accept-id="${r.id}">Accept ride</button>
+          </div>
+        `;
+        ridesList.appendChild(div);
+      });
+
+      ridesList.querySelectorAll("button[data-accept-id]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const rideId = btn.getAttribute("data-accept-id");
+          const ride = visible.find((r) => r.id === rideId);
+          if (ride) acceptRide(ride);
+        });
+      });
+
+      ridesList.querySelectorAll("button[data-decline-id]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const rideId = btn.getAttribute("data-decline-id");
+          const ride = visible.find((r) => r.id === rideId);
+          if (ride) declineRide(ride);
+        });
+      });
+    }
+
+    async function declineRide(ride) {
+      if (!currentUser) return;
+      driverError.textContent = "";
+      driverMessage.textContent = "";
+
+      try {
+        let groupRides = [ride];
+
+        if ((ride.isGroupRide || ride.groupId) && ride.groupId) {
+          const q = query(
+            collection(db, "rideRequests"),
+            where("groupId", "==", ride.groupId)
+          );
+          const snap = await getDocs(q);
+          groupRides = [];
+          snap.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (!d.driverId) {
+              groupRides.push({ id: docSnap.id, ...d });
+            }
+          });
+          if (!groupRides.length) {
+            groupRides = [ride];
+          }
+        }
+
+        const batch = writeBatch(db);
+        groupRides.forEach((r) => {
+          const ref = doc(db, "rideRequests", r.id);
+          batch.update(ref, {
+            status: "driver_declined",
+            driverId: null,
+            driverDeclinedAt: serverTimestamp()
+          });
+        });
+
+        await batch.commit();
+        driverMessage.textContent = `Declined ${groupRides.length} ride(s).`;
+      } catch (err) {
+        console.error("declineRide error", err);
+        driverError.textContent = err.message || "Error declining ride.";
+      }
+    }
+
+    async function acceptRide(ride) {
+      if (!currentUser) return;
+      driverError.textContent = "";
+      driverMessage.textContent = "";
+
+      try {
+        let groupRides = [ride];
+
+        if ((ride.isGroupRide || ride.groupId) && ride.groupId) {
+          const q = query(
+            collection(db, "rideRequests"),
+            where("groupId", "==", ride.groupId)
+          );
+          const snap = await getDocs(q);
+          groupRides = [];
+          snap.forEach((docSnap) => {
+            const d = docSnap.data();
+            if (!d.driverId) {
+              groupRides.push({ id: docSnap.id, ...d });
+            }
+          });
+          if (!groupRides.length) {
+            groupRides = [ride];
+          }
+        }
+
+        const batch = writeBatch(db);
+        const driverRef = doc(db, "drivers", currentUser.uid);
+        const driverSnap = await getDoc(driverRef);
+        if (driverSnap.exists()) {
+          currentDriverProfile = { ...currentDriverProfile, ...driverSnap.data() };
+        }
+
+        const driverInfo = {
+          driverId: currentUser.uid,
+          driverEmail: currentUser.email || "",
+          driverName: currentDriverProfile?.fullName || currentUser.email || "Driver",
+          driverPhotoUrl: currentDriverProfile?.profilePicUrl || null,
+          driverVehicleMake: currentDriverProfile?.vehicleMake || "",
+          driverVehicleModel: currentDriverProfile?.vehicleModel || "",
+          driverVehicleColor: currentDriverProfile?.vehicleColor || "",
+          driverLicensePlate: currentDriverProfile?.licensePlate || "",
+          status: "driver_assigned",
+          assignedAt: serverTimestamp()
+        };
+
+        groupRides.forEach((r) => {
+          const ref = doc(db, "rideRequests", r.id);
+          batch.update(ref, driverInfo);
+        });
+
+        await batch.commit();
+
+        driverMessage.textContent = `Assigned to ${groupRides.length} rider(s).`;
+
+        activeRideGroup = groupRides.map((r) => ({
+          ...r,
+          ...driverInfo
+        }));
+        openActiveRideOverlay();
+      } catch (err) {
+        console.error("acceptRide error", err);
+        driverError.textContent = err.message || "Error accepting ride.";
+      }
+    }
+
+    function openActiveRideOverlay() {
+      if (!activeRideGroup.length) return;
+      activeRideOverlay.classList.add("active");
+      activeRideError.textContent = "";
+
+      const isPooled = activeRideGroup.length > 1;
+      const primary = activeRideGroup[0];
+
+      activeRideTitle.textContent = isPooled
+        ? `Pool ride (${activeRideGroup.length} riders)`
+        : "Single ride";
+
+      activeRideTag.textContent = primary.toDestination || primary.toAddress || "Destination unknown";
+
+      const ridersInfo = activeRideGroup
+        .map((r, idx) => {
+          const name = r.riderName || `Rider ${idx + 1}`;
+          const phone = r.riderPhone || "";
+          const membership = r.membershipType || r.membership || "Unknown";
+          const gender = r.gender || "";
+          const fromLoc = r.fromLocation;
+          const pickupStr =
+            fromLoc && typeof fromLoc.lat === "number" && typeof fromLoc.lng === "number"
+              ? `(${fromLoc.lat.toFixed(4)}, ${fromLoc.lng.toFixed(4)})`
+              : "(no pickup coords)";
+
+          return [
+            `<strong>${name}</strong>`,
+            phone ? `Phone: ${phone}` : "",
+            `Membership: ${membership}`,
+            gender ? `Gender: ${gender}` : "",
+            `Pickup: ${pickupStr}`
+          ]
+            .filter(Boolean)
+            .join(" • ");
+        })
+        .join("<br/>");
+
+      activeRideInfo.innerHTML = ridersInfo;
+
+      if (!activeRideMapObj) {
+        activeRideMapObj = new google.maps.Map(document.getElementById("activeRideMap"), {
+          center: { lat: 36.0626, lng: -94.1574 },
+          zoom: 12,
+          disableDefaultUI: true
+        });
+      }
+      activeRideMarkers.forEach((m) => m.setMap(null));
+      activeRideMarkers = [];
+
+      const bounds = new google.maps.LatLngBounds();
+
+      activeRideGroup.forEach((r, idx) => {
+        const fromLoc = r.fromLocation;
+        if (fromLoc && typeof fromLoc.lat === "number" && typeof fromLoc.lng === "number") {
+          const pos = { lat: fromLoc.lat, lng: fromLoc.lng };
+          const marker = new google.maps.Marker({
+            map: activeRideMapObj,
+            position: pos,
+            label: String(idx + 1),
+            title: r.riderName || `Rider ${idx + 1}`
+          });
+          activeRideMarkers.push(marker);
+          bounds.extend(pos);
+        }
+      });
+
+      if (!bounds.isEmpty()) {
+        activeRideMapObj.fitBounds(bounds);
+      }
+    }
+
+    function getPrimaryRideId() {
+      if (!activeRideGroup.length) return null;
+      return activeRideGroup[0].id;
+    }
+
+    function showBoardingQr() {
+      const rideId = getPrimaryRideId();
+      if (!rideId || !boardingQrCanvas) return;
+
+      const url = `${window.location.origin}/rider.html?checkin=start&ride=${encodeURIComponent(
+        rideId
+      )}`;
+
+      boardingQrCanvas.style.display = "block";
+
+      if (!boardingQr) {
+        boardingQr = new QRious({
+          element: boardingQrCanvas,
+          size: 140,
+          value: url
+        });
+      } else {
+        boardingQr.set({ value: url });
+      }
+    }
+
+    function showDropoffQr() {
+      const rideId = getPrimaryRideId();
+      if (!rideId || !dropoffQrCanvas) return;
+
+      const url = `${window.location.origin}/rider.html?checkin=dropoff&ride=${encodeURIComponent(
+        rideId
+      )}`;
+
+      dropoffQrCanvas.style.display = "block";
+
+      if (!dropoffQr) {
+        dropoffQr = new QRious({
+          element: dropoffQrCanvas,
+          size: 140,
+          value: url
+        });
+      } else {
+        dropoffQr.set({ value: url });
+      }
+    }
+
+    async function updateActiveRideStatus(newStatus) {
+      if (!activeRideGroup.length) return;
+      activeRideError.textContent = "";
+      try {
+        const batch = writeBatch(db);
+        activeRideGroup.forEach((r) => {
+          const ref = doc(db, "rideRequests", r.id);
+          batch.update(ref, {
+            status: newStatus,
+            [`${newStatus}At`]: serverTimestamp()
+          });
+        });
+        await batch.commit();
+      } catch (err) {
+        console.error("updateActiveRideStatus error", err);
+        activeRideError.textContent = err.message || "Error updating ride status.";
+      }
+    }
+
+    async function cancelActiveRideAsDriver() {
+      if (!activeRideGroup.length) return;
+      activeRideError.textContent = "";
+      driverError.textContent = "";
+      try {
+        const batch = writeBatch(db);
+        activeRideGroup.forEach((r) => {
+          const ref = doc(db, "rideRequests", r.id);
+          batch.update(ref, {
+            status: "canceled_by_driver",
+            driverCanceledAt: serverTimestamp()
+          });
+        });
+        await batch.commit();
+        driverMessage.textContent = "Ride canceled.";
+        activeRideOverlay.classList.remove("active");
+        activeRideGroup = [];
+      } catch (err) {
+        console.error("cancelActiveRideAsDriver error", err);
+        activeRideError.textContent = err.message || "Error canceling ride.";
+      }
+    }
+
+    markArrivedButton.addEventListener("click", () => {
+      updateActiveRideStatus("driver_arrived");
+    });
+
+    showBoardingQrButton.addEventListener("click", () => {
+      showBoardingQr();
+    });
+
+    showDropoffQrButton.addEventListener("click", () => {
+      showDropoffQr();
+    });
+
+    startTripButton.addEventListener("click", () => {
+      updateActiveRideStatus("in_progress");
+    });
+
+    completeTripButton.addEventListener("click", () => {
+      updateActiveRideStatus("completed");
+      activeRideOverlay.classList.remove("active");
+      activeRideGroup = [];
+    });
+
+    driverCancelButton.addEventListener("click", () => {
+      cancelActiveRideAsDriver();
+    });
+
+    closeActiveRideButton.addEventListener("click", () => {
+      activeRideOverlay.classList.remove("active");
+    });
+  </script>
+</body>
+</html>

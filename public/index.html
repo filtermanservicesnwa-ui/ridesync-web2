@@ -1,0 +1,2163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>RideSync – NWA & U of A</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Google Maps / Places -->
+  <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0&libraries=places"></script>
+
+  <!-- Stripe placeholder (real payments wired later) -->
+  <script src="https://js.stripe.com/v3"></script>
+
+  <!-- QR code library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #1d4ed8, #020617 55%);
+      color: #f9fafb;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+    }
+    .card {
+      background: rgba(15,23,42,0.96);
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,0.5);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.7);
+      width: 100%;
+      max-width: 520px;
+      max-height: 96vh;
+      padding: 22px 18px 18px;
+      overflow-y: auto;
+    }
+    h1, h2 { margin: 0 0 8px; text-align: center; }
+    h1 { font-size: 1.6rem; }
+    h2 { font-size: 1.1rem; }
+    .subtitle {
+      margin: 0 0 18px;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+    label {
+      font-size: 0.8rem;
+      display: block;
+      margin-bottom: 4px;
+      color: #e5e7eb;
+    }
+    input, select {
+      width: 100%;
+      padding: 9px 11px;
+      border-radius: 10px;
+      border: 1px solid #4b5563;
+      background: #020617;
+      color: #f9fafb;
+      font-size: 0.9rem;
+      margin-bottom: 10px;
+    }
+    input:focus, select:focus {
+      outline: 2px solid #2563eb;
+      outline-offset: 1px;
+    }
+    button {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+    .btn-primary { background: #22c55e; color: #022c22; }
+    .btn-secondary {
+      background: #020617;
+      color: #e5e7eb;
+      border: 1px solid #4b5563;
+      margin-top: 8px;
+    }
+    .btn-small {
+      width: auto;
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      border-radius: 999px;
+    }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .row > div { flex: 1 1 120px; }
+    .section-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #9ca3af;
+      margin: 14px 0 6px;
+      border-top: 1px solid rgba(148,163,184,0.4);
+      padding-top: 8px;
+    }
+    .toggle-auth {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      margin-bottom: 10px;
+      color: #9ca3af;
+    }
+    .toggle-auth span { text-decoration: underline; cursor: pointer; }
+
+    .error { color: #fecaca; font-size: 0.8rem; min-height: 18px; margin-bottom: 6px; }
+    .success { color: #bbf7d0; font-size: 0.8rem; min-height: 18px; margin-bottom: 6px; }
+    .small { font-size: 0.75rem; color: #9ca3af; margin-top: 4px; }
+
+    #authView, #rideView, #loadingView { display: none; }
+    #authView.active, #rideView.active, #loadingView.active { display: block; }
+
+    #map {
+      width: 100%;
+      height: 220px;
+      border-radius: 14px;
+      border: 1px solid #4b5563;
+      margin-bottom: 10px;
+    }
+    .fare-box {
+      background: rgba(15,23,42,0.9);
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.5);
+      padding: 9px 11px;
+      font-size: 0.8rem;
+      margin-bottom: 10px;
+    }
+    .fare-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 3px;
+    }
+    .fare-label { color: #9ca3af; }
+    .fare-value { color: #e5e7eb; }
+    .fare-total { color: #bbf7d0; font-weight: 600; }
+
+    .rider-mini-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 60;
+      background: rgba(15,23,42,0.97);
+      color: #e5e7eb;
+      padding: 8px 10px;
+      font-size: 0.8rem;
+      text-align: center;
+      display: none;
+    }
+    .rider-mini-bar.active {
+      display: block;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      border: 1px solid #4b5563;
+      background: rgba(15,23,42,0.9);
+      margin-top: 3px;
+    }
+    .badge-basic { border-color:#3b82f6; color:#bfdbfe; }
+    .badge-uofa { border-color:#22c55e; color:#bbf7d0; }
+    .badge-nwa { border-color:#f97316; color:#fed7aa; }
+    .badge-tag { font-size: 0.68rem; color:#e5e7eb; opacity:0.8; }
+
+    .rider-header {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .rider-avatar {
+      width: 60px;
+      height: 60px;
+      border-radius: 999px;
+      border: 2px solid rgba(148,163,184,0.8);
+      object-fit: cover;
+      background: #020617;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      color: #9ca3af;
+      font-size: 1.1rem;
+      overflow: hidden;
+    }
+    .rider-header-text { flex: 1 1 auto; min-width: 0; }
+    .rider-name { font-size: 1rem; font-weight: 600; }
+    .rider-contact { font-size: 0.8rem; color: #9ca3af; }
+
+    .top-right {
+      position: fixed;
+      right: 10px;
+      top: 8px;
+      font-size: 0.7rem;
+      color: #cbd5f5;
+    }
+
+    .loading-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 240px;
+      text-align: center;
+    }
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: 4px solid rgba(148,163,184,0.4);
+      border-top-color: #22c55e;
+      animation: spin 1s linear infinite;
+      margin-bottom: 14px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.97);
+      display: none;
+      flex-direction: column;
+      padding: 14px;
+      z-index: 50;
+    }
+    .overlay.active { display: flex; }
+    .overlay-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:6px;
+    }
+    .overlay-title { font-size:1rem; font-weight:600; }
+    .overlay-tag { font-size:0.78rem; color: #9ca3af; }
+    .overlay-close {
+      border-radius:999px;
+      border:1px solid #4b5563;
+      background:#020617;
+      color:#e5e7eb;
+      padding:4px 10px;
+      cursor:pointer;
+      font-size:0.78rem;
+    }
+    #riderOverlayInfo {
+      font-size:0.8rem;
+      color:#e5e7eb;
+      margin-bottom:8px;
+    }
+    #riderOverlayStatus {
+      font-size:0.8rem;
+      color:#bbf7d0;
+      margin-bottom:8px;
+    }
+    #riderOverlayError {
+      color:#fecaca;
+      font-size:0.78rem;
+      min-height:18px;
+      margin-bottom:6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-right" id="loginStatus"></div>
+
+  <div class="card">
+    <!-- AUTH VIEW -->
+    <div id="authView" class="active">
+      <h1>RideSync</h1>
+      <p class="subtitle">NWA • U of A • Private rides made simple</p>
+
+      <div class="toggle-auth">
+        <span id="toggleLink">New here? Create account</span>
+      </div>
+
+      <div id="authError" class="error"></div>
+
+      <label for="email">Email</label>
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email" />
+
+      <label for="password">Password</label>
+      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+
+      <!-- SIGNUP FIELDS -->
+      <div id="signupFields" style="display:none;">
+        <div class="section-title">Rider info</div>
+        <label for="fullName">Full name</label>
+        <input id="fullName" type="text" placeholder="Your legal name" />
+
+        <div class="row">
+          <div>
+            <label for="gender">Gender</label>
+            <select id="gender">
+              <option value="">Select…</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other / Prefer not</option>
+            </select>
+          </div>
+          <div>
+            <label for="phoneNumber">Phone</label>
+            <input id="phoneNumber" type="tel" placeholder="555-123-4567" />
+          </div>
+        </div>
+
+        <div class="section-title">Address</div>
+        <label for="streetAddress">Street</label>
+        <input id="streetAddress" type="text" placeholder="123 Main St" />
+
+        <div class="row">
+          <div>
+            <label for="city">City</label>
+            <input id="city" type="text" placeholder="Fayetteville" />
+          </div>
+          <div>
+            <label for="state">State</label>
+            <input id="state" type="text" placeholder="AR" />
+          </div>
+          <div>
+            <label for="zip">ZIP</label>
+            <input id="zip" type="text" placeholder="72701" />
+          </div>
+        </div>
+
+        <div class="section-title">Student & membership</div>
+        <div class="row">
+          <div>
+            <label for="isStudent">U of A student?</label>
+            <select id="isStudent">
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </div>
+          <div>
+            <label for="membership">Membership</label>
+            <select id="membership">
+              <option value="basic">Basic (pay per ride)</option>
+              <option value="uofa_unlimited">U of A Unlimited ($80/mo)</option>
+              <option value="nwa_unlimited">NWA Unlimited ($120/mo)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="section-title">Photos (never public)</div>
+        <label>Profile picture</label>
+        <input id="profilePicInput" type="file" accept="image/*" />
+        <label>Driver license</label>
+        <input id="licensePicInput" type="file" accept="image/*" />
+        <label>Student ID</label>
+        <input id="studentIdPicInput" type="file" accept="image/*" />
+      </div>
+
+      <button id="authButton" class="btn-primary">Log in</button>
+      <p class="small">When creating an account, all info on this screen saves at once.</p>
+    </div>
+
+    <!-- RIDE VIEW -->
+    <div id="rideView">
+      <h2>Rider information</h2>
+
+      <div class="rider-header">
+        <div id="avatar" class="rider-avatar">RS</div>
+        <div class="rider-header-text">
+          <div class="rider-name" id="riderName">Rider</div>
+          <div class="rider-contact" id="riderContact">Contact goes here</div>
+          <div id="membershipBadge" class="badge badge-basic">
+            <span id="membershipBadgeLabel">Basic</span>
+            <span class="badge-tag" id="membershipBadgeTag"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="riderDetailsBox" class="fare-box" style="margin-top:4px;">
+        <div class="fare-row">
+          <div class="fare-label">Phone</div>
+          <div class="fare-value" id="riderPhoneDetail"></div>
+        </div>
+        <div class="fare-row">
+          <div class="fare-label">Address</div>
+          <div class="fare-value" id="riderAddressDetail"></div>
+        </div>
+        <div class="fare-row">
+          <div class="fare-label">Membership</div>
+          <div class="fare-value" id="riderMembershipDetail"></div>
+        </div>
+        <button id="editProfileButton" type="button"
+                class="btn-secondary btn-small"
+                style="margin-top:6px;">
+          Edit profile
+        </button>
+      </div>
+
+      <!-- Inline edit form -->
+      <div id="editProfileSection"
+           class="fare-box"
+           style="display:none; margin-top:6px;">
+        <div class="row">
+          <div>
+            <label for="editFullName">Name</label>
+            <input id="editFullName" type="text" />
+          </div>
+          <div>
+            <label for="editPhone">Phone</label>
+            <input id="editPhone" type="tel" />
+          </div>
+          <div>
+            <label for="editGender">Gender</label>
+            <select id="editGender">
+              <option value="">Select…</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other / Prefer not</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="editStreet">Street</label>
+        <input id="editStreet" type="text" />
+
+        <div class="row">
+          <div>
+            <label for="editCity">City</label>
+            <input id="editCity" type="text" />
+          </div>
+          <div>
+            <label for="editState">State</label>
+            <input id="editState" type="text" />
+          </div>
+          <div>
+            <label for="editZip">ZIP</label>
+            <input id="editZip" type="text" />
+          </div>
+        </div>
+
+        <label for="editMembership">Membership</label>
+        <select id="editMembership">
+          <option value="basic">Basic (pay per ride)</option>
+          <option value="uofa_unlimited">U of A Unlimited ($80/mo)</option>
+          <option value="nwa_unlimited">NWA Unlimited ($120/mo)</option>
+        </select>
+
+        <div class="section-title">Photos</div>
+        <label>Profile picture</label>
+        <input id="editProfilePicInput" type="file" accept="image/*" />
+        <label>Driver license</label>
+        <input id="editLicensePicInput" type="file" accept="image/*" />
+        <label>Student ID</label>
+        <input id="editStudentIdPicInput" type="file" accept="image/*" />
+
+        <button id="saveProfileButton" type="button"
+                class="btn-primary btn-small"
+                style="margin-top:8px;">
+          Save changes
+        </button>
+      </div>
+
+      <div id="profileMessage" class="success"></div>
+      <div id="profileError" class="error"></div>
+
+      <!-- Join banner for QR joiners -->
+      <div id="joinBanner" class="fare-box" style="display:none;">
+        <div class="small" id="joinBannerText"></div>
+      </div>
+
+      <div class="section-title">Pickup & map</div>
+      <div id="map"></div>
+
+      <div class="section-title">Destination</div>
+      <label for="destination">Where are you going?</label>
+      <input id="destination" type="text" placeholder="Enter destination address" />
+
+      <div class="section-title">Riders</div>
+      <div id="ridersSection">
+        <label for="numRiders">Number of riders</label>
+        <select id="numRiders">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+        <div class="small">
+          For U of A pooling, choose 1 rider. For private group rides with friends, choose 2–4 and use the QR.
+        </div>
+      </div>
+
+      <div class="section-title" id="poolGroupTitle" style="display:none;">
+        U of A pool group
+      </div>
+      <div id="poolGroupBox" class="fare-box" style="display:none;">
+        <div class="small" id="poolGroupStatus">
+          Searching for other U of A riders…
+        </div>
+        <div id="poolGroupList"></div>
+      </div>
+
+      <div class="section-title">Estimated fare</div>
+      <div class="fare-box">
+        <div id="fareNotReady" class="small">
+          Set a destination to see estimated time, distance, and total.
+        </div>
+        <div id="fareReady" style="display:none;">
+          <div class="fare-row">
+            <div class="fare-label">Time</div>
+            <div class="fare-value" id="fareTime"></div>
+          </div>
+          <div class="fare-row">
+            <div class="fare-label">Distance</div>
+            <div class="fare-value" id="fareDistance"></div>
+          </div>
+          <div class="fare-row">
+            <div class="fare-label">Plan</div>
+            <div class="fare-value" id="fareMembership"></div>
+          </div>
+          <div class="fare-row">
+            <div class="fare-label">Total (incl. fees)</div>
+            <div class="fare-total" id="fareTotal"></div>
+          </div>
+        </div>
+      </div>
+
+      <button id="syncButton" class="btn-primary">Sync &amp; Pay</button>
+      <button id="logoutButton" class="btn-secondary">Log out</button>
+    </div>
+
+    <!-- LOADING VIEW -->
+      <div id="loadingView">
+        <h2>RideSync</h2>
+        <div class="loading-center">
+          <div class="loading-spinner"></div>
+          <div>Syncing your ride…</div>
+          <div class="small">Pre-authorizing payment and matching your driver.</div>
+        </div>
+      </div>
+
+      <!-- RIDE SUMMARY (after ride completes) -->
+      <div id="rideSummary" style="display:none; color:#e5e7eb; padding:16px 4px; text-align:center;">
+        <h2 style="margin-bottom:8px;">Ride complete</h2>
+        <div id="rideSummaryText" style="font-size:0.85rem; line-height:1.4;"></div>
+      </div>
+
+      <!-- RIDER ACTIVE RIDE OVERLAY -->
+      <div id="riderOverlay" class="overlay">
+        <div class="overlay-header">
+          <div>
+            <div id="riderOverlayTitle" class="overlay-title">Driver assigned</div>
+            <div id="riderOverlayTag" class="overlay-tag"></div>
+          </div>
+          <button id="closeRiderOverlayButton" class="overlay-close">Close</button>
+        </div>
+
+      <!-- MINI STATUS BAR WHEN RIDE IS IN PROGRESS -->
+      <div id="riderMiniBar" class="rider-mini-bar"></div>
+
+        <div id="riderOverlayInfo"></div>
+        <div id="riderOverlayStatus"></div>
+
+        <button id="contactDriverBtn" class="overlay-close" style="margin-top:8px;">
+          Contact driver
+        </button>
+
+        <div style="margin-top:10px;">
+          <canvas id="boardingQrCanvas"></canvas>
+          <div style="font-size:0.75rem; margin-top:4px; color:#9ca3af;">
+            Boarding pass – driver scans before boarding
+          </div>
+        </div>
+
+        <div id="riderOverlayError"></div>
+      </div>
+
+        <!-- QR section for private group rides -->
+        <div id="groupQrSection" style="display:none; margin-top:14px;">
+          <div class="small">
+            Riding with friends? Ask each of them to scan this QR and sign in to join this ride.
+          </div>
+          <canvas id="groupQrCanvas"
+                  width="140"
+                  height="140"
+                  style="margin-top:8px;"></canvas>
+          <div id="groupOccupancyLabel" class="small" style="margin-top:6px;"></div>
+        </div>
+
+        <button id="cancelRideButton" class="btn-secondary" style="margin-top:16px;">
+          Cancel ride
+        </button>
+        <div id="cancelError" class="error"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import {
+      getAuth,
+      onAuthStateChanged,
+      signInWithEmailAndPassword,
+      createUserWithEmailAndPassword,
+      signOut
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+    import {
+      getFirestore,
+      doc,
+      getDoc,
+      setDoc,
+      collection,
+      addDoc,
+      serverTimestamp,
+      onSnapshot,
+      query,
+      where,
+      getDocs,
+      orderBy,
+      limit,
+      updateDoc,
+      increment
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+    import {
+      getStorage,
+      ref,
+      uploadBytes,
+      getDownloadURL
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA4BPyi7sDZtcsOZM-FDzl2DQ61wUTcejo",
+      authDomain: "ride-sync-nwa.firebaseapp.com",
+      projectId: "ride-sync-nwa",
+      storageBucket: "ride-sync-nwa.firebasestorage.app",
+      messagingSenderId: "221636626778",
+      appId: "1:221636626778:web:fe1afd1f95a16747898b63",
+      measurementId: "G-K3ZD4YWSZZ"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const storage = getStorage(app);
+
+    const NWA_CENTER = { lat: 36.334, lng: -94.118 };
+    const NWA_RADIUS_MILES = 30;
+    const UNLIMITED_COOLDOWN_MINUTES = 30;
+    const SURGE_MODE = false;
+    const SURGE_COOLDOWN_MINUTES = 60;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const joinRideIdFromUrl = urlParams.get("join");
+    let joinMode = false;
+    let joinTargetRide = null;
+
+    let lastDestinationPlace = null;
+    let lastDestinationIsFayetteville = false;
+
+    function isFayettevilleFromPlace(place) {
+      if (!place || !place.address_components) return false;
+      return place.address_components.some(
+        (comp) =>
+          comp.types.includes("locality") && comp.long_name === "Fayetteville"
+      );
+    }
+
+    const authView = document.getElementById("authView");
+    const rideView = document.getElementById("rideView");
+    const loadingView = document.getElementById("loadingView");
+    const loginStatusEl = document.getElementById("loginStatus");
+    const toggleLink = document.getElementById("toggleLink");
+    const authError = document.getElementById("authError");
+    const authButton = document.getElementById("authButton");
+    const emailEl = document.getElementById("email");
+    const passwordEl = document.getElementById("password");
+    const signupFields = document.getElementById("signupFields");
+    const fullNameEl = document.getElementById("fullName");
+    const genderEl = document.getElementById("gender");
+    const phoneEl = document.getElementById("phoneNumber");
+    const streetEl = document.getElementById("streetAddress");
+    const cityEl = document.getElementById("city");
+    const stateEl = document.getElementById("state");
+    const zipEl = document.getElementById("zip");
+    const isStudentEl = document.getElementById("isStudent");
+    const membershipEl = document.getElementById("membership");
+    const profilePicInput = document.getElementById("profilePicInput");
+    const licensePicInput = document.getElementById("licensePicInput");
+    const studentIdPicInput = document.getElementById("studentIdPicInput");
+
+    const avatarEl = document.getElementById("avatar");
+    const riderNameEl = document.getElementById("riderName");
+    const riderContactEl = document.getElementById("riderContact");
+    const membershipBadgeEl = document.getElementById("membershipBadge");
+    const membershipBadgeLabelEl = document.getElementById("membershipBadgeLabel");
+    const membershipBadgeTagEl = document.getElementById("membershipBadgeTag");
+
+    const riderPhoneDetailEl = document.getElementById("riderPhoneDetail");
+    const riderAddressDetailEl = document.getElementById("riderAddressDetail");
+    const riderMembershipDetailEl = document.getElementById("riderMembershipDetail");
+    const editProfileButton = document.getElementById("editProfileButton");
+    const editProfileSection = document.getElementById("editProfileSection");
+    const editFullNameEl = document.getElementById("editFullName");
+    const editPhoneEl = document.getElementById("editPhone");
+    const editStreetEl = document.getElementById("editStreet");
+    const editCityEl = document.getElementById("editCity");
+    const editStateEl = document.getElementById("editState");
+    const editZipEl = document.getElementById("editZip");
+    const editMembershipEl = document.getElementById("editMembership");
+    const editProfilePicInput = document.getElementById("editProfilePicInput");
+    const editLicensePicInput = document.getElementById("editLicensePicInput");
+    const editStudentIdPicInput = document.getElementById("editStudentIdPicInput");
+    const editGenderEl = document.getElementById("editGender");
+    const saveProfileButton = document.getElementById("saveProfileButton");
+
+    const joinBanner = document.getElementById("joinBanner");
+    const joinBannerText = document.getElementById("joinBannerText");
+
+    const poolGroupTitle = document.getElementById("poolGroupTitle");
+    const poolGroupBox = document.getElementById("poolGroupBox");
+    const poolGroupStatus = document.getElementById("poolGroupStatus");
+    const poolGroupList = document.getElementById("poolGroupList");
+
+    const profileMessage = document.getElementById("profileMessage");
+    const profileError = document.getElementById("profileError");
+
+    const mapEl = document.getElementById("map");
+    const destinationEl = document.getElementById("destination");
+    const numRidersEl = document.getElementById("numRiders");
+    const ridersSection = document.getElementById("ridersSection");
+    const fareNotReady = document.getElementById("fareNotReady");
+    const fareReady = document.getElementById("fareReady");
+    const fareTime = document.getElementById("fareTime");
+    const fareDistance = document.getElementById("fareDistance");
+    const fareMembership = document.getElementById("fareMembership");
+    const fareTotal = document.getElementById("fareTotal");
+    const syncButton = document.getElementById("syncButton");
+    const logoutButton = document.getElementById("logoutButton");
+
+    const cancelRideButton = document.getElementById("cancelRideButton");
+    const cancelError = document.getElementById("cancelError");
+
+    const groupQrSection = document.getElementById("groupQrSection");
+    const groupQrCanvas = document.getElementById("groupQrCanvas");
+    const groupOccupancyLabel = document.getElementById("groupOccupancyLabel");
+    let groupQr = null;
+
+    // Rider active-ride overlay + mini bar + summary
+    const riderOverlay = document.getElementById("riderOverlay");
+    const riderOverlayTitle = document.getElementById("riderOverlayTitle");
+    const riderOverlayTag = document.getElementById("riderOverlayTag");
+    const riderOverlayInfo = document.getElementById("riderOverlayInfo");
+    const riderOverlayStatus = document.getElementById("riderOverlayStatus");
+    const riderOverlayError = document.getElementById("riderOverlayError");
+    const closeRiderOverlayButton = document.getElementById("closeRiderOverlayButton");
+
+    const riderMiniBar = document.getElementById("riderMiniBar");
+
+    const rideSummary = document.getElementById("rideSummary");
+    const rideSummaryText = document.getElementById("rideSummaryText");
+
+    const contactDriverBtn = document.getElementById("contactDriverBtn");
+    const boardingQrCanvas = document.getElementById("boardingQrCanvas");
+
+    let boardingQr = null;
+    let latestRideForOverlay = null;
+
+    let isSignupMode = false;
+    let currentUserProfile = null;
+
+    let map;
+    let directionsService;
+    let directionsRenderer;
+    let pickupMarker;
+    let destMarker;
+    let currentLocation = null;
+    let destinationLatLng = null;
+    let destAutocomplete = null;
+    let lastRideMetrics = null;
+
+    let activeRideUnsub = null;
+    let activeGroupUnsub = null;
+    let groupOccupancyUnsub = null;
+
+    let currentRideId = null;
+    let currentRideStatus = null;
+    let currentRideWatcher = null;
+
+      const riderCancelableStatuses = new Set([
+        "pending_driver",
+        "pooled_pending_driver",
+        "pool_searching",
+        "driver_assigned",
+        "driver_arrived",
+        "pending"
+      ]);
+
+      function clearCurrentRideState() {
+        currentRideId = null;
+        currentRideStatus = null;
+        if (currentRideWatcher) {
+          currentRideWatcher();
+          currentRideWatcher = null;
+        }
+        if (activeRideUnsub) {
+          activeRideUnsub();
+          activeRideUnsub = null;
+        }
+        if (activeGroupUnsub) {
+          activeGroupUnsub();
+          activeGroupUnsub = null;
+        }
+        hideGroupQr();
+      }
+
+      function resetJoinModeUi() {
+        joinMode = false;
+        joinTargetRide = null;
+        if (joinBanner) joinBanner.style.display = "none";
+        if (ridersSection) ridersSection.style.display = "block";
+        if (numRidersEl) {
+          numRidersEl.disabled = false;
+        }
+        updateSyncButtonLabel();
+      }
+
+      function returnToHomeAfterRide(message = "", isError = false) {
+        if (riderOverlay) riderOverlay.classList.remove("active");
+        if (riderMiniBar) riderMiniBar.classList.remove("active");
+        if (rideSummary) rideSummary.style.display = "none";
+        showRideView();
+        clearPoolGroupUI();
+        resetJoinModeUi();
+        hideGroupQr();
+        if (cancelError) cancelError.textContent = "";
+
+        if (isError) {
+          profileError.textContent = message || "";
+          profileMessage.textContent = "";
+        } else {
+          profileMessage.textContent = message || "";
+          profileError.textContent = "";
+        }
+      }
+
+    function showAuthView() {
+      authView.classList.add("active");
+      rideView.classList.remove("active");
+      loadingView.classList.remove("active");
+    }
+    function showRideView() {
+      authView.classList.remove("active");
+      rideView.classList.add("active");
+      loadingView.classList.remove("active");
+    }
+    function showLoadingView() {
+      authView.classList.remove("active");
+      rideView.classList.remove("active");
+      loadingView.classList.add("active");
+    }
+
+    function setMembershipBadge(profile) {
+      const plan = profile?.membershipType || profile?.membership || "basic";
+      const isStudent = !!profile?.isStudent;
+      const uofaVerified = !!profile?.uofaVerified;
+
+      membershipBadgeEl.className = "badge";
+      membershipBadgeLabelEl.textContent = "";
+      membershipBadgeTagEl.textContent = "";
+
+      if (plan === "uofa_unlimited") {
+        membershipBadgeEl.classList.add("badge-uofa");
+        membershipBadgeLabelEl.textContent = "U of A Unlimited";
+        membershipBadgeTagEl.textContent = uofaVerified
+          ? "Verified student"
+          : (isStudent ? "Student (pending ID)" : "");
+      } else if (plan === "nwa_unlimited") {
+        membershipBadgeEl.classList.add("badge-nwa");
+        membershipBadgeLabelEl.textContent = "NWA Unlimited";
+        membershipBadgeTagEl.textContent = "30-mi NWA zone";
+      } else {
+        membershipBadgeEl.classList.add("badge-basic");
+        membershipBadgeLabelEl.textContent = "Basic";
+        membershipBadgeTagEl.textContent = "Pay per ride";
+      }
+    }
+
+    function updateSyncButtonLabel() {
+      if (joinMode) {
+        syncButton.textContent = "Join Ride";
+        return;
+      }
+      const plan = currentUserProfile?.membershipType || currentUserProfile?.membership || "basic";
+      const inHomeZone = !!(lastRideMetrics?.inHomeZone);
+      if (plan === "basic") {
+        syncButton.textContent = "Sync & Pay";
+      } else if (plan === "uofa_unlimited" || plan === "nwa_unlimited") {
+        syncButton.textContent = inHomeZone ? "Sync & Ride" : "Sync & Pay";
+      } else {
+        syncButton.textContent = "Sync & Pay";
+      }
+    }
+
+    toggleLink.addEventListener("click", () => {
+      isSignupMode = !isSignupMode;
+      if (isSignupMode) {
+        signupFields.style.display = "block";
+        authButton.textContent = "Create account";
+        toggleLink.textContent = "Already have an account? Log in";
+      } else {
+        signupFields.style.display = "none";
+        authButton.textContent = "Log in";
+        toggleLink.textContent = "New here? Create account";
+      }
+      authError.textContent = "";
+    });
+      authButton.addEventListener("click", async () => {
+        authError.textContent = "";
+        const email = emailEl.value.trim();
+        const password = passwordEl.value.trim();
+        if (!email || !password) {
+          authError.textContent = "Email and password required.";
+          return;
+        }
+
+        try {
+          if (isSignupMode) {
+            const cred = await createUserWithEmailAndPassword(auth, email, password);
+            await saveUserProfile(cred.user.uid, email);
+          } else {
+            await signInWithEmailAndPassword(auth, email, password);
+          }
+        } catch (err) {
+          console.error(err);
+          authError.textContent = err.message || "Authentication error.";
+        }
+      });
+
+    logoutButton.addEventListener("click", async () => {
+      await signOut(auth);
+      currentRideId = null;
+      currentRideStatus = null;
+      joinMode = false;
+      joinTargetRide = null;
+      if (currentRideWatcher) {
+        currentRideWatcher();
+        currentRideWatcher = null;
+      }
+      if (groupOccupancyUnsub) {
+        groupOccupancyUnsub();
+        groupOccupancyUnsub = null;
+      }
+      hideGroupQr();
+      joinBanner.style.display = "none";
+      ridersSection.style.display = "block";
+      showAuthView();
+    });
+
+    async function uploadFileIfAny(fileInput, path) {
+      const file = fileInput.files[0];
+      if (!file) return null;
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file);
+      return await getDownloadURL(storageRef);
+    }
+
+    async function saveUserProfile(uid, email) {
+      const fullName = fullNameEl.value.trim();
+      const gender = (genderEl.value || "").toLowerCase();
+      const phone = phoneEl.value.trim();
+      const street = streetEl.value.trim();
+      const city = cityEl.value.trim();
+      const state = stateEl.value.trim();
+      const zip = zipEl.value.trim();
+      const isStudent = isStudentEl.value === "true";
+      const membershipType = membershipEl.value || "basic";
+
+      let profilePicUrl = null;
+      let licensePicUrl = null;
+      let studentIdPicUrl = null;
+
+      try {
+        profilePicUrl = await uploadFileIfAny(profilePicInput, `users/${uid}/profile.jpg`);
+        licensePicUrl = await uploadFileIfAny(licensePicInput, `users/${uid}/license.jpg`);
+        studentIdPicUrl = await uploadFileIfAny(studentIdPicInput, `users/${uid}/studentId.jpg`);
+      } catch (err) {
+        console.warn("Upload error", err);
+      }
+
+      const uofaVerified = !!studentIdPicUrl && isStudent;
+
+      await setDoc(doc(db, "users", uid), {
+        email,
+        fullName,
+        gender,
+        phone,
+        street,
+        city,
+        state,
+        zip,
+        isStudent,
+        membershipType,
+        membershipStatus: "active",
+        profilePicUrl,
+        licensePicUrl,
+        studentIdPicUrl,
+        uofaVerified,
+        lastSeenAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    async function loadUserProfile(uid, email) {
+      const refDoc = doc(db, "users", uid);
+      const snap = await getDoc(refDoc);
+      if (snap.exists()) {
+        currentUserProfile = { uid, email, ...snap.data() };
+      } else {
+        currentUserProfile = {
+          uid,
+          email,
+          membershipType: "basic",
+          membershipStatus: "active"
+        };
+        await setDoc(refDoc, currentUserProfile, { merge: true });
+      }
+
+      await setDoc(refDoc, { lastSeenAt: serverTimestamp() }, { merge: true });
+
+      renderProfile();
+    }
+
+    function renderProfile() {
+      if (!currentUserProfile) return;
+      const p = currentUserProfile;
+
+      const name =
+        p.fullName ||
+        p.name ||
+        p.displayName ||
+        (p.email ? p.email.split("@")[0] : "Rider");
+      const phone = p.phone || p.phoneNumber || "";
+
+      riderNameEl.textContent = name;
+      riderContactEl.textContent = [p.email, phone].filter(Boolean).join(" • ");
+
+      riderPhoneDetailEl.textContent = phone || "Not set";
+      const addressParts = [
+        p.street || "",
+        [p.city, p.state].filter(Boolean).join(", "),
+        p.zip || ""
+      ].filter(Boolean);
+      riderAddressDetailEl.textContent = addressParts.join(" • ") || "Not set";
+
+      const plan = p.membershipType || p.membership || "basic";
+      riderMembershipDetailEl.textContent =
+        plan === "uofa_unlimited"
+          ? "U of A Unlimited"
+          : plan === "nwa_unlimited"
+          ? "NWA Unlimited"
+          : "Basic";
+
+      editFullNameEl.value = p.fullName || "";
+      editPhoneEl.value = phone || "";
+      editStreetEl.value = p.street || "";
+      editCityEl.value = p.city || "";
+      editStateEl.value = p.state || "";
+      editZipEl.value = p.zip || "";
+      editMembershipEl.value = plan;
+      if (editGenderEl) {
+        const g = (p.gender || "").toLowerCase();
+        if (g === "male" || g === "female" || g === "other") {
+          editGenderEl.value = g;
+        } else {
+          editGenderEl.value = "";
+        }
+      }
+
+      const photoUrl = p.profilePicUrl || p.photoURL || null;
+      if (photoUrl) {
+        avatarEl.style.backgroundImage = `url(${photoUrl})`;
+        avatarEl.style.backgroundSize = "cover";
+        avatarEl.style.backgroundPosition = "center";
+        avatarEl.textContent = "";
+      } else {
+        avatarEl.style.backgroundImage = "";
+        const initials = (name || "RS")
+          .split(" ")
+          .map((s) => s[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase();
+        avatarEl.textContent = initials || "RS";
+      }
+
+      setMembershipBadge(p);
+      updateSyncButtonLabel();
+    }
+
+    editProfileButton.addEventListener("click", () => {
+      if (!currentUserProfile) return;
+      const isHidden =
+        editProfileSection.style.display === "none" ||
+        !editProfileSection.style.display;
+      editProfileSection.style.display = isHidden ? "block" : "none";
+    });
+
+    saveProfileButton.addEventListener("click", async () => {
+      profileError.textContent = "";
+      profileMessage.textContent = "";
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const updates = {
+        fullName: editFullNameEl.value.trim(),
+        phone: editPhoneEl.value.trim(),
+        street: editStreetEl.value.trim(),
+        city: editCityEl.value.trim(),
+        state: editStateEl.value.trim(),
+        zip: editZipEl.value.trim(),
+        gender: (editGenderEl.value || "").toLowerCase(),
+        membershipType: editMembershipEl.value || "basic",
+        updatedAt: serverTimestamp()
+      };
+
+      try {
+        const profilePicUrl = await uploadFileIfAny(editProfilePicInput, `users/${user.uid}/profile.jpg`);
+        const licensePicUrl = await uploadFileIfAny(editLicensePicInput, `users/${user.uid}/license.jpg`);
+        const studentIdPicUrl = await uploadFileIfAny(editStudentIdPicInput, `users/${user.uid}/studentId.jpg`);
+
+        if (profilePicUrl) updates.profilePicUrl = profilePicUrl;
+        if (licensePicUrl) updates.licensePicUrl = licensePicUrl;
+        if (studentIdPicUrl) updates.studentIdPicUrl = studentIdPicUrl;
+
+        const isStudent = !!currentUserProfile?.isStudent;
+        if (studentIdPicUrl && isStudent) {
+          updates.uofaVerified = true;
+        }
+
+        await setDoc(doc(db, "users", user.uid), updates, { merge: true });
+        await loadUserProfile(user.uid, user.email);
+        profileMessage.textContent = "Profile updated.";
+        editProfileSection.style.display = "none";
+
+        editProfilePicInput.value = "";
+        editLicensePicInput.value = "";
+        editStudentIdPicInput.value = "";
+      } catch (err) {
+        console.error(err);
+        profileError.textContent = "Could not update profile.";
+      }
+    });
+
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        currentUserProfile = null;
+        loginStatusEl.textContent = "";
+        showAuthView();
+        return;
+      }
+      loginStatusEl.textContent = "Logged in";
+      await loadUserProfile(user.uid, user.email);
+      showRideView();
+      initMapOnce();
+
+      if (joinRideIdFromUrl && !joinMode) {
+        await enterJoinMode(joinRideIdFromUrl);
+      }
+    });
+
+    function haversineDistanceMiles(lat1, lon1, lat2, lon2) {
+      const R = 3958.8;
+      const toRad = (v) => (v * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) *
+          Math.cos(toRad(lat2)) *
+          Math.sin(dLon / 2) *
+          Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function initMapOnce() {
+      if (map) return;
+      map = new google.maps.Map(mapEl, {
+        center: { lat: 36.06, lng: -94.16 },
+        zoom: 12,
+        disableDefaultUI: true
+      });
+      directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer({
+        map,
+        suppressMarkers: true,
+        preserveViewport: false
+      });
+
+      pickupMarker = new google.maps.Marker({
+        map,
+        title: "Pickup",
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 7,
+          fillColor: "#22c55e",
+          fillOpacity: 1,
+          strokeColor: "#022c22",
+          strokeWeight: 2
+        }
+      });
+
+      destMarker = new google.maps.Marker({
+        map,
+        title: "Destination",
+        icon: "https://maps.gstatic.com/mapfiles/api-3/images/spotlight-poi2_hdpi.png"
+      });
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            currentLocation = {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude
+            };
+            pickupMarker.setPosition(currentLocation);
+            map.setCenter(currentLocation);
+          },
+          (err) => {
+            console.warn("Geolocation error", err);
+          }
+        );
+      }
+
+      setupDestinationAutocomplete();
+    }
+
+    function setupDestinationAutocomplete() {
+      if (!destAutocomplete && window.google && google.maps.places) {
+        destAutocomplete = new google.maps.places.Autocomplete(destinationEl, {
+          types: ["geocode"],
+          componentRestrictions: { country: "us" }
+        });
+
+        destAutocomplete.addListener("place_changed", () => {
+          const place = destAutocomplete.getPlace();
+          if (!place || !place.geometry || !place.geometry.location) return;
+
+          lastDestinationPlace = place;
+          lastDestinationIsFayetteville = isFayettevilleFromPlace(place);
+
+          destinationLatLng = place.geometry.location;
+
+          destMarker.setPosition(destinationLatLng);
+          destMarker.setVisible(true);
+
+          updateRouteAndFare();
+        });
+      }
+    }
+
+    async function updateRouteAndFare() {
+      profileError.textContent = "";
+      if (!currentLocation || !destinationLatLng || !directionsService) {
+        return;
+      }
+
+      const request = {
+        origin: currentLocation,
+        destination: destinationLatLng,
+        travelMode: google.maps.TravelMode.DRIVING
+      };
+
+      directionsService.route(request, (result, status) => {
+        if (status !== "OK") {
+          console.warn("Directions failed", status);
+          return;
+        }
+        directionsRenderer.setDirections(result);
+
+        const leg = result.routes[0].legs[0];
+        const totalDurationSec = leg.duration.value;
+        const totalDistanceMeters = leg.distance.value;
+
+        const minutes = totalDurationSec / 60;
+        const plan = currentUserProfile?.membershipType || currentUserProfile?.membership || "basic";
+
+        let inHomeZone = false;
+
+        if (plan === "uofa_unlimited") {
+          inHomeZone = lastDestinationIsFayetteville === true;
+        } else if (plan === "nwa_unlimited") {
+          if (currentLocation && destinationLatLng) {
+            const distFromCenterPickup = haversineDistanceMiles(
+              NWA_CENTER.lat, NWA_CENTER.lng,
+              currentLocation.lat, currentLocation.lng
+            );
+            const destLat = destinationLatLng.lat();
+            const destLng = destinationLatLng.lng();
+            const distFromCenterDest = haversineDistanceMiles(
+              NWA_CENTER.lat, NWA_CENTER.lng,
+              destLat, destLng
+            );
+            inHomeZone =
+              distFromCenterPickup <= NWA_RADIUS_MILES &&
+              distFromCenterDest <= NWA_RADIUS_MILES;
+          }
+        }
+
+        const fareInfo = computeFareForMembership(plan, minutes, inHomeZone);
+
+        lastRideMetrics = {
+          durationMinutes: minutes,
+          distanceMeters: totalDistanceMeters,
+          inHomeZone,
+          fareBreakdown: fareInfo,
+          membershipLabel: fareInfo.membershipLabel
+        };
+
+        fareNotReady.style.display = "none";
+        fareReady.style.display = "block";
+        fareTime.textContent = `${minutes.toFixed(1)} min`;
+        fareDistance.textContent = `${(totalDistanceMeters / 1609.34).toFixed(2)} mi`;
+        fareMembership.textContent = fareInfo.membershipLabel;
+        fareTotal.textContent = `$${fareInfo.total.toFixed(2)}`;
+
+        updateSyncButtonLabel();
+      });
+    }
+
+    function clearPoolGroupUI() {
+      poolGroupTitle.style.display = "none";
+      poolGroupBox.style.display = "none";
+      poolGroupStatus.textContent = "";
+      poolGroupList.innerHTML = "";
+    }
+
+    function renderPoolGroup(riders) {
+      if (!riders || riders.length === 0) {
+        poolGroupTitle.style.display = "block";
+        poolGroupBox.style.display = "block";
+        poolGroupStatus.textContent = "Searching for other U of A riders…";
+        poolGroupList.innerHTML = "";
+        return;
+      }
+
+      poolGroupTitle.style.display = "block";
+      poolGroupBox.style.display = "block";
+      poolGroupStatus.textContent = `You are pooled with ${riders.length} other U of A rider${riders.length > 1 ? "s" : ""}.`;
+
+      poolGroupList.innerHTML = riders
+        .map((r) => {
+          const name = r.riderName || "U of A rider";
+          const phone = r.riderPhone || "";
+          const membership =
+            r.membershipType === "uofa_unlimited"
+              ? "U of A Unlimited"
+              : r.membershipType === "nwa_unlimited"
+              ? "NWA Unlimited"
+              : "Basic";
+          const initials = (name || "RS")
+            .split(" ")
+            .map((s) => s[0])
+            .join("")
+            .slice(0, 2)
+            .toUpperCase();
+
+          return `
+            <div class="fare-row" style="align-items:center; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div style="
+                  width:28px;
+                  height:28px;
+                  border-radius:999px;
+                  border:1px solid rgba(148,163,184,0.7);
+                  background:#020617;
+                  display:flex;
+                  align-items:center;
+                  justify-content:center;
+                  font-size:0.7rem;
+                  color:#9ca3af;
+                ">
+                  ${initials}
+                </div>
+                <div>
+                  <div class="fare-label" style="margin-bottom:1px;">${name}</div>
+                  <div class="fare-value" style="font-size:0.7rem;">
+                    ${membership}${phone ? " • " + phone : ""}
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    function startPoolGroupWatcher(rideId) {
+      clearPoolGroupUI();
+
+      if (activeRideUnsub) {
+        activeRideUnsub();
+        activeRideUnsub = null;
+      }
+      if (activeGroupUnsub) {
+        activeGroupUnsub();
+        activeGroupUnsub = null;
+      }
+
+      const rideRef = doc(db, "rideRequests", rideId);
+      activeRideUnsub = onSnapshot(rideRef, (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        if (data.groupId) {
+          subscribeToPoolGroup(data.groupId, rideId);
+        }
+      });
+    }
+
+    function subscribeToPoolGroup(groupId, myRideId) {
+      if (activeGroupUnsub) {
+        activeGroupUnsub();
+        activeGroupUnsub = null;
+      }
+
+      const qRef = query(
+        collection(db, "rideRequests"),
+        where("groupId", "==", groupId)
+      );
+
+      const searchStartedAt = Date.now();
+      const maxSearchMs = 5000;
+
+      const myGender = (currentUserProfile?.gender || "").toLowerCase();
+
+      activeGroupUnsub = onSnapshot(qRef, (qsnap) => {
+        const now = Date.now();
+        const otherRiders = [];
+
+        qsnap.forEach((docSnap) => {
+          if (docSnap.id === myRideId) return;
+          const data = docSnap.data();
+          if (myGender && data.gender && data.gender.toLowerCase() !== myGender) {
+            return;
+          }
+          otherRiders.push(data);
+        });
+
+        renderPoolGroup(otherRiders);
+
+        if (now - searchStartedAt >= maxSearchMs) {
+          if (activeGroupUnsub) {
+            activeGroupUnsub();
+            activeGroupUnsub = null;
+          }
+        }
+      });
+    }
+
+    function computeFareForMembership(plan, minutes, inHomeZone) {
+      const BASIC_RATE_PER_MIN = 0.60;
+      const BASIC_PLATFORM_FEE = 0.50;
+      const UNLIMITED_OUT_RATE = 0.35;
+      const PROCESSING_FEE_RATE = 0.04;
+
+      let membershipLabel = "";
+      let rideSubtotal = 0;
+      let processingFee = 0;
+      let total = 0;
+
+      if (plan === "basic") {
+        rideSubtotal = minutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
+        processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+        total = rideSubtotal + processingFee;
+        membershipLabel = "Basic (pay per ride)";
+      } else if (plan === "uofa_unlimited") {
+        if (inHomeZone) {
+          rideSubtotal = 0;
+          processingFee = 0;
+          total = 0;
+          membershipLabel = "U of A Unlimited – in Fayetteville (included)";
+        } else {
+          rideSubtotal = minutes * UNLIMITED_OUT_RATE;
+          processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+          total = rideSubtotal + processingFee;
+          membershipLabel = "U of A Unlimited – out of Fayetteville (extra per-minute)";
+        }
+      } else if (plan === "nwa_unlimited") {
+        if (inHomeZone) {
+          rideSubtotal = 0;
+          processingFee = 0;
+          total = 0;
+          membershipLabel = "NWA Unlimited – in zone (included)";
+        } else {
+          rideSubtotal = minutes * UNLIMITED_OUT_RATE;
+          processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+          total = rideSubtotal + processingFee;
+          membershipLabel = "NWA Unlimited – out of zone (extra per-minute)";
+        }
+      } else {
+        rideSubtotal = minutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
+        processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+        total = rideSubtotal + processingFee;
+        membershipLabel = "Basic (default)";
+      }
+
+      return {
+        rideSubtotal,
+        processingFee,
+        total,
+        membershipLabel
+      };
+    }
+
+    async function checkCooldown(userId, plan) {
+      if (plan !== "uofa_unlimited" && plan !== "nwa_unlimited") {
+        return { allowed: true };
+      }
+
+      const coolMinutes = SURGE_MODE ? SURGE_COOLDOWN_MINUTES : UNLIMITED_COOLDOWN_MINUTES;
+
+      const ridesRef = collection(db, "rideRequests");
+      const qRef = query(
+        ridesRef,
+        where("userId", "==", userId),
+        orderBy("createdAt", "desc"),
+        limit(10)
+      );
+
+      const snap = await getDocs(qRef);
+      if (snap.empty) return { allowed: true };
+
+      let lastCompleted = null;
+      snap.forEach((docSnap) => {
+        if (lastCompleted) return;
+        const data = docSnap.data();
+        if (
+          data.status === "completed" &&
+          data.membershipType === plan &&
+          data.completedAt &&
+          typeof data.completedAt.toDate === "function"
+        ) {
+          lastCompleted = data;
+        }
+      });
+
+      if (!lastCompleted) return { allowed: true };
+
+      const completedAt = lastCompleted.completedAt.toDate();
+      const diffMs = Date.now() - completedAt.getTime();
+      const diffMin = diffMs / 60000;
+      if (diffMin >= coolMinutes) return { allowed: true };
+
+      return {
+        allowed: false,
+        remainingMinutes: Math.ceil(coolMinutes - diffMin)
+      };
+    }
+
+      function formatTripEstimate(data) {
+        const estMinutes = data && typeof data.estimatedDurationMinutes === "number"
+          ? data.estimatedDurationMinutes
+          : null;
+        if (!estMinutes) return "";
+        if (estMinutes < 1) return "Trip under 1 minute.";
+        if (estMinutes < 10) return `Estimated trip: ~${estMinutes.toFixed(1)} min.`;
+        return `Estimated trip: about ${Math.round(estMinutes)} min.`;
+      }
+
+      function updateRiderOverlay(rideId, data) {
+        if (!riderOverlay) return;
+        latestRideForOverlay = { rideId, data };
+
+        const dest =
+          data.toDestination ||
+          data.toAddress ||
+          data.destAddress ||
+          "Destination";
+
+        const driverName = data.driverName || "Your driver";
+        const vehicleParts = [
+          data.driverVehicleColor || "",
+          data.driverVehicleMake || "",
+          data.driverVehicleModel || ""
+        ].filter(Boolean);
+        const vehicleStr = vehicleParts.join(" ").trim();
+        const plate = data.driverLicensePlate || "";
+
+        riderOverlayTitle.textContent = "Driver assigned";
+        riderOverlayTag.textContent = dest;
+
+        const infoLines = [];
+        infoLines.push(`<strong>${driverName}</strong>`);
+        if (vehicleStr) infoLines.push(vehicleStr);
+        if (plate) infoLines.push(`Plate: ${plate}`);
+        riderOverlayInfo.innerHTML = infoLines.join("<br/>");
+
+        const friendlyStatus = (() => {
+          if (data.status === "driver_assigned") return "Your driver is on the way.";
+          if (data.status === "driver_arrived") return "Your driver has arrived.";
+          if (data.status === "in_progress") return "Ride in progress.";
+          return data.status || "";
+        })();
+        const tripEstimate = formatTripEstimate(data);
+        const combinedStatus = [friendlyStatus, tripEstimate].filter(Boolean).join(" ").trim();
+        riderOverlayStatus.textContent = combinedStatus;
+
+        riderOverlayError.textContent = "";
+
+        if (boardingQrCanvas) {
+          const boardingValue = `board:${rideId}`;
+          if (!boardingQr) {
+            boardingQr = new QRious({
+              element: boardingQrCanvas,
+              size: 140,
+              value: boardingValue
+            });
+          } else {
+            boardingQr.set({ value: boardingValue });
+          }
+        }
+
+        riderOverlay.classList.add("active");
+        if (riderMiniBar) riderMiniBar.classList.remove("active");
+        if (rideSummary) rideSummary.style.display = "none";
+      }
+
+    function showRideSummary(data) {
+      if (!rideSummary || !rideSummaryText) return;
+      if (riderOverlay) riderOverlay.classList.remove("active");
+      if (riderMiniBar) riderMiniBar.classList.remove("active");
+      loadingView.style.display = "none";
+      rideView.style.display = "none";
+
+      rideSummary.style.display = "block";
+
+      const driverName = data.driverName || "Your driver";
+      const minutes = data.estimatedDurationMinutes || data.totalMinutes || null;
+      const miles =
+        data.distanceMeters != null
+          ? (data.distanceMeters / 1609.34).toFixed(2)
+          : data.totalMiles || null;
+      const fare =
+        data.fare && typeof data.fare.total === "number"
+          ? data.fare.total
+          : data.totalCost != null
+          ? data.totalCost
+          : null;
+
+      const lines = [];
+      lines.push(`<strong>Driver:</strong> ${driverName}`);
+      if (minutes != null)
+        lines.push(`<strong>Estimated time:</strong> ${minutes} min`);
+      if (miles != null)
+        lines.push(`<strong>Estimated distance:</strong> ${miles} mi`);
+      if (fare != null)
+        lines.push(`<strong>Fare:</strong> $${Number(fare).toFixed(2)}`);
+
+      lines.push("<br/>Thank you for choosing RideSync!");
+
+      rideSummaryText.innerHTML = lines.join("<br/>");
+    }
+
+    function startRideStatusWatcher(rideId) {
+      if (currentRideWatcher) {
+        currentRideWatcher();
+        currentRideWatcher = null;
+      }
+      const rideRef = doc(db, "rideRequests", rideId);
+        currentRideWatcher = onSnapshot(rideRef, (snap) => {
+          if (!snap.exists()) return;
+          const data = snap.data();
+          const status = data.status || null;
+
+          currentRideStatus = status;
+
+          if (status === "canceled_by_driver") {
+            clearCurrentRideState();
+            returnToHomeAfterRide("Driver canceled your ride. You're back on the home screen.", true);
+            return;
+          }
+
+          if (status === "canceled_by_rider") {
+            clearCurrentRideState();
+            returnToHomeAfterRide("Ride canceled.");
+            return;
+          }
+
+        // Driver assigned / arrived / in progress → show overlay or mini bar
+        if (
+          status === "driver_assigned" ||
+          status === "driver_arrived" ||
+          status === "in_progress"
+        ) {
+          updateRiderOverlay(rideId, data);
+
+          // When trip is actually in progress, collapse to mini bar
+          if (status === "in_progress" && riderMiniBar && riderOverlay) {
+            const tripEstimateText = formatTripEstimate(data);
+            riderOverlay.classList.remove("active");
+            riderMiniBar.textContent = tripEstimateText
+              ? `Ride in progress — ${tripEstimateText.replace("Estimated trip: ", "")}`
+              : "Ride in progress.";
+            riderMiniBar.classList.add("active");
+          }
+        } else if (status === "completed") {
+          // Done → show summary screen
+          showRideSummary(data);
+        } else {
+          // Any other status → hide overlay + mini bar
+          if (riderOverlay) riderOverlay.classList.remove("active");
+          if (riderMiniBar) riderMiniBar.classList.remove("active");
+        }
+      });
+    }
+      
+      function hideGroupQr() {
+      if (groupQrSection) {
+        groupQrSection.style.display = "none";
+      }
+      if (groupOccupancyLabel) {
+        groupOccupancyLabel.textContent = "";
+      }
+      if (groupOccupancyUnsub) {
+        groupOccupancyUnsub();
+        groupOccupancyUnsub = null;
+      }
+    }
+
+    function showGroupQr(rideId) {
+      if (!groupQrSection || !groupQrCanvas) return;
+      const joinUrl = `${window.location.origin}?join=${encodeURIComponent(rideId)}`;
+      if (!groupQr) {
+        groupQr = new QRious({
+          element: groupQrCanvas,
+          size: 140,
+          value: joinUrl
+        });
+      } else {
+        groupQr.set({ value: joinUrl });
+      }
+      groupQrSection.style.display = "block";
+      startGroupOccupancyWatcher(rideId);
+    }
+
+    function startGroupOccupancyWatcher(rideId) {
+      if (groupOccupancyUnsub) {
+        groupOccupancyUnsub();
+        groupOccupancyUnsub = null;
+      }
+      const rideRef = doc(db, "rideRequests", rideId);
+      groupOccupancyUnsub = onSnapshot(rideRef, (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        const cur = data.currentRiderCount || 1;
+        const max = data.maxRiders || 1;
+        if (groupOccupancyLabel) {
+          groupOccupancyLabel.textContent = `Group: ${cur} of ${max} riders.`;
+        }
+      });
+    }
+
+      cancelRideButton.addEventListener("click", async () => {
+        cancelError.textContent = "";
+        profileMessage.textContent = "";
+        if (!currentRideId) {
+          cancelError.textContent = "No active ride to cancel.";
+          return;
+        }
+
+        if (currentRideStatus && !riderCancelableStatuses.has(currentRideStatus)) {
+          cancelError.textContent = "Ride can no longer be canceled.";
+          return;
+        }
+
+        try {
+          const rideRef = doc(db, "rideRequests", currentRideId);
+          await updateDoc(rideRef, {
+            status: "canceled_by_rider",
+            paymentStatus: "canceled",
+            canceledAt: serverTimestamp()
+          });
+
+          clearCurrentRideState();
+          returnToHomeAfterRide("Ride canceled, you won't be charged.");
+        } catch (err) {
+          console.error(err);
+          cancelError.textContent = "Could not cancel ride.";
+        }
+      });
+
+    // Rider overlay buttons
+    if (closeRiderOverlayButton && riderOverlay) {
+      closeRiderOverlayButton.addEventListener("click", () => {
+        riderOverlay.classList.remove("active");
+      });
+    }
+
+    if (contactDriverBtn) {
+      contactDriverBtn.addEventListener("click", () => {
+        if (!latestRideForOverlay || !latestRideForOverlay.data) return;
+        const email = latestRideForOverlay.data.driverEmail;
+        if (!email) {
+          alert("Driver contact info not available yet.");
+          return;
+        }
+        // Opens default mail app to contact driver; can switch to SMS later if you store phone
+        window.location.href = `mailto:${email}`;
+      });
+    }
+
+    async function tryClientSideUofaMatch(myRideId) {
+      try {
+        const myRef = doc(db, "rideRequests", myRideId);
+        const mySnap = await getDoc(myRef);
+        if (!mySnap.exists()) return;
+        const my = mySnap.data();
+        if (my.poolType !== "uofa" || my.status !== "pool_searching") return;
+
+        const myGender = (my.gender || "").toLowerCase();
+
+        const qRef = query(
+          collection(db, "rideRequests"),
+          where("poolType", "==", "uofa"),
+          limit(20)
+        );
+
+        const snap = await getDocs(qRef);
+        let partnerId = null;
+        snap.forEach((docSnap) => {
+          if (docSnap.id === myRideId) return;
+          const d = docSnap.data();
+          if (
+            d.status === "pool_searching" &&
+            !d.groupId &&
+            (myGender === "" || (d.gender || "").toLowerCase() === myGender)
+          ) {
+            partnerId = docSnap.id;
+          }
+        });
+
+        if (!partnerId) return;
+
+        const groupId = my.groupId || myRideId;
+
+        await updateDoc(myRef, {
+          groupId,
+          status: "pooled_pending_driver"
+        });
+        await updateDoc(doc(db, "rideRequests", partnerId), {
+          groupId,
+          status: "pooled_pending_driver"
+        });
+      } catch (err) {
+        console.error("UofA client match error", err);
+      }
+    }
+
+    async function handleNewRide() {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      profileError.textContent = "";
+      clearPoolGroupUI();
+      hideGroupQr();
+
+      if (!destinationLatLng || !lastRideMetrics || !lastRideMetrics.fareBreakdown) {
+        profileError.textContent = "Set destination and wait for fare estimate first.";
+        updateRouteAndFare();
+        return;
+      }
+
+      const plan = currentUserProfile?.membershipType || currentUserProfile?.membership || "basic";
+      const isStudent = !!currentUserProfile?.isStudent;
+      const uofaVerified = !!currentUserProfile?.uofaVerified;
+      const gender = (currentUserProfile?.gender || "").toLowerCase();
+      const genderPoolEligible = gender === "male" || gender === "female";
+      const numRiders = parseInt(numRidersEl.value || "1", 10);
+      const inHomeZone = !!lastRideMetrics.inHomeZone;
+
+      // 🔐 U of A pooling strict eligibility
+      const uofaPoolEligible =
+        plan === "uofa_unlimited" &&
+        isStudent &&
+        uofaVerified &&
+        genderPoolEligible &&
+        inHomeZone;
+
+      const fare = lastRideMetrics.fareBreakdown;
+      const total = fare.total || 0;
+
+      const cd = await checkCooldown(user.uid, plan);
+      if (cd.allowed === false) {
+        profileError.textContent = `You can request another ride in about ${cd.remainingMinutes} min.`;
+        return;
+      }
+
+      let poolType = null;
+      let status = "pending_driver";
+
+      if (uofaPoolEligible && numRiders === 1) {
+        poolType = "uofa";
+        status = "pool_searching";
+      }
+
+      const destAddress = destinationEl.value.trim() || (lastDestinationPlace?.formatted_address || "");
+
+      const riderName =
+        currentUserProfile?.fullName ||
+        currentUserProfile?.name ||
+        currentUserProfile?.displayName ||
+        (currentUserProfile?.email
+          ? currentUserProfile.email.split("@")[0]
+          : "Rider");
+
+      const riderPhone =
+        currentUserProfile?.phone || currentUserProfile?.phoneNumber || "";
+
+      const maxRiders = numRiders;
+      const isGroupRide = maxRiders > 1;
+
+      const rideBase = {
+        userId: user.uid,
+        startedByUserId: user.uid,
+        createdAt: serverTimestamp(),
+        membershipType: plan,
+        membershipStatus: currentUserProfile?.membershipStatus || "active",
+        isStudent,
+        uofaVerified,
+        gender,
+        uofaPoolEligible,
+        riderName,
+        riderPhone,
+        riderProfilePicUrl: currentUserProfile?.profilePicUrl || null,
+        isGroupRide,
+        maxRiders,
+        currentRiderCount: 1,
+        groupId: null,
+        poolType,
+        fromLocation: currentLocation || null,
+        toDestination: destAddress || null,
+        inHomeZone,
+        estimatedDurationMinutes: lastRideMetrics.durationMinutes
+          ? +lastRideMetrics.durationMinutes.toFixed(1)
+          : null,
+        distanceMeters: lastRideMetrics.distanceMeters || null,
+        fare,
+      };
+
+      try {
+        let docRef;
+
+        if (plan !== "basic" && inHomeZone) {
+          docRef = await addDoc(collection(db, "rideRequests"), {
+            ...rideBase,
+            status,
+            paymentMethod: poolType === "uofa" ? "included_pool" : "included",
+            paymentStatus: "included"
+          });
+        } else {
+          docRef = await addDoc(collection(db, "rideRequests"), {
+            ...rideBase,
+            status,
+            paymentMethod: "stripe",
+            paymentStatus: poolType === "uofa" ? "pool_preauthorized" : "preauthorized",
+            stripeAmount: total
+          });
+        }
+
+        if (rideBase.isGroupRide) {
+          await updateDoc(doc(db, "rideRequests", docRef.id), {
+            groupId: docRef.id
+          });
+        }
+
+        currentRideId = docRef.id;
+        startRideStatusWatcher(docRef.id);
+
+        if (rideBase.isGroupRide) {
+          showGroupQr(docRef.id);
+        }
+
+        if (poolType === "uofa") {
+          startPoolGroupWatcher(docRef.id);
+          await tryClientSideUofaMatch(docRef.id);
+        }
+
+        showLoadingView();
+      } catch (err) {
+        console.error("New ride error", err);
+        profileError.textContent = err.message || "Could not sync ride / payment.";
+      }
+    }
+
+    async function handleJoinRide() {
+      const user = auth.currentUser;
+      if (!user || !joinTargetRide) {
+        profileError.textContent = "Unable to join this ride.";
+        return;
+      }
+
+      profileError.textContent = "";
+      cancelError.textContent = "";
+
+      try {
+        const hostRef = doc(db, "rideRequests", joinTargetRide.id);
+        const hostSnap = await getDoc(hostRef);
+        if (!hostSnap.exists()) {
+          profileError.textContent = "This group ride is no longer available.";
+          return;
+        }
+        const host = hostSnap.data();
+        const max = host.maxRiders || 1;
+        const cur = host.currentRiderCount || 1;
+        if (cur >= max) {
+          profileError.textContent = "This group ride is already full.";
+          return;
+        }
+
+        const plan = currentUserProfile?.membershipType || currentUserProfile?.membership || "basic";
+        const isStudent = !!currentUserProfile?.isStudent;
+        const uofaVerified = !!currentUserProfile?.uofaVerified;
+        const gender = currentUserProfile?.gender || null;
+
+        const inHomeZone = !!host.inHomeZone;
+        const minutes = host.estimatedDurationMinutes || 0;
+        const fare = computeFareForMembership(plan, minutes, inHomeZone);
+        const total = fare.total || 0;
+
+        const cd = await checkCooldown(user.uid, plan);
+        if (cd.allowed === false) {
+          profileError.textContent = `You can request another ride in about ${cd.remainingMinutes} min.`;
+          return;
+        }
+
+        const riderName =
+          currentUserProfile?.fullName ||
+          currentUserProfile?.name ||
+          currentUserProfile?.displayName ||
+          (currentUserProfile?.email
+            ? currentUserProfile.email.split("@")[0]
+            : "Rider");
+
+        const riderPhone =
+          currentUserProfile?.phone || currentUserProfile?.phoneNumber || "";
+
+        const groupId = host.groupId || hostSnap.id;
+
+        const joinRideBase = {
+          userId: user.uid,
+          startedByUserId: host.startedByUserId || host.userId || user.uid,
+          createdAt: serverTimestamp(),
+          membershipType: plan,
+          membershipStatus: currentUserProfile?.membershipStatus || "active",
+          isStudent,
+          uofaVerified,
+          gender,
+          riderName,
+          riderPhone,
+          riderProfilePicUrl: currentUserProfile?.profilePicUrl || null,
+          isGroupRide: true,
+          maxRiders: host.maxRiders || 1,
+          currentRiderCount: 1,
+          groupId,
+          poolType: null,
+          fromLocation: host.fromLocation || null,
+          toDestination: host.toDestination || null,
+          inHomeZone,
+          estimatedDurationMinutes: host.estimatedDurationMinutes || null,
+          distanceMeters: host.distanceMeters || null,
+          fare,
+          driverId: host.driverId || "clifton",
+          joinedExistingRideId: hostSnap.id
+        };
+
+        let docRef;
+        if (plan !== "basic" && inHomeZone) {
+          docRef = await addDoc(collection(db, "rideRequests"), {
+            ...joinRideBase,
+            status: "pending_driver",
+            paymentMethod: "included",
+            paymentStatus: "included"
+          });
+        } else {
+          docRef = await addDoc(collection(db, "rideRequests"), {
+            ...joinRideBase,
+            status: "pending_driver",
+            paymentMethod: "stripe",
+            paymentStatus: "preauthorized",
+            stripeAmount: total
+          });
+        }
+
+        await updateDoc(hostRef, {
+          currentRiderCount: increment(1)
+        });
+
+        currentRideId = docRef.id;
+        startRideStatusWatcher(docRef.id);
+        hideGroupQr();
+        showLoadingView();
+      } catch (err) {
+        console.error("Join ride error", err);
+        profileError.textContent = err.message || "Could not join group ride.";
+      }
+    }
+
+    syncButton.addEventListener("click", async () => {
+      if (joinMode && joinTargetRide) {
+        await handleJoinRide();
+      } else {
+        await handleNewRide();
+      }
+    });
+
+    async function enterJoinMode(rideId) {
+      try {
+        const hostRef = doc(db, "rideRequests", rideId);
+        const snap = await getDoc(hostRef);
+        if (!snap.exists()) {
+          console.warn("Join ride not found");
+          return;
+        }
+        const host = snap.data();
+        joinMode = true;
+        joinTargetRide = { id: snap.id, ...host };
+
+        joinBanner.style.display = "block";
+        const cur = host.currentRiderCount || 1;
+        const max = host.maxRiders || 1;
+        joinBannerText.textContent = `Joining group ride to "${host.toDestination || "destination"}". Group: ${cur} of ${max} riders. You will join as 1 rider. If you need an extra stop, tell your driver when picked up.`;
+
+        ridersSection.style.display = "none";
+        numRidersEl.value = "1";
+        numRidersEl.disabled = true;
+
+        if (host.toDestination) {
+          destinationEl.value = host.toDestination;
+        }
+        updateSyncButtonLabel();
+      } catch (err) {
+        console.error("Failed to enter join mode", err);
+      }
+    }
+
+      function trySetupAutocompleteEarly() {
+        if (!window.google || !google.maps || !google.maps.places) {
+          setTimeout(trySetupAutocompleteEarly, 800);
+          return;
+        }
+        setupDestinationAutocomplete();
+      }
+
+      trySetupAutocompleteEarly();
+  </script>
+</body>
+</html>
