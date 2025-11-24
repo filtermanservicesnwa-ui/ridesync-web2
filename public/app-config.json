@@ -15,6 +15,17 @@
   "support": {
     "phoneNumber": "+14794221508"
   },
+  "stripe": {
+    "publishableKey": "",
+    "membershipPlans": {
+      "uofa_unlimited": {
+        "priceDisplay": "$80 / month"
+      },
+      "nwa_unlimited": {
+        "priceDisplay": "$120 / month"
+      }
+    }
+  },
   "geo": {
     "nwaCenter": { "lat": 36.334, "lng": -94.118 },
     "nwaRadiusMiles": 30,

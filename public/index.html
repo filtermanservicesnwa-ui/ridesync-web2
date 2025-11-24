@@ -314,6 +314,118 @@
       justify-content: flex-end;
     }
 
+    .membership-card {
+      background: rgba(15,23,42,0.92);
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,0.45);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .membership-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .membership-subtitle {
+      margin: 2px 0 0;
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+    .membership-status-badge {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .membership-status-badge.active {
+      border-color: #22c55e;
+      color: #bbf7d0;
+    }
+    .membership-status-badge.inactive {
+      border-color: #f97316;
+      color: #fed7aa;
+    }
+    .membership-plan-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+    }
+    .membership-plan {
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(2,6,23,0.85);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .membership-plan.active {
+      border-color: #22c55e;
+      background: rgba(34,197,94,0.08);
+    }
+    .membership-plan-title {
+      font-weight: 600;
+    }
+    .membership-plan-price {
+      font-size: 1rem;
+      color: #f9fafb;
+    }
+    .membership-plan-desc {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      margin: 0;
+    }
+    .membership-plan button {
+      margin-top: auto;
+    }
+
+    .payment-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2,6,23,0.88);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 80;
+    }
+    .payment-overlay.active {
+      display: flex;
+    }
+    .payment-panel {
+      width: min(480px, 100%);
+      background: rgba(15,23,42,0.95);
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,0.4);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    }
+    .payment-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .payment-panel-title {
+      margin: 0;
+      font-size: 1.2rem;
+    }
+    .payment-panel-subtitle {
+      margin: 4px 0 0;
+      font-size: 0.9rem;
+      color: #9ca3af;
+    }
+
     .top-right {
       position: fixed;
       right: 10px;
@@ -838,6 +950,80 @@
         </div>
       </div>
 
+      <div id="membershipCard" class="membership-card">
+        <div class="membership-card-header">
+          <div>
+            <div
+              class="section-title"
+              style="margin-top:0;border-top:none;padding-top:0;"
+            >
+              Membership
+            </div>
+            <p id="membershipStatusText" class="membership-subtitle">
+              Loading membership…
+            </p>
+          </div>
+          <span id="membershipStatusBadge" class="membership-status-badge">—</span>
+        </div>
+        <div class="membership-plan-grid">
+          <div class="membership-plan" data-plan="basic">
+            <div class="membership-plan-title">Basic</div>
+            <div class="membership-plan-price" data-plan-price="basic">
+              $0 / ride
+            </div>
+            <p class="membership-plan-desc">
+              Pay per ride with Stripe. Best if you only ride occasionally.
+            </p>
+            <button
+              class="btn-secondary btn-small"
+              type="button"
+              data-plan-action="basic"
+            >
+              Stay on Basic
+            </button>
+          </div>
+          <div class="membership-plan" data-plan="uofa_unlimited">
+            <div class="membership-plan-title">U of A Unlimited</div>
+            <div
+              class="membership-plan-price"
+              data-plan-price="uofa_unlimited"
+            >
+              $80 / month
+            </div>
+            <p class="membership-plan-desc">
+              Unlimited Fayetteville rides. Out-of-zone trips bill per minute.
+            </p>
+            <button
+              class="btn-primary btn-small"
+              type="button"
+              data-plan-action="uofa_unlimited"
+            >
+              Upgrade to U of A Unlimited
+            </button>
+          </div>
+          <div class="membership-plan" data-plan="nwa_unlimited">
+            <div class="membership-plan-title">NWA Unlimited</div>
+            <div
+              class="membership-plan-price"
+              data-plan-price="nwa_unlimited"
+            >
+              $120 / month
+            </div>
+            <p class="membership-plan-desc">
+              Unlimited rides inside the 30-mile NWA radius.
+            </p>
+            <button
+              class="btn-primary btn-small"
+              type="button"
+              data-plan-action="nwa_unlimited"
+            >
+              Upgrade to NWA Unlimited
+            </button>
+          </div>
+        </div>
+        <div id="membershipCardMessage" class="small"></div>
+      </div>
+
       <!-- Inline edit form -->
       <div id="editProfileSection"
            class="fare-box"
@@ -879,13 +1065,6 @@
             <input id="editZip" type="text" />
           </div>
         </div>
-
-        <label for="editMembership">Membership</label>
-        <select id="editMembership">
-          <option value="basic">Basic (pay per ride)</option>
-          <option value="uofa_unlimited">U of A Unlimited ($80/mo)</option>
-          <option value="nwa_unlimited">NWA Unlimited ($120/mo)</option>
-        </select>
 
         <div class="section-title">Photos</div>
         <label>Profile picture</label>
@@ -1172,6 +1351,35 @@
     </div>
   </div>
 
+  <div id="paymentOverlay" class="payment-overlay" aria-hidden="true">
+    <div class="payment-panel">
+      <div class="payment-panel-header">
+        <div>
+          <h3 id="paymentOverlayTitle" class="payment-panel-title">
+            Complete payment
+          </h3>
+          <p id="paymentOverlaySubtitle" class="payment-panel-subtitle"></p>
+        </div>
+        <button
+          id="paymentOverlayClose"
+          type="button"
+          class="btn-secondary btn-small"
+        >
+          Cancel
+        </button>
+      </div>
+      <div id="paymentElement"></div>
+      <button
+        id="paymentOverlayConfirm"
+        type="button"
+        class="btn-primary"
+      >
+        Pay now
+      </button>
+      <div id="paymentOverlayMessage" class="error"></div>
+    </div>
+  </div>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
     import {
@@ -1204,6 +1412,10 @@
       uploadBytes,
       getDownloadURL
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
+    import {
+      getFunctions,
+      httpsCallable
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
 
     async function loadAppConfig() {
       if (window.__rideSyncConfigPromise) {
@@ -1288,6 +1500,29 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     const storage = getStorage(app);
+    const functionsClient = getFunctions(app);
+
+    const stripeConfig = APP_CONFIG.stripe || {};
+    const STRIPE_PUBLISHABLE_KEY = stripeConfig.publishableKey || "";
+    const stripeMembershipConfig = stripeConfig.membershipPlans || {};
+    const STRIPE_ENABLED = !!STRIPE_PUBLISHABLE_KEY;
+
+    const createMembershipPaymentIntentFn = httpsCallable(
+      functionsClient,
+      "createMembershipPaymentIntent"
+    );
+    const applyMembershipPlanFn = httpsCallable(
+      functionsClient,
+      "applyMembershipPlan"
+    );
+    const createRidePaymentIntentFn = httpsCallable(
+      functionsClient,
+      "createRidePaymentIntent"
+    );
+    const finalizeRidePaymentFn = httpsCallable(
+      functionsClient,
+      "finalizeRidePayment"
+    );
 
     const NWA_CENTER = geoConfig.nwaCenter || { lat: 36.334, lng: -94.118 };
     const NWA_RADIUS_MILES = geoConfig.nwaRadiusMiles ?? 30;
@@ -1306,6 +1541,23 @@
     const SUPPORT_SMS_LINK = SUPPORT_PHONE_NUMBER
       ? `sms:${SUPPORT_PHONE_NUMBER}`
       : "#";
+    const MEMBERSHIP_PLAN_COPY = {
+      basic: {
+        label: "Basic",
+        price: "$0 / ride",
+        description: "Pay per ride with Stripe.",
+      },
+      uofa_unlimited: {
+        label: "U of A Unlimited",
+        price: "$80 / month",
+        description: "Unlimited Fayetteville rides.",
+      },
+      nwa_unlimited: {
+        label: "NWA Unlimited",
+        price: "$120 / month",
+        description: "Unlimited rides inside the 30-mile NWA radius.",
+      },
+    };
 
     const urlParams = new URLSearchParams(window.location.search);
     const joinRideIdFromUrl = urlParams.get("join");
@@ -1361,6 +1613,12 @@
     const membershipBadgeEl = document.getElementById("membershipBadge");
     const membershipBadgeLabelEl = document.getElementById("membershipBadgeLabel");
     const membershipBadgeTagEl = document.getElementById("membershipBadgeTag");
+    const membershipCard = document.getElementById("membershipCard");
+    const membershipStatusText = document.getElementById("membershipStatusText");
+    const membershipStatusBadge = document.getElementById("membershipStatusBadge");
+    const membershipCardMessage = document.getElementById("membershipCardMessage");
+    const membershipPlanButtons = document.querySelectorAll("[data-plan-action]");
+    const membershipPriceEls = document.querySelectorAll("[data-plan-price]");
 
     const riderEmailDetailEl = document.getElementById("riderEmailDetail");
     const riderPhoneDetailEl = document.getElementById("riderPhoneDetail");
@@ -1374,7 +1632,6 @@
     const editCityEl = document.getElementById("editCity");
     const editStateEl = document.getElementById("editState");
     const editZipEl = document.getElementById("editZip");
-    const editMembershipEl = document.getElementById("editMembership");
     const editProfilePicInput = document.getElementById("editProfilePicInput");
     const editLicensePicInput = document.getElementById("editLicensePicInput");
     const editStudentIdPicInput = document.getElementById("editStudentIdPicInput");
@@ -1491,7 +1748,19 @@
 
     const contactDriverBtn = document.getElementById("contactDriverBtn");
 
+    const paymentOverlay = document.getElementById("paymentOverlay");
+    const paymentOverlayTitle = document.getElementById("paymentOverlayTitle");
+    const paymentOverlaySubtitle = document.getElementById("paymentOverlaySubtitle");
+    const paymentOverlayClose = document.getElementById("paymentOverlayClose");
+    const paymentOverlayConfirm = document.getElementById("paymentOverlayConfirm");
+    const paymentOverlayMessage = document.getElementById("paymentOverlayMessage");
+    const paymentElementContainer = document.getElementById("paymentElement");
+
     let latestRideForOverlay = null;
+    let stripeInstance = null;
+    let stripeElements = null;
+    let stripePaymentElement = null;
+    let activePaymentContext = null;
 
     const RIDER_STATES = {
       HIDDEN: "hidden",
@@ -2099,6 +2368,85 @@
       }
     }
 
+    function formatCurrencyFromCents(amountCents = 0, currency = "usd") {
+      const value = Number(amountCents || 0) / 100;
+      try {
+        return new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: (currency || "usd").toUpperCase(),
+        }).format(value);
+      } catch (err) {
+        return `$${value.toFixed(2)}`;
+      }
+    }
+
+    function formatPlanPriceLabel(planKey) {
+      const key = (planKey || "basic").toLowerCase();
+      return (
+        stripeMembershipConfig?.[key]?.priceDisplay ||
+        MEMBERSHIP_PLAN_COPY[key]?.price ||
+        MEMBERSHIP_PLAN_COPY.basic.price
+      );
+    }
+
+    function updateMembershipPrices() {
+      if (!membershipPriceEls || typeof membershipPriceEls.forEach !== "function") {
+        return;
+      }
+      membershipPriceEls.forEach((node) => {
+        const planKey = node?.dataset?.planPrice;
+        if (!planKey) return;
+        node.textContent = formatPlanPriceLabel(planKey);
+      });
+    }
+
+    updateMembershipPrices();
+
+    function renderMembershipCard(profile) {
+      if (!membershipCard) return;
+      const plan =
+        (profile?.membershipType || profile?.membership || "basic").toLowerCase();
+      const planCopy = MEMBERSHIP_PLAN_COPY[plan] || MEMBERSHIP_PLAN_COPY.basic;
+
+      if (membershipStatusText) {
+        membershipStatusText.textContent = `Plan: ${planCopy.label}`;
+      }
+
+      if (membershipStatusBadge) {
+        const isActive =
+          (profile?.membershipStatus || "active").toLowerCase() === "active";
+        membershipStatusBadge.textContent = isActive ? "Active" : "Inactive";
+        membershipStatusBadge.classList.toggle("active", isActive);
+        membershipStatusBadge.classList.toggle("inactive", !isActive);
+      }
+
+      membershipPlanButtons?.forEach?.((btn) => {
+        const targetPlan = btn?.dataset?.planAction;
+        if (!targetPlan) return;
+        const isCurrent = targetPlan === plan;
+        const card = btn.closest(".membership-plan");
+        if (card) {
+          card.classList.toggle("active", isCurrent);
+        }
+
+        if (isCurrent) {
+          btn.textContent = "Current plan";
+          btn.disabled = true;
+        } else if (targetPlan === "basic") {
+          btn.textContent = "Switch to Basic";
+          btn.disabled = false;
+        } else if (!STRIPE_ENABLED) {
+          btn.textContent = "Contact support";
+          btn.disabled = true;
+        } else {
+          const label =
+            MEMBERSHIP_PLAN_COPY[targetPlan]?.label || "Upgrade";
+          btn.textContent = `Activate ${label}`;
+          btn.disabled = false;
+        }
+      });
+    }
+
     function updateSyncButtonLabel() {
       if (joinMode) {
         syncButton.textContent = "Join Ride";
@@ -2296,7 +2644,6 @@
       editCityEl.value = p.city || "";
       editStateEl.value = p.state || "";
       editZipEl.value = p.zip || "";
-      editMembershipEl.value = plan;
       if (editGenderEl) {
         const g = (p.gender || "").toLowerCase();
         if (g === "male" || g === "female" || g === "other") {
@@ -2324,6 +2671,7 @@
       }
 
       setMembershipBadge(p);
+      renderMembershipCard(p);
       updateSyncButtonLabel();
     }
 
@@ -2349,7 +2697,6 @@
         state: editStateEl.value.trim(),
         zip: editZipEl.value.trim(),
         gender: (editGenderEl.value || "").toLowerCase(),
-        membershipType: editMembershipEl.value || "basic",
         updatedAt: serverTimestamp()
       };
 
@@ -3378,6 +3725,296 @@
       });
     }
 
+    membershipPlanButtons?.forEach?.((btn) => {
+      btn.addEventListener("click", () => {
+        const plan = btn.dataset.planAction;
+        handleMembershipPlanSelection(plan);
+      });
+    });
+
+    if (paymentOverlayClose) {
+      paymentOverlayClose.addEventListener("click", () => {
+        const context = activePaymentContext;
+        closePaymentOverlay();
+        if (context?.type === "ride") {
+          profileMessage.textContent = "Ride payment canceled. Ride not requested.";
+        } else if (context?.type === "membership" && membershipCardMessage) {
+          membershipCardMessage.textContent = "Membership payment canceled.";
+        }
+      });
+    }
+
+    if (paymentOverlayConfirm) {
+      paymentOverlayConfirm.addEventListener("click", confirmActivePayment);
+    }
+
+    if (paymentOverlay) {
+      paymentOverlay.addEventListener("click", (event) => {
+        if (event.target === paymentOverlay) {
+          const context = activePaymentContext;
+          closePaymentOverlay();
+          if (context?.type === "ride") {
+            profileMessage.textContent = "Ride payment canceled. Ride not requested.";
+          } else if (context?.type === "membership" && membershipCardMessage) {
+            membershipCardMessage.textContent = "Membership payment canceled.";
+          }
+        }
+      });
+    }
+
+    async function handleMembershipPlanSelection(plan) {
+      if (!plan) return;
+      const user = auth.currentUser;
+      if (!user || !currentUserProfile) {
+        if (membershipCardMessage) {
+          membershipCardMessage.textContent = "Log in to manage your membership.";
+        }
+        return;
+      }
+
+      const normalizedPlan = plan.toLowerCase();
+      const currentPlan =
+        (currentUserProfile?.membershipType ||
+          currentUserProfile?.membership ||
+          "basic").toLowerCase();
+
+      if (membershipCardMessage) {
+        membershipCardMessage.textContent = "";
+      }
+
+      if (normalizedPlan === currentPlan) {
+        return;
+      }
+
+      if (normalizedPlan === "basic") {
+        try {
+          await applyMembershipPlanFn({ plan: "basic" });
+          if (membershipCardMessage) {
+            membershipCardMessage.textContent = "You're back on the Basic plan.";
+          }
+          await loadUserProfile(user.uid, user.email);
+        } catch (err) {
+          console.error("applyMembershipPlan", err);
+          if (membershipCardMessage) {
+            membershipCardMessage.textContent =
+              err.message || "Could not switch to Basic.";
+          }
+        }
+        return;
+      }
+
+      if (!STRIPE_ENABLED) {
+        if (membershipCardMessage) {
+          membershipCardMessage.textContent =
+            "Stripe payments are unavailable. Contact support to upgrade.";
+        }
+        return;
+      }
+
+      try {
+        const response = await createMembershipPaymentIntentFn({
+          plan: normalizedPlan,
+        });
+        const data = response?.data || {};
+        const formattedTotal = formatCurrencyFromCents(
+          data.amountCents,
+          data.currency
+        );
+        await openPaymentOverlay({
+          title: `Activate ${MEMBERSHIP_PLAN_COPY[normalizedPlan]?.label || "membership"}`,
+          subtitle: `Pay ${formattedTotal} to enable this membership.`,
+          confirmLabel: `Pay ${formattedTotal}`,
+          clientSecret: data.clientSecret,
+          context: {
+            type: "membership",
+            plan: normalizedPlan,
+            paymentIntentId: data.paymentIntentId,
+          },
+        });
+        if (membershipCardMessage) {
+          membershipCardMessage.textContent =
+            "Enter your payment details to finish upgrading.";
+        }
+      } catch (err) {
+        console.error("Membership payment error", err);
+        if (membershipCardMessage) {
+          membershipCardMessage.textContent =
+            err.message || "Could not start membership payment.";
+        }
+      }
+    }
+
+    async function ensureStripeInstance() {
+      if (!STRIPE_ENABLED) {
+        throw new Error("Stripe payments are not available right now.");
+      }
+      if (!window.Stripe) {
+        throw new Error("Stripe.js is not available.");
+      }
+      if (!stripeInstance) {
+        stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
+      }
+      return stripeInstance;
+    }
+
+    async function mountStripePaymentElement(clientSecret) {
+      if (!paymentElementContainer) {
+        throw new Error("Payment UI is unavailable.");
+      }
+      const stripe = await ensureStripeInstance();
+      if (stripePaymentElement) {
+        stripePaymentElement.unmount();
+        stripePaymentElement = null;
+      }
+      stripeElements = stripe.elements({ clientSecret });
+      stripePaymentElement = stripeElements.create("payment");
+      stripePaymentElement.mount(paymentElementContainer);
+    }
+
+    async function openPaymentOverlay(options = {}) {
+      if (!options.clientSecret) {
+        throw new Error("Stripe client secret missing.");
+      }
+      await mountStripePaymentElement(options.clientSecret);
+      activePaymentContext = options.context || null;
+      if (paymentOverlayTitle) {
+        paymentOverlayTitle.textContent = options.title || "Complete payment";
+      }
+      if (paymentOverlaySubtitle) {
+        paymentOverlaySubtitle.textContent = options.subtitle || "";
+      }
+      if (paymentOverlayConfirm) {
+        paymentOverlayConfirm.textContent = options.confirmLabel || "Pay now";
+        paymentOverlayConfirm.disabled = false;
+      }
+      if (paymentOverlayMessage) {
+        paymentOverlayMessage.textContent = "";
+      }
+      paymentOverlay?.classList.add("active");
+      paymentOverlay?.setAttribute("aria-hidden", "false");
+    }
+
+    function closePaymentOverlay() {
+      if (stripePaymentElement) {
+        stripePaymentElement.unmount();
+        stripePaymentElement = null;
+      }
+      stripeElements = null;
+      activePaymentContext = null;
+      paymentOverlay?.classList.remove("active");
+      paymentOverlay?.setAttribute("aria-hidden", "true");
+      if (paymentOverlayMessage) {
+        paymentOverlayMessage.textContent = "";
+      }
+    }
+
+    async function confirmActivePayment() {
+      if (!activePaymentContext) return;
+      if (paymentOverlayMessage) {
+        paymentOverlayMessage.textContent = "";
+      }
+      if (paymentOverlayConfirm) {
+        paymentOverlayConfirm.disabled = true;
+      }
+
+      try {
+        const stripe = await ensureStripeInstance();
+        const result = await stripe.confirmPayment({
+          elements: stripeElements,
+          redirect: "if_required",
+        });
+        if (result.error) {
+          throw new Error(result.error.message || "Payment failed.");
+        }
+        if (!result.paymentIntent || result.paymentIntent.status !== "succeeded") {
+          throw new Error("Payment did not complete.");
+        }
+        await handlePaymentSuccess(result.paymentIntent, activePaymentContext);
+        closePaymentOverlay();
+      } catch (err) {
+        console.error("confirmActivePayment", err);
+        if (paymentOverlayMessage) {
+          paymentOverlayMessage.textContent =
+            err.message || "Unable to process payment.";
+        }
+        if (paymentOverlayConfirm) {
+          paymentOverlayConfirm.disabled = false;
+        }
+      }
+    }
+
+    async function handlePaymentSuccess(paymentIntent, context) {
+      if (context?.type === "membership") {
+        await applyMembershipPlanFn({
+          plan: context.plan,
+          paymentIntentId: paymentIntent.id,
+        });
+        if (membershipCardMessage) {
+          membershipCardMessage.textContent = "Membership updated!";
+        }
+        const user = auth.currentUser;
+        if (user) {
+          await loadUserProfile(user.uid, user.email);
+        }
+        return;
+      }
+
+      if (context?.type === "ride") {
+        const response = await finalizeRidePaymentFn({
+          pendingId: context.pendingId,
+          paymentIntentId: paymentIntent.id,
+        });
+        const rideId = response?.data?.rideId;
+        if (!rideId) {
+          throw new Error("Ride could not be created after payment.");
+        }
+        currentRideId = rideId;
+        startRideStatusWatcher(rideId);
+        updateCancelButtonVisibility();
+        if (context.ridePayload?.isGroupRide) {
+          showGroupQr(rideId);
+        } else {
+          hideGroupQr();
+        }
+        if (context.ridePayload?.poolType === "uofa") {
+          startPoolGroupWatcher(rideId);
+        }
+        profileMessage.textContent = "Payment received. Syncing your ride.";
+        profileError.textContent = "";
+        showLoadingView();
+      }
+    }
+
+    async function startRidePaymentFlow(ridePayload) {
+      if (!STRIPE_ENABLED) {
+        throw new Error("Stripe payments are not available right now.");
+      }
+      const response = await createRidePaymentIntentFn({ ride: ridePayload });
+      const data = response?.data || {};
+      if (!data.clientSecret || !data.pendingId) {
+        throw new Error("Unable to start Stripe payment for this ride.");
+      }
+      const formattedTotal = formatCurrencyFromCents(
+        data.amountCents,
+        data.currency
+      );
+      await openPaymentOverlay({
+        title: "Confirm ride payment",
+        subtitle: `Pay ${formattedTotal} to request this ride.`,
+        confirmLabel: `Pay ${formattedTotal}`,
+        clientSecret: data.clientSecret,
+        context: {
+          type: "ride",
+          pendingId: data.pendingId,
+          paymentIntentId: data.paymentIntentId,
+          ridePayload,
+        },
+      });
+      profileMessage.textContent =
+        "Complete the payment to finish syncing your ride.";
+      profileError.textContent = "";
+    }
+
     async function handleNewRide() {
       const user = auth.currentUser;
       if (!user) return;
@@ -3485,7 +4122,9 @@
       try {
         let docRef;
 
-        if (plan !== "basic" && inHomeZone) {
+        const paymentIsIncluded = plan !== "basic" && inHomeZone;
+
+        if (paymentIsIncluded) {
           docRef = await addDoc(collection(db, "rideRequests"), {
             ...rideBase,
             status,
@@ -3493,13 +4132,10 @@
             paymentStatus: "included"
           });
         } else {
-          docRef = await addDoc(collection(db, "rideRequests"), {
-            ...rideBase,
-            status,
-            paymentMethod: "stripe",
-            paymentStatus: poolType === "uofa" ? "pool_preauthorized" : "preauthorized",
-            stripeAmount: total
-          });
+          const ridePaymentPayload = { ...rideBase, status };
+          delete ridePaymentPayload.createdAt;
+          await startRidePaymentFlow(ridePaymentPayload);
+          return;
         }
 
         if (rideBase.isGroupRide) {

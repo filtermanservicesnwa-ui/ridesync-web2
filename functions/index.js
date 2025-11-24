@@ -3,6 +3,7 @@
 // IMPORTANT: use v1 compat entrypoint so functions.firestore.document(...) exists
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
+const Stripe = require("stripe");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -20,6 +21,219 @@ const UOFA_PENDING_STATUSES = [
   "pool_searching",
   "pooled_pending_driver",
 ];
+
+const MEMBERSHIP_PLAN_DEFAULTS = {
+  basic: { amountCents: 0, currency: "usd", label: "Basic (pay per ride)" },
+  uofa_unlimited: {
+    amountCents: 8000,
+    currency: "usd",
+    label: "U of A Unlimited ($80/mo)",
+  },
+  nwa_unlimited: {
+    amountCents: 12000,
+    currency: "usd",
+    label: "NWA Unlimited ($120/mo)",
+  },
+};
+
+const FARE_CONSTANTS = {
+  BASIC_RATE_PER_MIN: 0.6,
+  BASIC_PLATFORM_FEE: 0.5,
+  UNLIMITED_OUT_RATE: 0.35,
+  PROCESSING_FEE_RATE: 0.04,
+};
+
+const RIDE_STATUS_ALLOWLIST = new Set([
+  "pending_driver",
+  "pool_searching",
+  "pooled_pending_driver",
+  "pending",
+]);
+
+const runtimeConfig = (() => {
+  try {
+    return functions.config() || {};
+  } catch (err) {
+    return {};
+  }
+})();
+
+const stripeSecretKey =
+  process.env.STRIPE_SECRET_KEY ||
+  runtimeConfig?.stripe?.secret ||
+  runtimeConfig?.stripe?.sk ||
+  null;
+
+let stripeClient = null;
+
+function normalizeMembershipPlan(value = "") {
+  return String(value || "").toLowerCase().trim();
+}
+
+function getStripeClient() {
+  if (!stripeSecretKey) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Stripe secret key is not configured."
+    );
+  }
+  if (!stripeClient) {
+    stripeClient = new Stripe(stripeSecretKey, {
+      apiVersion: "2024-06-20",
+    });
+  }
+  return stripeClient;
+}
+
+function resolveMembershipPlan(planRaw = "") {
+  const plan = normalizeMembershipPlan(planRaw);
+  const defaults = MEMBERSHIP_PLAN_DEFAULTS[plan];
+  if (!defaults) {
+    return null;
+  }
+
+  const envAmount =
+    process.env[`STRIPE_${plan.toUpperCase()}_CENTS`] ||
+    runtimeConfig?.stripe?.[`${plan}_cents`];
+
+  const amountCents = Number.isFinite(Number(envAmount))
+    ? Number(envAmount)
+    : defaults.amountCents;
+
+  return {
+    ...defaults,
+    amountCents,
+    plan,
+  };
+}
+
+function computeFareForMembership(planRaw, minutesRaw, inHomeZone) {
+  const plan = String(planRaw || "basic").toLowerCase();
+  const minutes = Number(minutesRaw);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Ride duration is required for fare calculation."
+    );
+  }
+  const clampedMinutes = Math.min(Math.max(minutes, 1), 600);
+  const inZone = !!inHomeZone;
+
+  const {
+    BASIC_RATE_PER_MIN,
+    BASIC_PLATFORM_FEE,
+    UNLIMITED_OUT_RATE,
+    PROCESSING_FEE_RATE,
+  } = FARE_CONSTANTS;
+
+  let rideSubtotal = 0;
+  let processingFee = 0;
+  let total = 0;
+  let membershipLabel = "";
+
+  if (plan === "uofa_unlimited" || plan === "nwa_unlimited") {
+    if (inZone) {
+      membershipLabel =
+        plan === "uofa_unlimited"
+          ? "U of A Unlimited – in Fayetteville (included)"
+          : "NWA Unlimited – in zone (included)";
+      return {
+        rideSubtotal: 0,
+        processingFee: 0,
+        total: 0,
+        membershipLabel,
+      };
+    }
+    rideSubtotal = clampedMinutes * UNLIMITED_OUT_RATE;
+    processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+    total = rideSubtotal + processingFee;
+    membershipLabel =
+      plan === "uofa_unlimited"
+        ? "U of A Unlimited – out of Fayetteville (extra per-minute)"
+        : "NWA Unlimited – out of zone (extra per-minute)";
+  } else {
+    rideSubtotal = clampedMinutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
+    processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+    total = rideSubtotal + processingFee;
+    membershipLabel = "Basic (pay per ride)";
+  }
+
+  return {
+    rideSubtotal,
+    processingFee,
+    total,
+    membershipLabel,
+  };
+}
+
+async function getOrCreateStripeCustomer(uid) {
+  const userRef = db.collection("users").doc(uid);
+  const snap = await userRef.get();
+  const profile = snap.exists ? snap.data() : null;
+  if (profile?.stripeCustomerId) {
+    return {
+      customerId: profile.stripeCustomerId,
+      profileRef: userRef,
+      profile,
+    };
+  }
+
+  const stripe = getStripeClient();
+  const customer = await stripe.customers.create({
+    email: profile?.email || undefined,
+    name:
+      profile?.fullName ||
+      profile?.name ||
+      profile?.displayName ||
+      undefined,
+    metadata: {
+      firebaseUid: uid,
+    },
+  });
+
+  await userRef.set(
+    {
+      stripeCustomerId: customer.id,
+      stripeCustomerCreatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return {
+    customerId: customer.id,
+    profileRef: userRef,
+    profile,
+  };
+}
+
+function cloneData(input) {
+  return JSON.parse(JSON.stringify(input ?? {}));
+}
+
+function normalizeRideStatus(status, poolType) {
+  if (status && RIDE_STATUS_ALLOWLIST.has(status)) {
+    return status;
+  }
+  if (poolType === "uofa") {
+    return "pool_searching";
+  }
+  return "pending_driver";
+}
+
+function sanitizeDestinationLabel(value) {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, 140);
+}
+
+function requireAuth(context) {
+  if (!context?.auth?.uid) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Authentication required."
+    );
+  }
+  return context.auth.uid;
+}
 
 function extractUofaRideDetails(ride = {}) {
   return {
@@ -459,3 +673,363 @@ exports.uofaAutoPool = functions.firestore
       return null;
     }
   });
+
+exports.createMembershipPaymentIntent = functions.https.onCall(
+  async (data, context) => {
+    const uid = requireAuth(context);
+    const planKey = normalizeMembershipPlan(data?.plan);
+    const planConfig = resolveMembershipPlan(planKey);
+    if (!planConfig) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Unknown membership plan."
+      );
+    }
+    if (planConfig.amountCents <= 0) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Selected plan does not require payment."
+      );
+    }
+
+    const stripe = getStripeClient();
+    const { customerId } = await getOrCreateStripeCustomer(uid);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: planConfig.amountCents,
+      currency: planConfig.currency,
+      customer: customerId,
+      metadata: {
+        firebaseUid: uid,
+        membershipPlan: planKey,
+        purpose: "membership",
+      },
+      automatic_payment_methods: { enabled: true },
+    });
+
+    await db
+      .collection("pendingMembershipPayments")
+      .doc(paymentIntent.id)
+      .set({
+        userId: uid,
+        plan: planKey,
+        amountCents: planConfig.amountCents,
+        currency: planConfig.currency,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+    return {
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      amountCents: planConfig.amountCents,
+      currency: planConfig.currency,
+      planLabel: planConfig.label,
+      plan: planKey,
+    };
+  }
+);
+
+exports.applyMembershipPlan = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  const planKey = normalizeMembershipPlan(data?.plan);
+  const planConfig = resolveMembershipPlan(planKey);
+  if (!planConfig) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Unknown membership plan."
+    );
+  }
+
+  const userRef = db.collection("users").doc(uid);
+
+  if (planConfig.amountCents === 0) {
+    await userRef.set(
+      {
+        membershipType: planKey || "basic",
+        membershipStatus: "active",
+        membershipRenewedAt: FieldValue.serverTimestamp(),
+        membershipExpiresAt: null,
+      },
+      { merge: true }
+    );
+    return { status: "updated" };
+  }
+
+  const paymentIntentId = data?.paymentIntentId;
+  if (!paymentIntentId) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Payment confirmation is required for this membership."
+    );
+  }
+
+  const pendingRef = db
+    .collection("pendingMembershipPayments")
+    .doc(paymentIntentId);
+  const pendingSnap = await pendingRef.get();
+  if (!pendingSnap.exists) {
+    throw new functions.https.HttpsError(
+      "not-found",
+      "Membership payment not found."
+    );
+  }
+  const pending = pendingSnap.data();
+  if (pending.userId !== uid) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "Cannot apply a payment that belongs to a different user."
+    );
+  }
+  if (pending.plan !== planKey) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Payment plan does not match the requested membership."
+    );
+  }
+
+  const stripe = getStripeClient();
+  const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+  if (intent.status !== "succeeded") {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Membership payment has not completed."
+    );
+  }
+
+  await userRef.set(
+    {
+      membershipType: planKey,
+      membershipStatus: "active",
+      membershipRenewedAt: FieldValue.serverTimestamp(),
+      membershipPaidAmountCents: pending.amountCents,
+      membershipPaidCurrency: pending.currency,
+      membershipStripePaymentIntentId: paymentIntentId,
+    },
+    { merge: true }
+  );
+
+  await pendingRef.delete();
+
+  return { status: "updated" };
+});
+
+exports.createRidePaymentIntent = functions.https.onCall(
+  async (data, context) => {
+    const uid = requireAuth(context);
+    const rideInput = data?.ride;
+    if (!rideInput) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Ride payload is required."
+      );
+    }
+
+    const minutes = Number(rideInput.estimatedDurationMinutes);
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Estimated minutes missing for ride payment."
+      );
+    }
+    if (
+      !rideInput.toDestination ||
+      typeof rideInput.toDestination !== "string"
+    ) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Destination is required."
+      );
+    }
+
+    const plan = normalizeMembershipPlan(
+      rideInput.membershipType ||
+        rideInput.membership ||
+        rideInput.plan ||
+        "basic"
+    );
+    const fare = computeFareForMembership(
+      plan,
+      minutes,
+      !!rideInput.inHomeZone
+    );
+    const amountCents = Math.round(fare.total * 100);
+    if (amountCents <= 0) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This ride does not require a Stripe payment."
+      );
+    }
+
+    const ridePayloadRaw = { ...rideInput };
+    delete ridePayloadRaw.createdAt;
+    delete ridePayloadRaw.updatedAt;
+
+    const sanitizedPayload = cloneData(ridePayloadRaw);
+    sanitizedPayload.userId = uid;
+    sanitizedPayload.startedByUserId =
+      sanitizedPayload.startedByUserId || uid;
+    sanitizedPayload.membershipType = plan;
+    sanitizedPayload.membershipStatus =
+      sanitizedPayload.membershipStatus || "active";
+    sanitizedPayload.inHomeZone = !!rideInput.inHomeZone;
+    sanitizedPayload.isGroupRide = !!rideInput.isGroupRide;
+    sanitizedPayload.maxRiders = Math.max(
+      1,
+      Math.min(6, sanitizedPayload.maxRiders || 1)
+    );
+    sanitizedPayload.currentRiderCount = Math.min(
+      sanitizedPayload.maxRiders,
+      sanitizedPayload.currentRiderCount || 1
+    );
+    sanitizedPayload.poolType =
+      sanitizedPayload.poolType === "uofa" ? "uofa" : null;
+    sanitizedPayload.status = normalizeRideStatus(
+      sanitizedPayload.status,
+      sanitizedPayload.poolType
+    );
+    sanitizedPayload.fare = fare;
+    sanitizedPayload.estimatedDurationMinutes = minutes;
+    sanitizedPayload.stripeAmount = fare.total;
+    sanitizedPayload.stripeAmountCents = amountCents;
+    sanitizedPayload.stripeCurrency = "usd";
+    sanitizedPayload.paymentMethod = "stripe";
+    sanitizedPayload.paymentStatus = "paid";
+    sanitizedPayload.createdAt = null;
+    sanitizedPayload.updatedAt = null;
+    sanitizedPayload.toDestination = sanitizeDestinationLabel(
+      rideInput.toDestination
+    );
+
+    const pendingRef = db.collection("pendingRidePayments").doc();
+
+    const stripe = getStripeClient();
+    const { customerId } = await getOrCreateStripeCustomer(uid);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency: "usd",
+      customer: customerId,
+      metadata: {
+        firebaseUid: uid,
+        pendingRideId: pendingRef.id,
+        destination: sanitizedPayload.toDestination,
+        purpose: "ride",
+      },
+      automatic_payment_methods: { enabled: true },
+    });
+
+    await pendingRef.set({
+      userId: uid,
+      pendingId: pendingRef.id,
+      ridePayload: sanitizedPayload,
+      amountCents,
+      currency: "usd",
+      stripePaymentIntentId: paymentIntent.id,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    return {
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      pendingId: pendingRef.id,
+      amountCents,
+      currency: "usd",
+    };
+  }
+);
+
+exports.finalizeRidePayment = functions.https.onCall(
+  async (data, context) => {
+    const uid = requireAuth(context);
+    const pendingId = data?.pendingId;
+    const paymentIntentId = data?.paymentIntentId;
+    if (!pendingId || !paymentIntentId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Pending ride reference and payment intent are required."
+      );
+    }
+
+    const pendingRef = db.collection("pendingRidePayments").doc(pendingId);
+    const pendingSnap = await pendingRef.get();
+    if (!pendingSnap.exists()) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Pending ride payment not found."
+      );
+    }
+    const pending = pendingSnap.data();
+    if (pending.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Cannot finalize another rider's payment."
+      );
+    }
+    if (pending.stripePaymentIntentId !== paymentIntentId) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Payment intent mismatch."
+      );
+    }
+
+    const stripe = getStripeClient();
+    const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (intent.status !== "succeeded") {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Ride payment has not completed."
+      );
+    }
+
+    const rideData = cloneData(pending.ridePayload || {});
+    rideData.userId = uid;
+    rideData.startedByUserId = rideData.startedByUserId || uid;
+    rideData.status = normalizeRideStatus(
+      rideData.status,
+      rideData.poolType
+    );
+    rideData.createdAt = FieldValue.serverTimestamp();
+    rideData.paymentStatus = "paid";
+    rideData.paymentMethod = "stripe";
+    rideData.stripePaymentIntentId = paymentIntentId;
+    rideData.stripeAmount = pending.amountCents / 100;
+    rideData.stripeAmountCents = pending.amountCents;
+    rideData.stripeCurrency = pending.currency || "usd";
+    rideData.updatedAt = FieldValue.serverTimestamp();
+    rideData.currentRiderCount = Math.min(
+      rideData.maxRiders || 1,
+      rideData.currentRiderCount || 1
+    );
+    if (rideData.isGroupRide && !rideData.groupId) {
+      rideData.groupId = undefined;
+    }
+
+    const rideRef = db.collection("rideRequests").doc();
+    if (rideData.isGroupRide && !rideData.groupId) {
+      rideData.groupId = rideRef.id;
+    }
+
+    await db.runTransaction(async (tx) => {
+      const freshSnap = await tx.get(pendingRef);
+      if (!freshSnap.exists) {
+        throw new functions.https.HttpsError(
+          "not-found",
+          "Pending ride payment not found."
+        );
+      }
+      if (freshSnap.data().processedAt) {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "This pending ride payment was already processed."
+        );
+      }
+      tx.set(rideRef, rideData);
+      tx.update(pendingRef, {
+        processedAt: FieldValue.serverTimestamp(),
+        rideId: rideRef.id,
+      });
+    });
+
+    return { rideId: rideRef.id };
+  }
+);
