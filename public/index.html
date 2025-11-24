@@ -92,6 +92,32 @@
       font-size: 0.8rem;
       border-radius: 999px;
     }
+    .rider-action-box {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 14px;
+    }
+    .rider-action-header {
+      font-size: 0.85rem;
+      color: #cbd5f5;
+      font-weight: 600;
+    }
+    .rider-action-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .rider-action-buttons button {
+      width: auto;
+      flex: 1 1 0%;
+      margin-top: 0;
+    }
+    @media (min-width: 520px) {
+      .rider-action-buttons {
+        flex-direction: row;
+      }
+    }
     .row { display: flex; gap: 8px; flex-wrap: wrap; }
     .row > div { flex: 1 1 120px; }
     .section-title {
@@ -940,8 +966,13 @@
         </div>
       </div>
 
-      <button id="syncButton" class="btn-primary">Sync &amp; Pay</button>
-      <button id="logoutButton" class="btn-secondary">Log out</button>
+      <div class="fare-box rider-action-box">
+        <div class="rider-action-header">Account &amp; ride actions</div>
+        <div class="rider-action-buttons">
+          <button id="syncButton" class="btn-primary">Sync &amp; Pay</button>
+          <button id="logoutButton" class="btn-secondary">Log out</button>
+        </div>
+      </div>
     </div>
 
     <!-- LOADING VIEW -->
@@ -1131,7 +1162,7 @@
           <div id="groupOccupancyLabel" class="small" style="margin-top:6px;"></div>
         </div>
 
-        <button id="cancelRideButton" class="btn-secondary" style="margin-top:16px;">
+        <button id="cancelRideButton" class="btn-secondary" style="margin-top:16px;" hidden>
           Cancel ride
         </button>
         <div id="cancelError" class="error"></div>
@@ -1504,16 +1535,30 @@
     let currentRideStatus = null;
     let currentRideWatcher = null;
 
-      const riderCancelableStatuses = new Set([
-        "pending_driver",
-        "pooled_pending_driver",
-        "pool_searching",
-        "driver_assigned",
-        "driver_arrived",
-        "pending"
-      ]);
+    const riderCancelableStatuses = new Set([
+      "pending_driver",
+      "pooled_pending_driver",
+      "pool_searching",
+      "driver_assigned",
+      "driver_arrived",
+      "pending"
+    ]);
 
-      function clearCurrentRideState() {
+    function updateCancelButtonVisibility() {
+      if (!cancelRideButton) return;
+      const hasRide = !!currentRideId;
+      const cancelable =
+        !currentRideStatus || riderCancelableStatuses.has(currentRideStatus);
+      const shouldShow = hasRide && cancelable;
+      cancelRideButton.hidden = !shouldShow;
+      if (!shouldShow && cancelError) {
+        cancelError.textContent = "";
+      }
+    }
+
+    updateCancelButtonVisibility();
+
+    function clearCurrentRideState() {
         currentRideId = null;
         currentRideStatus = null;
         if (currentRideWatcher) {
@@ -1529,6 +1574,7 @@
           activeGroupUnsub = null;
         }
         hideGroupQr();
+        updateCancelButtonVisibility();
       }
 
       function resetJoinModeUi() {
@@ -1881,6 +1927,7 @@
       joinBanner.style.display = "none";
       ridersSection.style.display = "block";
       showAuthView();
+      updateCancelButtonVisibility();
     });
 
     if (destinationEl) {
@@ -2968,6 +3015,7 @@
         if (!snap.exists()) return;
         const data = snap.data();
         currentRideStatus = data.status || null;
+        updateCancelButtonVisibility();
         handleRideSnapshot(rideId, data);
       });
     }
@@ -3210,6 +3258,7 @@
 
         currentRideId = docRef.id;
         startRideStatusWatcher(docRef.id);
+        updateCancelButtonVisibility();
 
         if (rideBase.isGroupRide) {
           showGroupQr(docRef.id);
@@ -3374,6 +3423,7 @@
 
         currentRideId = createdRideId;
         startRideStatusWatcher(createdRideId);
+        updateCancelButtonVisibility();
         hideGroupQr();
         showLoadingView();
       } catch (err) {
