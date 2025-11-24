@@ -2342,7 +2342,9 @@
         if (!activeRideGroup.length) {
           if (pendingRideOffer) {
             await handleDriverOfferReject();
-            driverMessage.textContent = "Ride canceled.";
+            if (!pendingRideOffer) {
+              driverMessage.textContent = "Ride canceled.";
+            }
           } else {
             setDriverOverlayState(DRIVER_STATES.HIDDEN);
           }
