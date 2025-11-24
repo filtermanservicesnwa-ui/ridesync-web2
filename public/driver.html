@@ -221,6 +221,101 @@
       font-size:0.7rem;
       margin-left:4px;
     }
+    .driver-riders-container {
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      margin-top:6px;
+    }
+    .driver-rider-card {
+      display:flex;
+      gap:10px;
+      padding:10px;
+      border-radius:12px;
+      border:1px solid rgba(148,163,184,0.45);
+      background:rgba(2,6,23,0.9);
+    }
+    .driver-rider-avatar {
+      width:54px;
+      height:54px;
+      border-radius:14px;
+      border:1px solid rgba(148,163,184,0.6);
+      background:#0f172a;
+      overflow:hidden;
+      position:relative;
+      flex-shrink:0;
+    }
+    .driver-rider-avatar img {
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
+    }
+    .driver-rider-avatar .avatar-initials {
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:600;
+      color:#94a3af;
+      font-size:0.8rem;
+      background:#0f172a;
+    }
+    .driver-rider-avatar.has-photo .avatar-initials {
+      display:none;
+    }
+    .driver-rider-body { flex:1 1 auto; min-width:0; }
+    .driver-rider-label {
+      font-size:0.7rem;
+      color:#94a3af;
+      text-transform:uppercase;
+      letter-spacing:0.06em;
+      margin-bottom:2px;
+    }
+    .driver-rider-name {
+      font-weight:600;
+      font-size:0.95rem;
+      margin-bottom:2px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .driver-rider-line {
+      font-size:0.78rem;
+      color:#cbd5f5;
+      margin-bottom:1px;
+    }
+    .support-panel {
+      border:1px solid rgba(148,163,184,0.4);
+      border-radius:14px;
+      padding:12px;
+      background:rgba(2,6,23,0.92);
+      margin-top:8px;
+      display:none;
+    }
+    .support-panel.active { display:block; }
+    .support-panel-header {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      margin-bottom:6px;
+    }
+    .support-panel-text {
+      font-size:0.8rem;
+      color:#cbd5f5;
+      margin-bottom:8px;
+    }
+    .support-actions {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .support-actions a {
+      flex:1 1 140px;
+      text-align:center;
+      text-decoration:none;
+    }
   </style>
 </head>
 <body>
@@ -287,6 +382,26 @@
 
       <div id="activeRideMap"></div>
       <div id="activeRideInfo"></div>
+
+      <div class="section-title">Rider information</div>
+      <div id="driverRidersContainer" class="driver-riders-container"></div>
+
+      <button id="driverSupportButton" type="button" class="btn-secondary" style="margin-top:6px;">
+        Support
+      </button>
+      <div id="driverSupportPanel" class="support-panel">
+        <div class="support-panel-header">
+          <div style="font-weight:600;">RideSync support</div>
+          <button id="driverSupportBackButton" type="button" class="btn-small btn-secondary">Back</button>
+        </div>
+        <div class="support-panel-text">
+          Choose how to contact RideSync support.
+        </div>
+        <div class="support-actions">
+          <a id="driverSupportCallButton" class="btn-primary" href="#" role="button">Call support</a>
+          <a id="driverSupportTextButton" class="btn-secondary" href="#" role="button">Text support</a>
+        </div>
+      </div>
 
       <div class="section-title">Ride controls</div>
 
@@ -365,6 +480,11 @@
       measurementId: "G-K3ZD4YWSZZ"
     };
 
+    const SUPPORT_PHONE_NUMBER = "+14794221508";
+    const SUPPORT_TEL_LINK = `tel:${SUPPORT_PHONE_NUMBER}`;
+    const SUPPORT_SMS_LINK = `sms:${SUPPORT_PHONE_NUMBER}`;
+    const RIDER_PLACEHOLDER_AVATAR = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3MiIgaGVpZ2h0PSI3MiIgdmlld0JveD0iMCAwIDcyIDcyIj4KICA8cmVjdCB3aWR0aD0iNzIiIGhlaWdodD0iNzIiIHJ4PSIyMCIgZmlsbD0iIzAyMDYxNyIvPgogIDxwYXRoIGQ9Ik0zNiAzOWMtNyAwLTEyLjgtNS44LTEyLjgtMTIuOFMyOSAxMy41IDM2IDEzLjVzMTIuOCA1LjggMTIuOCAxMi44UzQzIDM5IDM2IDM5Wm0wIDQuOGM5LjUgMCAxOSAzLjUgMTkgOC45djMuNUgxN3YtMy41YzAtNS40IDkuNS04LjkgMTktOC45WiIgZmlsbD0iIzQ3NTU2OSIvPgo8L3N2Zz4=";
+
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
@@ -392,6 +512,12 @@
     const activeRideTag = document.getElementById("activeRideTag");
     const activeRideInfo = document.getElementById("activeRideInfo");
     const activeRideError = document.getElementById("activeRideError");
+    const driverRidersContainer = document.getElementById("driverRidersContainer");
+    const driverSupportButton = document.getElementById("driverSupportButton");
+    const driverSupportPanel = document.getElementById("driverSupportPanel");
+    const driverSupportBackButton = document.getElementById("driverSupportBackButton");
+    const driverSupportCallButton = document.getElementById("driverSupportCallButton");
+    const driverSupportTextButton = document.getElementById("driverSupportTextButton");
     const closeActiveRideButton = document.getElementById("closeActiveRideButton");
     const markArrivedButton = document.getElementById("markArrivedButton");
     const startTripButton = document.getElementById("startTripButton");
@@ -596,6 +722,154 @@
       return `<span class="tag tag-basic">${m}</span>`;
     }
 
+    function safeImageUrl(url) {
+      if (!url && url !== 0) return null;
+      const value = String(url).trim();
+      if (!value || value === "null" || value === "undefined") return null;
+      return value;
+    }
+
+    function formatPhoneDisplay(phone) {
+      if (!phone) return "";
+      const digits = phone.replace(/\D/g, "");
+      if (!digits) return "";
+      let clean = digits;
+      if (clean.length === 11 && clean.startsWith("1")) {
+        clean = clean.slice(1);
+      }
+      if (clean.length === 10) {
+        return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
+      }
+      return phone;
+    }
+
+    function membershipLabel(value) {
+      if (value === "uofa_unlimited") return "Membership: U of A Unlimited";
+      if (value === "nwa_unlimited") return "Membership: NWA Unlimited";
+      if (value === "basic") return "Membership: Basic";
+      if (!value) return "";
+      return `Membership: ${value}`;
+    }
+
+    function pickupLabel(rider) {
+      if (rider?.pickupAddress) return rider.pickupAddress;
+      if (rider?.fromAddress) return rider.fromAddress;
+      const loc = rider?.fromLocation;
+      if (loc && typeof loc.lat === "number" && typeof loc.lng === "number") {
+        return `${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}`;
+      }
+      return "";
+    }
+
+    function dropoffLabel(rider) {
+      return rider?.toDestination || rider?.toAddress || rider?.destAddress || "";
+    }
+
+    function buildDriverRiderCard(rider, index) {
+      const card = document.createElement("div");
+      card.className = "driver-rider-card";
+
+      const avatarWrapper = document.createElement("div");
+      avatarWrapper.className = "driver-rider-avatar";
+      const avatarImg = document.createElement("img");
+      avatarImg.alt = `Rider ${index + 1} avatar`;
+      const initialsDiv = document.createElement("div");
+      initialsDiv.className = "avatar-initials";
+      const displayName = rider?.riderName || `Rider ${index + 1}`;
+      initialsDiv.textContent = displayName
+        .split(" ")
+        .filter(Boolean)
+        .map((part) => part[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase() || "RS";
+      const photoUrl =
+        safeImageUrl(rider?.riderProfilePicUrl) ||
+        safeImageUrl(rider?.riderPhotoUrl) ||
+        safeImageUrl(rider?.riderAvatarUrl) ||
+        safeImageUrl(rider?.riderImageUrl) ||
+        null;
+      const finalSrc = photoUrl || RIDER_PLACEHOLDER_AVATAR;
+      avatarImg.src = finalSrc;
+      avatarImg.onerror = () => {
+        avatarWrapper.classList.remove("has-photo");
+        avatarImg.src = RIDER_PLACEHOLDER_AVATAR;
+      };
+      if (photoUrl) {
+        avatarWrapper.classList.add("has-photo");
+      }
+      avatarWrapper.appendChild(avatarImg);
+      avatarWrapper.appendChild(initialsDiv);
+
+      const body = document.createElement("div");
+      body.className = "driver-rider-body";
+
+      const labelEl = document.createElement("div");
+      labelEl.className = "driver-rider-label";
+      labelEl.textContent = `Rider ${index + 1}`;
+      body.appendChild(labelEl);
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "driver-rider-name";
+      nameEl.textContent = displayName;
+      body.appendChild(nameEl);
+
+      const membershipText = membershipLabel(rider?.membershipType || rider?.membership);
+      if (membershipText) {
+        const membershipEl = document.createElement("div");
+        membershipEl.className = "driver-rider-line";
+        membershipEl.textContent = membershipText;
+        body.appendChild(membershipEl);
+      }
+
+      const phoneText = formatPhoneDisplay(rider?.riderPhone || rider?.phone);
+      if (phoneText) {
+        const phoneEl = document.createElement("div");
+        phoneEl.className = "driver-rider-line";
+        phoneEl.textContent = `Phone: ${phoneText}`;
+        body.appendChild(phoneEl);
+      }
+
+      const pickupText = pickupLabel(rider);
+      if (pickupText) {
+        const pickupEl = document.createElement("div");
+        pickupEl.className = "driver-rider-line";
+        pickupEl.textContent = `Pickup: ${pickupText}`;
+        body.appendChild(pickupEl);
+      }
+
+      const dropoffText = dropoffLabel(rider);
+      if (dropoffText) {
+        const dropoffEl = document.createElement("div");
+        dropoffEl.className = "driver-rider-line";
+        dropoffEl.textContent = `Dropoff: ${dropoffText}`;
+        body.appendChild(dropoffEl);
+      }
+
+      card.appendChild(avatarWrapper);
+      card.appendChild(body);
+      return card;
+    }
+
+    function renderDriverRiderCards(riders) {
+      if (!driverRidersContainer) return;
+      driverRidersContainer.innerHTML = "";
+      if (!riders || !riders.length) {
+        const empty = document.createElement("div");
+        empty.className = "small";
+        empty.textContent = "Rider details will appear here once assigned.";
+        driverRidersContainer.appendChild(empty);
+        return;
+      }
+      riders.forEach((rider, index) => {
+        driverRidersContainer.appendChild(buildDriverRiderCard(rider, index));
+      });
+    }
+
+    function hideDriverSupportPanel() {
+      driverSupportPanel?.classList.remove("active");
+    }
+
     function renderRides(allRides) {
       ridesList.innerHTML = "";
       const allowedStatuses = ["pending_driver", "pool_searching", "pooled_pending_driver", "pending"];
@@ -737,15 +1011,69 @@
           currentDriverProfile = { ...currentDriverProfile, ...driverSnap.data() };
         }
 
+        const driverPhotoUrl =
+          currentDriverProfile?.profilePicUrl ||
+          currentDriverProfile?.avatarUrl ||
+          currentDriverProfile?.photoURL ||
+          null;
+        const driverVehicleName = [
+          currentDriverProfile?.vehicleYear,
+          currentDriverProfile?.vehicleColor,
+          currentDriverProfile?.vehicleMake,
+          currentDriverProfile?.vehicleModel
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const driverVehiclePhoto =
+          currentDriverProfile?.vehiclePhotoUrl ||
+          currentDriverProfile?.vehicleImageUrl ||
+          null;
+        const driverLicenseImage =
+          currentDriverProfile?.licensePicUrl ||
+          currentDriverProfile?.licenseImageUrl ||
+          null;
+        const driverPhone = currentDriverProfile?.phone || "";
+        const driverRating =
+          typeof currentDriverProfile?.rating === "number"
+            ? currentDriverProfile.rating
+            : null;
+        const driverRatingCount =
+          typeof currentDriverProfile?.ratingCount === "number"
+            ? currentDriverProfile.ratingCount
+            : null;
+
         const driverInfo = {
           driverId: currentUser.uid,
           driverEmail: currentUser.email || "",
           driverName: currentDriverProfile?.fullName || currentUser.email || "Driver",
-          driverPhotoUrl: currentDriverProfile?.profilePicUrl || null,
+          driverPhone,
+          driverPhotoUrl,
+          driverAvatarUrl: driverPhotoUrl,
+          driverProfilePicUrl: driverPhotoUrl,
           driverVehicleMake: currentDriverProfile?.vehicleMake || "",
           driverVehicleModel: currentDriverProfile?.vehicleModel || "",
           driverVehicleColor: currentDriverProfile?.vehicleColor || "",
+          driverVehicleYear: currentDriverProfile?.vehicleYear || "",
+          driverVehicleName,
+          driverVehicleDisplayName: driverVehicleName,
+          driverVehiclePhotoUrl: driverVehiclePhoto,
+          driverVehiclePlate: currentDriverProfile?.licensePlate || "",
           driverLicensePlate: currentDriverProfile?.licensePlate || "",
+          driverLicenseStatus: currentDriverProfile?.licenseStatus || null,
+          driverLicenseSummary: currentDriverProfile?.licenseStatus || null,
+          driverLicenseMeta: currentDriverProfile?.licenseMeta || null,
+          driverLicenseLast4: currentDriverProfile?.licenseLast4 || null,
+          driverLicenseImageUrl: driverLicenseImage,
+          driverLicensePhotoUrl: driverLicenseImage,
+          driverLicenseVerified: !!currentDriverProfile?.licenseVerified,
+          driverRating,
+          driverRatingCount,
+          driverVerifiedId: !!currentDriverProfile?.verifiedId,
+          driverDrugTestCleared: !!currentDriverProfile?.drugTestCleared,
+          driverBackgroundCheckCleared: !!currentDriverProfile?.backgroundCheckCleared,
+          driverContactViaRideSync: !driverPhone,
           status: "driver_assigned",
           assignedAt: serverTimestamp()
         };
@@ -772,6 +1100,7 @@
 
     function openActiveRideOverlay() {
       if (!activeRideGroup.length) return;
+      hideDriverSupportPanel();
       activeRideOverlay.classList.add("active");
       activeRideError.textContent = "";
 
@@ -809,6 +1138,7 @@
         .join("<br/>");
 
       activeRideInfo.innerHTML = ridersInfo;
+      renderDriverRiderCards(activeRideGroup);
 
       if (!activeRideMapObj) {
         activeRideMapObj = new google.maps.Map(document.getElementById("activeRideMap"), {
@@ -924,7 +1254,9 @@
         await batch.commit();
         driverMessage.textContent = "Ride canceled.";
         activeRideOverlay.classList.remove("active");
+        hideDriverSupportPanel();
         activeRideGroup = [];
+        renderDriverRiderCards([]);
       } catch (err) {
         console.error("cancelActiveRideAsDriver error", err);
         activeRideError.textContent = err.message || "Error canceling ride.";
@@ -950,7 +1282,9 @@
     completeTripButton.addEventListener("click", () => {
       updateActiveRideStatus("completed");
       activeRideOverlay.classList.remove("active");
+      hideDriverSupportPanel();
       activeRideGroup = [];
+      renderDriverRiderCards([]);
     });
 
     driverCancelButton.addEventListener("click", () => {
@@ -959,7 +1293,26 @@
 
     closeActiveRideButton.addEventListener("click", () => {
       activeRideOverlay.classList.remove("active");
+      hideDriverSupportPanel();
     });
+
+    if (driverSupportCallButton) {
+      driverSupportCallButton.href = SUPPORT_TEL_LINK;
+    }
+    if (driverSupportTextButton) {
+      driverSupportTextButton.href = SUPPORT_SMS_LINK;
+    }
+    if (driverSupportButton) {
+      driverSupportButton.addEventListener("click", () => {
+        driverSupportPanel?.classList.add("active");
+        driverSupportPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+    if (driverSupportBackButton) {
+      driverSupportBackButton.addEventListener("click", () => {
+        hideDriverSupportPanel();
+      });
+    }
   </script>
 </body>
 </html>
