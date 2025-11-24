@@ -5,9 +5,6 @@
   <title>RideSync – NWA & U of A</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Google Maps / Places -->
-  <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0&libraries=places"></script>
-
   <!-- Stripe placeholder (real payments wired later) -->
   <script src="https://js.stripe.com/v3"></script>
 
@@ -187,6 +184,55 @@
     .rider-header-text { flex: 1 1 auto; min-width: 0; }
     .rider-name { font-size: 1rem; font-weight: 600; }
     .rider-contact { font-size: 0.8rem; color: #9ca3af; }
+
+    .rider-info-card {
+      background: rgba(15,23,42,0.92);
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,0.5);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+    .rider-info-main {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .rider-info-text {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1 1 auto;
+    }
+    .rider-info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+    }
+    .rider-info-field {
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(2,6,23,0.85);
+      padding: 10px 12px;
+    }
+    .rider-info-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+      margin-bottom: 2px;
+    }
+    .rider-info-value {
+      font-size: 0.9rem;
+      color: #f9fafb;
+      word-break: break-word;
+    }
+    .rider-info-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
 
     .top-right {
       position: fixed;
@@ -650,36 +696,46 @@
     <div id="rideView">
       <h2>Rider information</h2>
 
-      <div class="rider-header">
-        <div id="avatar" class="rider-avatar">RS</div>
-        <div class="rider-header-text">
-          <div class="rider-name" id="riderName">Rider</div>
-          <div class="rider-contact" id="riderContact">Contact goes here</div>
-          <div id="membershipBadge" class="badge badge-basic">
-            <span id="membershipBadgeLabel">Basic</span>
-            <span class="badge-tag" id="membershipBadgeTag"></span>
+      <div id="riderInfoCard" class="rider-info-card">
+        <div class="rider-info-main">
+          <div id="avatar" class="rider-avatar">RS</div>
+          <div class="rider-info-text">
+            <div class="rider-name" id="riderName">Rider</div>
+            <div id="membershipBadge" class="badge badge-basic">
+              <span id="membershipBadgeLabel">Basic</span>
+              <span class="badge-tag" id="membershipBadgeTag"></span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div id="riderDetailsBox" class="fare-box" style="margin-top:4px;">
-        <div class="fare-row">
-          <div class="fare-label">Phone</div>
-          <div class="fare-value" id="riderPhoneDetail"></div>
+        <div class="rider-info-grid">
+          <div class="rider-info-field">
+            <div class="rider-info-label">Email</div>
+            <div class="rider-info-value" id="riderEmailDetail">you@example.com</div>
+          </div>
+          <div class="rider-info-field">
+            <div class="rider-info-label">Phone</div>
+            <div class="rider-info-value" id="riderPhoneDetail"></div>
+          </div>
+          <div class="rider-info-field">
+            <div class="rider-info-label">Address</div>
+            <div class="rider-info-value" id="riderAddressDetail"></div>
+          </div>
+          <div class="rider-info-field">
+            <div class="rider-info-label">Membership</div>
+            <div class="rider-info-value" id="riderMembershipDetail"></div>
+          </div>
         </div>
-        <div class="fare-row">
-          <div class="fare-label">Address</div>
-          <div class="fare-value" id="riderAddressDetail"></div>
+
+        <div class="rider-info-actions">
+          <button
+            id="editProfileButton"
+            type="button"
+            class="btn-secondary btn-small"
+          >
+            Edit profile
+          </button>
         </div>
-        <div class="fare-row">
-          <div class="fare-label">Membership</div>
-          <div class="fare-value" id="riderMembershipDetail"></div>
-        </div>
-        <button id="editProfileButton" type="button"
-                class="btn-secondary btn-small"
-                style="margin-top:6px;">
-          Edit profile
-        </button>
       </div>
 
       <!-- Inline edit form -->
@@ -835,7 +891,6 @@
               <div id="riderOverlayTitle" class="overlay-title">RideSync</div>
               <div id="riderOverlaySubtitle" class="overlay-subtitle"></div>
             </div>
-            <button id="closeRiderOverlayButton" class="overlay-close" type="button">Close</button>
           </div>
 
           <div id="riderStateSearching" class="rider-state">
@@ -1062,12 +1117,62 @@
       return window.__rideSyncConfigPromise;
     }
 
+    function loadGoogleMapsSdk({ apiKey, libraries = [] } = {}) {
+      if (window.__rideSyncMapsPromise) {
+        return window.__rideSyncMapsPromise;
+      }
+
+      window.__rideSyncMapsPromise = new Promise((resolve, reject) => {
+        if (window.google && window.google.maps) {
+          resolve(window.google.maps);
+          return;
+        }
+
+        if (!apiKey) {
+          reject(new Error("Missing Google Maps API key"));
+          return;
+        }
+
+        const params = new URLSearchParams({ key: apiKey });
+        if (libraries.length) {
+          params.set("libraries", libraries.join(","));
+        }
+
+        const script = document.createElement("script");
+        script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+          if (window.google && window.google.maps) {
+            resolve(window.google.maps);
+          } else {
+            reject(new Error("Google Maps SDK loaded without maps namespace."));
+          }
+        };
+        script.onerror = () => reject(new Error("Google Maps SDK failed to load."));
+        document.head.appendChild(script);
+      }).catch((err) => {
+        window.__rideSyncMapsPromise = null;
+        throw err;
+      });
+
+      return window.__rideSyncMapsPromise;
+    }
+
     const APP_CONFIG = await loadAppConfig();
     const firebaseConfig = APP_CONFIG.firebaseConfig || {};
     const supportConfig = APP_CONFIG.support || {};
     const geoConfig = APP_CONFIG.geo || {};
     const ridePolicyConfig = APP_CONFIG.ridePolicy || {};
     const placeholderConfig = APP_CONFIG.placeholders || {};
+    const mapsConfig = APP_CONFIG.maps || APP_CONFIG.googleMaps || {};
+    const DEFAULT_MAPS_API_KEY = "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0";
+    const mapsApiKey = mapsConfig.apiKey || DEFAULT_MAPS_API_KEY;
+    const mapsLibraries =
+      Array.isArray(mapsConfig.libraries) && mapsConfig.libraries.length
+        ? mapsConfig.libraries
+        : ["places"];
+    let googleMapsLoadFailed = false;
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
@@ -1133,11 +1238,11 @@
 
     const avatarEl = document.getElementById("avatar");
     const riderNameEl = document.getElementById("riderName");
-    const riderContactEl = document.getElementById("riderContact");
     const membershipBadgeEl = document.getElementById("membershipBadge");
     const membershipBadgeLabelEl = document.getElementById("membershipBadgeLabel");
     const membershipBadgeTagEl = document.getElementById("membershipBadgeTag");
 
+    const riderEmailDetailEl = document.getElementById("riderEmailDetail");
     const riderPhoneDetailEl = document.getElementById("riderPhoneDetail");
     const riderAddressDetailEl = document.getElementById("riderAddressDetail");
     const riderMembershipDetailEl = document.getElementById("riderMembershipDetail");
@@ -1188,12 +1293,22 @@
     const groupOccupancyLabel = document.getElementById("groupOccupancyLabel");
     let groupQr = null;
 
+    try {
+      await loadGoogleMapsSdk({ apiKey: mapsApiKey, libraries: mapsLibraries });
+    } catch (err) {
+      googleMapsLoadFailed = true;
+      console.error("Google Maps SDK failed to load", err);
+      if (profileError) {
+        profileError.textContent =
+          "Unable to load maps right now. Please refresh or verify the Maps API key.";
+      }
+    }
+
     // Rider active-ride overlay + mini bar + summary
     const riderOverlay = document.getElementById("riderOverlay");
     const riderOverlayTitle = document.getElementById("riderOverlayTitle");
     const riderOverlaySubtitle = document.getElementById("riderOverlaySubtitle");
     const riderOverlayError = document.getElementById("riderOverlayError");
-    const closeRiderOverlayButton = document.getElementById("closeRiderOverlayButton");
     const riderStateElements = {
       searching: document.getElementById("riderStateSearching"),
       driverEta: document.getElementById("riderStateDriverEta"),
@@ -1270,7 +1385,6 @@
     };
 
     let riderOverlayState = RIDER_STATES.HIDDEN;
-    let riderOverlayDismissed = false;
     let selectedRating = 0;
     let selectedTipValue = 0;
     let tipIsCustom = false;
@@ -1338,7 +1452,6 @@
       function returnToHomeAfterRide(message = "", isError = false) {
         clearCurrentRideState();
         setRiderOverlayState(RIDER_STATES.HIDDEN);
-        riderOverlayDismissed = false;
         supportPanel?.classList.remove("active");
         if (rideSummary) rideSummary.style.display = "none";
         showRideView();
@@ -1761,7 +1874,9 @@
       const phone = p.phone || p.phoneNumber || "";
 
       riderNameEl.textContent = name;
-      riderContactEl.textContent = [p.email, phone].filter(Boolean).join(" • ");
+      if (riderEmailDetailEl) {
+        riderEmailDetailEl.textContent = p.email || "Not set";
+      }
 
       riderPhoneDetailEl.textContent = phone || "Not set";
       const addressParts = [
@@ -1903,6 +2018,8 @@
     }
 
     function initMapOnce() {
+      if (googleMapsLoadFailed) return;
+      if (!window.google || !google.maps) return;
       if (map) return;
       map = new google.maps.Map(mapEl, {
         center: { lat: 36.06, lng: -94.16 },
@@ -1955,6 +2072,8 @@
     }
 
     function setupDestinationAutocomplete() {
+      if (googleMapsLoadFailed) return;
+      if (!window.google || !google.maps || !google.maps.places) return;
       if (!destAutocomplete && window.google && google.maps.places) {
         destAutocomplete = new google.maps.places.Autocomplete(destinationEl, {
           types: ["geocode"],
@@ -1979,6 +2098,8 @@
     }
 
     async function updateRouteAndFare() {
+      if (googleMapsLoadFailed) return;
+      if (!window.google || !google.maps) return;
       profileError.textContent = "";
       if (!currentLocation || !destinationLatLng || !directionsService) {
         return;
@@ -2315,8 +2436,7 @@
       }
     }
 
-    function setRiderOverlayState(state, options = {}) {
-      const { forceReveal = false } = options;
+    function setRiderOverlayState(state) {
       riderOverlayState = state;
       if (state === RIDER_STATES.HIDDEN) {
         if (driverInfoStack) {
@@ -2325,9 +2445,6 @@
         riderOverlay?.classList.remove("active");
         return;
       }
-      if (forceReveal) {
-        riderOverlayDismissed = false;
-      }
 
       Object.values(riderStateElements).forEach((el) => el?.classList.remove("active"));
       const target = getStateElementByState(state);
@@ -2335,9 +2452,7 @@
         target.classList.add("active");
       }
 
-      if (!riderOverlayDismissed) {
-        riderOverlay?.classList.add("active");
-      }
+      riderOverlay?.classList.add("active");
 
       if (driverInfoStack) {
         const needsDriverInfo =
@@ -2419,46 +2534,46 @@
         case "pool_searching":
         case "pooled_pending_driver":
           setOverlayCopy("Syncing your ride", "Looking for a verified driver…");
-          setRiderOverlayState(RIDER_STATES.SEARCHING, { forceReveal: true });
+          setRiderOverlayState(RIDER_STATES.SEARCHING);
           break;
         case "driver_assigned":
           updateDriverModules(data);
           setOverlayCopy("Driver en route", destinationLabel);
-          setRiderOverlayState(RIDER_STATES.DRIVER_TO_PICKUP, { forceReveal: true });
+          setRiderOverlayState(RIDER_STATES.DRIVER_TO_PICKUP);
           break;
         case "arrived_at_pickup":
           updatePickupPinDisplay(getPickupCodeFromRide(data));
           setOverlayCopy("Share your pickup code", "Only give this to your driver.");
-          setRiderOverlayState(RIDER_STATES.PICKUP_PIN, { forceReveal: true });
+          setRiderOverlayState(RIDER_STATES.PICKUP_PIN);
           break;
         case "pickup_code_verified":
           updateDriverModules(data);
           riderTripEtaText.textContent =
             formatTripEstimate(data) || "Sit back and relax.";
           setOverlayCopy("On the way", destinationLabel);
-          setRiderOverlayState(RIDER_STATES.IN_TRIP, { forceReveal: true });
+          setRiderOverlayState(RIDER_STATES.IN_TRIP);
           break;
         case "arrived_at_dropoff":
           updateDropoffPinDisplay(getDropoffCodeFromRide(data));
           setOverlayCopy("Share your dropoff code", "Tell your driver to finish the ride.");
-          setRiderOverlayState(RIDER_STATES.DROPOFF_PIN, { forceReveal: true });
+          setRiderOverlayState(RIDER_STATES.DROPOFF_PIN);
           break;
         case "dropoff_code_verified":
         case "completed":
           if (hasRiderRating(data)) {
             setOverlayCopy("All set", "Thanks for riding with RideSync.");
-            setRiderOverlayState(RIDER_STATES.THANKS, { forceReveal: true });
+            setRiderOverlayState(RIDER_STATES.THANKS);
             setTimeout(() => returnToHomeAfterRide("Thanks for riding!"), 1800);
           } else {
             resetRatingForm();
             setOverlayCopy("Rate & tip", "Let us know how it went.");
-            setRiderOverlayState(RIDER_STATES.RATE_TIP, { forceReveal: true });
+            setRiderOverlayState(RIDER_STATES.RATE_TIP);
           }
           break;
         default:
           updateDriverModules(data);
           setOverlayCopy("Ride update", destinationLabel);
-          setRiderOverlayState(RIDER_STATES.DRIVER_TO_PICKUP, { forceReveal: true });
+          setRiderOverlayState(RIDER_STATES.DRIVER_TO_PICKUP);
       }
     }
 
@@ -2683,14 +2798,6 @@
     }
     if (submitRatingButton) {
       submitRatingButton.addEventListener("click", submitRatingAndTip);
-    }
-
-    if (closeRiderOverlayButton && riderOverlay) {
-      closeRiderOverlayButton.addEventListener("click", () => {
-        riderOverlayDismissed = true;
-        riderOverlay.classList.remove("active");
-        supportPanel?.classList.remove("active");
-      });
     }
 
     if (supportCallButton) {
@@ -3063,6 +3170,7 @@
     }
 
       function ensureBackgroundMapReady() {
+        if (googleMapsLoadFailed) return;
         if (map) return;
         if (window.google && google.maps) {
           initMapOnce();
@@ -3072,6 +3180,7 @@
       }
 
       function trySetupAutocompleteEarly() {
+        if (googleMapsLoadFailed) return;
         if (!window.google || !google.maps || !google.maps.places) {
           setTimeout(trySetupAutocompleteEarly, 800);
           return;
