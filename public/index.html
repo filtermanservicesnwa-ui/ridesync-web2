@@ -442,8 +442,7 @@
     }
     .driver-identity-card,
     .driver-vehicle-card,
-    .driver-license-card,
-    .eta-card {
+    .driver-license-card {
       border: none;
       border-radius: 0;
       padding: 0;
@@ -578,32 +577,40 @@
       font-size: 0.75rem;
       color: #94a3b8;
     }
-    .eta-card {
-      display: none;
-      align-items: center;
-      gap: 12px;
+    .driver-identity-eta {
+      font-size: 0.85rem;
+      color: #cbd5f5;
+      margin-top: 10px;
     }
-    .eta-avatar {
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
-      border: 1px solid rgba(148,163,184,0.7);
-      overflow: hidden;
-      background: #0f172a;
+    .driver-mini-map-shell {
       position: relative;
-      flex-shrink: 0;
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.35);
+      margin-top: 12px;
+      overflow: hidden;
+      min-height: 180px;
+      background: rgba(15,23,42,0.9);
+      display: none;
     }
-    .eta-text {
-      font-size: 0.8rem;
-      color: #e5e7eb;
+    .driver-mini-map {
+      width: 100%;
+      height: 200px;
     }
-    .eta-driver-label {
-      font-weight: 600;
-      margin-bottom: 2px;
+    .driver-mini-map-status {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      color: #cbd5f5;
+      background: rgba(2,6,23,0.9);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
     }
-    .eta-driver-status {
-      color: #bbf7d0;
-      margin-bottom: 1px;
+    .driver-mini-map-shell.show-status .driver-mini-map-status {
+      opacity: 1;
     }
     .support-panel {
       display: none;
@@ -1084,6 +1091,13 @@
                 </div>
               </div>
               <div id="driverIdentityBadges" class="driver-identity-badges"></div>
+              <div id="driverIdentityEta" class="driver-identity-eta"></div>
+              <div id="driverMiniMapShell" class="driver-mini-map-shell">
+                <div id="driverMiniMap" class="driver-mini-map"></div>
+                <div id="driverMiniMapStatus" class="driver-mini-map-status">
+                  Waiting for driver location…
+                </div>
+              </div>
             </div>
 
             <div id="driverVehicleSection" class="driver-vehicle-card">
@@ -1112,18 +1126,6 @@
                   <div id="driverLicenseSummary" class="driver-license-summary"></div>
                   <div id="driverLicenseMeta" class="driver-license-meta"></div>
                 </div>
-              </div>
-            </div>
-
-            <div id="etaCard" class="eta-card">
-              <div class="eta-avatar">
-                <img id="etaDriverAvatarImg" alt="Driver ETA avatar" />
-                <div id="etaDriverAvatarFallback" class="avatar-fallback">RS</div>
-              </div>
-              <div class="eta-text">
-                <div id="etaDriverLabel" class="eta-driver-label"></div>
-                <div id="etaDriverStatus" class="eta-driver-status"></div>
-                <div id="etaDriverEta"></div>
               </div>
             </div>
 
@@ -1461,6 +1463,10 @@
     const driverIdentityPhoneRow = document.getElementById("driverIdentityPhoneRow");
     const driverIdentityPhoneEl = document.getElementById("driverIdentityPhone");
     const driverIdentityBadgesEl = document.getElementById("driverIdentityBadges");
+    const driverIdentityEtaEl = document.getElementById("driverIdentityEta");
+    const driverMiniMapShell = document.getElementById("driverMiniMapShell");
+    const driverMiniMapEl = document.getElementById("driverMiniMap");
+    const driverMiniMapStatusEl = document.getElementById("driverMiniMapStatus");
 
     const driverVehicleSection = document.getElementById("driverVehicleSection");
     const driverVehiclePhotoImg = document.getElementById("driverVehiclePhoto");
@@ -1474,13 +1480,6 @@
     const driverLicenseFallbackEl = document.getElementById("driverLicenseFallback");
     const driverLicenseSummaryEl = document.getElementById("driverLicenseSummary");
     const driverLicenseMetaEl = document.getElementById("driverLicenseMeta");
-
-    const etaCardEl = document.getElementById("etaCard");
-    const etaDriverAvatarImg = document.getElementById("etaDriverAvatarImg");
-    const etaDriverAvatarFallback = document.getElementById("etaDriverAvatarFallback");
-    const etaDriverLabelEl = document.getElementById("etaDriverLabel");
-    const etaDriverStatusEl = document.getElementById("etaDriverStatus");
-    const etaDriverEtaEl = document.getElementById("etaDriverEta");
 
     const supportPanel = document.getElementById("supportPanel");
     const supportBackButton = document.getElementById("supportBackButton");
@@ -1522,6 +1521,11 @@
     let destinationPreviewMap;
     let destinationPreviewPickupMarker;
     let destinationPreviewDestMarker;
+    let driverMiniMap;
+    let driverMiniMapDriverMarker;
+    let driverMiniMapPickupMarker;
+    let driverMiniMapDropoffMarker;
+    let lastDriverMiniMapData = null;
     let currentLocation = null;
     let destinationLatLng = null;
     let destAutocomplete = null;
@@ -1643,6 +1647,90 @@
       }
     }
 
+    function parseLatLngCandidate(value) {
+      if (!value) return null;
+      if (typeof value.lat === "number" && typeof value.lng === "number") {
+        return { lat: value.lat, lng: value.lng };
+      }
+      if (typeof value.latitude === "number" && typeof value.longitude === "number") {
+        return { lat: value.latitude, lng: value.longitude };
+      }
+      return null;
+    }
+
+    function extractLatLngFromPairs(target, pairs) {
+      for (const [latKey, lngKey] of pairs) {
+        const lat = target?.[latKey];
+        const lng = target?.[lngKey];
+        if (typeof lat === "number" && typeof lng === "number") {
+          return { lat, lng };
+        }
+      }
+      return null;
+    }
+
+    function extractPickupLocationFromRide(data) {
+      if (!data) return null;
+      const candidates = [
+        data.pickupLocation,
+        data.fromLocation,
+        data.originLocation,
+        data.pickupGeo,
+        data.pickupCoordinates,
+        data.fromCoordinates
+      ];
+      for (const candidate of candidates) {
+        const parsed = parseLatLngCandidate(candidate);
+        if (parsed) return parsed;
+      }
+      return extractLatLngFromPairs(data, [
+        ["pickupLat", "pickupLng"],
+        ["fromLat", "fromLng"],
+        ["originLat", "originLng"]
+      ]);
+    }
+
+    function extractDropoffLocationFromRide(data) {
+      if (!data) return null;
+      const candidates = [
+        data.dropoffLocation,
+        data.toLocation,
+        data.destinationLocation,
+        data.destLocation,
+        data.dropoffGeo,
+        data.toCoordinates,
+        data.destCoordinates
+      ];
+      for (const candidate of candidates) {
+        const parsed = parseLatLngCandidate(candidate);
+        if (parsed) return parsed;
+      }
+      return extractLatLngFromPairs(data, [
+        ["dropoffLat", "dropoffLng"],
+        ["destLat", "destLng"],
+        ["toLat", "toLng"],
+        ["destinationLat", "destinationLng"]
+      ]);
+    }
+
+    function extractDriverLocation(data) {
+      if (!data) return null;
+      const candidates = [
+        data.driverLocation,
+        data.driverCurrentLocation,
+        data.currentDriverLocation
+      ];
+      for (const candidate of candidates) {
+        const parsed = parseLatLngCandidate(candidate);
+        if (parsed) return parsed;
+      }
+      return extractLatLngFromPairs(data, [
+        ["driverLat", "driverLng"],
+        ["driverLatitude", "driverLongitude"],
+        ["driverCurrentLat", "driverCurrentLng"]
+      ]);
+    }
+
     function formatPhoneDisplay(phone) {
       if (!phone) return "";
       const digits = phone.replace(/\D/g, "");
@@ -1722,6 +1810,19 @@
         driverIdentityPhoneRow?.classList.add("hidden");
       }
 
+      if (driverIdentityEtaEl) {
+        const statusCopy = friendlyDriverStatus(data);
+        const etaCopy = formatDriverEtaText(data);
+        const combined = [statusCopy, etaCopy].filter(Boolean).join(" • ");
+        if (combined) {
+          driverIdentityEtaEl.textContent = combined;
+          driverIdentityEtaEl.style.display = "block";
+        } else {
+          driverIdentityEtaEl.textContent = "";
+          driverIdentityEtaEl.style.display = "none";
+        }
+      }
+
       renderDriverBadges(data);
     }
 
@@ -1779,6 +1880,161 @@
       driverLicenseMetaEl.style.display = licenseMeta ? "block" : "none";
     }
 
+    function ensureDriverMiniMap() {
+      if (googleMapsLoadFailed) return false;
+      if (!driverMiniMapEl) return false;
+      if (!window.google || !google.maps) return false;
+      if (!driverMiniMap) {
+        driverMiniMap = new google.maps.Map(driverMiniMapEl, {
+          center: { lat: 36.0626, lng: -94.1574 },
+          zoom: 13,
+          disableDefaultUI: true,
+          gestureHandling: "none",
+          clickableIcons: false
+        });
+        driverMiniMapDriverMarker = new google.maps.Marker({
+          map: driverMiniMap,
+          visible: false,
+          zIndex: 3,
+          icon: {
+            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+            scale: 5,
+            fillColor: "#f97316",
+            fillOpacity: 1,
+            strokeColor: "#fed7aa",
+            strokeWeight: 1
+          }
+        });
+        driverMiniMapPickupMarker = new google.maps.Marker({
+          map: driverMiniMap,
+          visible: false,
+          zIndex: 2,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 6,
+            fillColor: "#22c55e",
+            fillOpacity: 1,
+            strokeColor: "#022c22",
+            strokeWeight: 2
+          }
+        });
+        driverMiniMapDropoffMarker = new google.maps.Marker({
+          map: driverMiniMap,
+          visible: false,
+          zIndex: 1,
+          icon: "https://maps.gstatic.com/mapfiles/api-3/images/spotlight-poi2_hdpi.png"
+        });
+      }
+      return true;
+    }
+
+    function setDriverMiniMapStatus(message) {
+      if (!driverMiniMapShell || !driverMiniMapStatusEl) return;
+      if (message) {
+        driverMiniMapShell.classList.add("show-status");
+        driverMiniMapStatusEl.textContent = message;
+      } else {
+        driverMiniMapShell.classList.remove("show-status");
+        driverMiniMapStatusEl.textContent = "";
+      }
+    }
+
+    function updateDriverMiniMap(data) {
+      if (data) {
+        lastDriverMiniMapData = data;
+      } else if (lastDriverMiniMapData) {
+        data = lastDriverMiniMapData;
+      } else {
+        return;
+      }
+      if (!driverMiniMapShell) return;
+
+      const status = (data?.status || "").toLowerCase();
+      const shouldShow =
+        status === "driver_assigned" ||
+        status === "driver_arrived" ||
+        status === "pickup_code_verified" ||
+        status === "in_progress";
+
+      if (!shouldShow) {
+        driverMiniMapShell.style.display = "none";
+        setDriverMiniMapStatus("");
+        return;
+      }
+
+      driverMiniMapShell.style.display = "block";
+
+      if (!ensureDriverMiniMap()) {
+        setDriverMiniMapStatus(googleMapsLoadFailed ? "Maps unavailable." : "Loading map…");
+        return;
+      }
+
+      const driverLoc = extractDriverLocation(data);
+      const pickupLoc = extractPickupLocationFromRide(data);
+      const dropoffLoc = extractDropoffLocationFromRide(data);
+
+      if (!driverLoc) {
+        setDriverMiniMapStatus("Waiting for driver location…");
+      } else {
+        setDriverMiniMapStatus("");
+      }
+
+      if (driverMiniMapDriverMarker) {
+        driverMiniMapDriverMarker.setVisible(!!driverLoc);
+        if (driverLoc) {
+          driverMiniMapDriverMarker.setPosition(driverLoc);
+          const heading =
+            typeof data?.driverHeading === "number"
+              ? data.driverHeading
+              : typeof data?.driverHeadingDeg === "number"
+              ? data.driverHeadingDeg
+              : null;
+          if (heading != null && driverMiniMapDriverMarker.getIcon()) {
+            const icon = { ...driverMiniMapDriverMarker.getIcon(), rotation: heading };
+            driverMiniMapDriverMarker.setIcon(icon);
+          }
+        }
+      }
+
+      if (driverMiniMapPickupMarker) {
+        driverMiniMapPickupMarker.setVisible(!!pickupLoc);
+        if (pickupLoc) {
+          driverMiniMapPickupMarker.setPosition(pickupLoc);
+        }
+      }
+
+      if (driverMiniMapDropoffMarker) {
+        driverMiniMapDropoffMarker.setVisible(!!dropoffLoc);
+        if (dropoffLoc) {
+          driverMiniMapDropoffMarker.setPosition(dropoffLoc);
+        }
+      }
+
+      const bounds = new google.maps.LatLngBounds();
+      let hasBounds = false;
+      [driverLoc, pickupLoc, dropoffLoc].forEach((loc) => {
+        if (loc) {
+          bounds.extend(loc);
+          hasBounds = true;
+        }
+      });
+
+      if (hasBounds) {
+        driverMiniMap.fitBounds(bounds, 30);
+      } else {
+        driverMiniMap.setCenter({ lat: 36.0626, lng: -94.1574 });
+        driverMiniMap.setZoom(12);
+      }
+    }
+
+    function refreshDriverMiniMap() {
+      if (!driverMiniMap || !driverMiniMapShell || driverMiniMapShell.style.display === "none") {
+        return;
+      }
+      google.maps.event.trigger(driverMiniMap, "resize");
+      updateDriverMiniMap();
+    }
+
     function friendlyDriverStatus(data) {
       if (!data?.status) return "";
       if (data.status === "driver_arrived") return "Driver has arrived";
@@ -1788,30 +2044,17 @@
       return data.status.replaceAll("_", " ");
     }
 
-    function renderEtaCard(data) {
-      if (!etaCardEl) return;
-      const shouldShow =
-        data?.status === "driver_assigned" ||
-        data?.status === "driver_arrived" ||
-        data?.status === "in_progress";
-      if (!shouldShow) {
-        etaCardEl.style.display = "none";
-        return;
+    function formatDriverEtaText(data) {
+      if (!data) return "";
+      if (typeof data.driverEtaMinutes === "number") {
+        const eta = Math.max(0, data.driverEtaMinutes);
+        return eta < 1 ? "Less than a minute away" : `Approx. ${Math.round(eta)} min away`;
       }
-      etaCardEl.style.display = "flex";
-      const avatarUrl =
-        safeImageUrl(data?.driverAvatarUrl) ||
-        safeImageUrl(data?.driverPhotoUrl) ||
-        safeImageUrl(data?.driverProfilePicUrl);
-      applyImage(etaDriverAvatarImg, etaDriverAvatarFallback, avatarUrl, DRIVER_PLACEHOLDER_AVATAR);
-      etaDriverLabelEl.textContent = data?.driverName ? `Driver: ${data.driverName}` : "Driver assigned";
-      etaDriverStatusEl.textContent = friendlyDriverStatus(data);
-      const etaCopy =
-        typeof data?.driverEtaMinutes === "number"
-          ? `Approx. ${Math.max(1, Math.round(data.driverEtaMinutes))} min away`
-          : formatTripEstimate(data);
-      etaDriverEtaEl.textContent = etaCopy || "";
-      etaDriverEtaEl.style.display = etaCopy ? "block" : "none";
+      if (typeof data.remainingEtaMinutes === "number") {
+        const remaining = Math.max(0, data.remainingEtaMinutes);
+        return remaining < 1 ? "Almost there" : `About ${Math.round(remaining)} min remaining`;
+      }
+      return formatTripEstimate(data) || "";
     }
 
     function showAuthView() {
@@ -2746,6 +2989,10 @@
         if (driverInfoStack) {
           driverInfoStack.style.display = "none";
         }
+        if (driverMiniMapShell) {
+          driverMiniMapShell.style.display = "none";
+          setDriverMiniMapStatus("");
+        }
         riderOverlay?.classList.remove("active");
         return;
       }
@@ -2767,9 +3014,14 @@
           if (slot) {
             slot.appendChild(driverInfoStack);
             driverInfoStack.style.display = "flex";
+            refreshDriverMiniMap();
           }
         } else {
           driverInfoStack.style.display = "none";
+          if (driverMiniMapShell) {
+            driverMiniMapShell.style.display = "none";
+            setDriverMiniMapStatus("");
+          }
         }
       }
     }
@@ -2783,7 +3035,7 @@
       renderDriverIdentity(data);
       renderVehicleSection(data);
       renderLicenseSection(data);
-      renderEtaCard(data);
+      updateDriverMiniMap(data);
       supportPanel?.classList.remove("active");
     }
 

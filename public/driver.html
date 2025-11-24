@@ -224,12 +224,21 @@
       flex-direction: column;
       gap: 16px;
       box-shadow: 0 30px 80px rgba(0,0,0,0.65);
+      position: relative;
     }
     .driver-overlay-top {
       display: flex;
       justify-content: space-between;
       gap: 12px;
       align-items: flex-start;
+    }
+    .driver-cancel-button {
+      position: sticky;
+      bottom: 0;
+      width: 100%;
+      margin-top: auto;
+      z-index: 5;
+      box-shadow: 0 -8px 18px rgba(2,6,23,0.85);
     }
     .driver-rider-bar {
       flex: 1 1 auto;
@@ -830,7 +839,9 @@
           </button>
         </div>
 
-        <button id="driverCancelRideLink" class="btn-danger" type="button">Cancel ride</button>
+        <button id="driverCancelRideLink" class="btn-danger driver-cancel-button" type="button">
+          Cancel ride
+        </button>
         <div id="activeRideError" class="error"></div>
       </div>
     </div>
@@ -1084,6 +1095,11 @@
     let activePickupLocation = null;
     let activeDropoffLocation = null;
     let geofenceOverride = false;
+    const DRIVER_LOCATION_PUSH_INTERVAL_MS = 5000;
+    const DRIVER_LOCATION_MIN_DELTA_METERS = 8;
+    let lastDriverLocationPushAt = 0;
+    let lastDriverLocationSent = null;
+    let driverLocationUpdatePromise = null;
     let rideOfferQueue = [];
     const seenRideOfferIds = new Set();
     const NAV_ROUTE_REFRESH_MS = 15000;
@@ -1506,6 +1522,7 @@
               title: "You"
             });
             evaluateDropoffGeofence();
+            pushDriverLocationToFirestore(pos);
           },
           () => {}
         );
@@ -2663,6 +2680,70 @@
       openNavigationInGoogleMaps(activeDropoffLocation);
     }
 
+    function shouldSkipDriverLocationPush(nextPosition) {
+      if (!nextPosition) return true;
+      const now = Date.now();
+      if (!lastDriverLocationSent) return false;
+      const movedMeters = haversineMeters(lastDriverLocationSent, nextPosition);
+      if (movedMeters >= DRIVER_LOCATION_MIN_DELTA_METERS) {
+        return false;
+      }
+      return now - lastDriverLocationPushAt < DRIVER_LOCATION_PUSH_INTERVAL_MS;
+    }
+
+    function normalizedHeading(value) {
+      if (typeof value !== "number" || Number.isNaN(value)) return null;
+      return ((value % 360) + 360) % 360;
+    }
+
+    async function pushDriverLocationToFirestore(position) {
+      if (!currentUser || !driverCurrentPosition) return;
+      if (shouldSkipDriverLocationPush(driverCurrentPosition)) return;
+      if (driverLocationUpdatePromise) return;
+
+      const heading = normalizedHeading(position?.coords?.heading);
+      const speed = Number.isFinite(position?.coords?.speed) ? position.coords.speed : null;
+      const timestamp = serverTimestamp();
+      const payload = {
+        currentLat: driverCurrentPosition.lat,
+        currentLng: driverCurrentPosition.lng,
+        currentLocation: { ...driverCurrentPosition },
+        currentHeading: heading,
+        currentSpeedMps: speed,
+        currentLocationUpdatedAt: timestamp
+      };
+
+      driverLocationUpdatePromise = (async () => {
+        try {
+          const batch = writeBatch(db);
+          const driverRef = doc(db, "drivers", currentUser.uid);
+          batch.set(driverRef, payload, { merge: true });
+
+          if (activeRideGroup.length) {
+            activeRideGroup.forEach((ride) => {
+              const rideRef = doc(db, "rideRequests", ride.id);
+              batch.update(rideRef, {
+                driverLat: driverCurrentPosition.lat,
+                driverLng: driverCurrentPosition.lng,
+                driverLocation: { ...driverCurrentPosition },
+                driverHeading: heading,
+                driverSpeedMps: speed,
+                driverLocationUpdatedAt: timestamp
+              });
+            });
+          }
+
+          await batch.commit();
+          lastDriverLocationPushAt = Date.now();
+          lastDriverLocationSent = { ...driverCurrentPosition };
+        } catch (err) {
+          console.warn("pushDriverLocationToFirestore error", err);
+        } finally {
+          driverLocationUpdatePromise = null;
+        }
+      })();
+    }
+
     function startDriverLocationWatch() {
       if (!navigator.geolocation || driverLocationWatcherId) return;
       driverLocationWatcherId = navigator.geolocation.watchPosition(
@@ -2676,6 +2757,7 @@
           }
           evaluateDropoffGeofence();
           refreshNavigationRoutes();
+          pushDriverLocationToFirestore(pos);
         },
         (err) => {
           console.warn("watchPosition error", err);
