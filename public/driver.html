@@ -2333,10 +2333,24 @@
     }
 
     async function cancelActiveRideAsDriver() {
-      if (!activeRideGroup.length) return;
       activeRideError.textContent = "";
       driverError.textContent = "";
+      if (driverCancelRideLink) {
+        driverCancelRideLink.disabled = true;
+      }
       try {
+        if (!activeRideGroup.length) {
+          if (pendingRideOffer) {
+            await handleDriverOfferReject();
+            if (!pendingRideOffer) {
+              driverMessage.textContent = "Ride canceled.";
+            }
+          } else {
+            setDriverOverlayState(DRIVER_STATES.HIDDEN);
+          }
+          return;
+        }
+
         const batch = writeBatch(db);
         activeRideGroup.forEach((r) => {
           const ref = doc(db, "rideRequests", r.id);
@@ -2351,6 +2365,10 @@
       } catch (err) {
         console.error("cancelActiveRideAsDriver error", err);
         activeRideError.textContent = err.message || "Error canceling ride.";
+      } finally {
+        if (driverCancelRideLink) {
+          driverCancelRideLink.disabled = false;
+        }
       }
     }
 
