@@ -952,7 +952,7 @@ exports.finalizeRidePayment = functions.https.onCall(
 
     const pendingRef = db.collection("pendingRidePayments").doc(pendingId);
     const pendingSnap = await pendingRef.get();
-    if (!pendingSnap.exists()) {
+    if (!pendingSnap.exists) {
       throw new functions.https.HttpsError(
         "not-found",
         "Pending ride payment not found."
