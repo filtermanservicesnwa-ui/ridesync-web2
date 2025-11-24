@@ -9,6 +9,56 @@ if (!admin.apps.length) {
 }
 
 const db = admin.firestore();
+const FieldValue = admin.firestore.FieldValue;
+const Timestamp = admin.firestore.Timestamp;
+
+const MAX_POOL_DISTANCE_KM = 3;
+const CANDIDATE_LOOKBACK_MINUTES = 10;
+const UOFA_PENDING_STATUSES = [
+  "pending_driver",
+  "pool_searching",
+  "pooled_pending_driver",
+];
+
+function extractUofaRideDetails(ride = {}) {
+  return {
+    membershipType: ride.membershipType || ride.membership || "",
+    isVerified: !!(ride.uofaVerified || ride.isUofaVerified),
+    riderCount:
+      ride.numRiders !== undefined
+        ? ride.numRiders
+        : ride.riderCount !== undefined
+        ? ride.riderCount
+        : 1,
+    pickupCity: (ride.pickupCity || ride.city || "").toLowerCase(),
+    fromLocation: ride.fromLocation || ride.pickupLocation,
+  };
+}
+
+function hasValidLocation(loc) {
+  return loc && typeof loc.lat === "number" && typeof loc.lng === "number";
+}
+
+function isUofaEligibleRide(details) {
+  return (
+    details.membershipType === "uofa_unlimited" &&
+    details.isVerified &&
+    details.riderCount === 1 &&
+    hasValidLocation(details.fromLocation)
+  );
+}
+
+function pickupCitiesMatch(cityA, cityB) {
+  if (!cityA || !cityB) return true;
+  return cityA === cityB;
+}
+
+function isRideAvailableForPooling(ride = {}) {
+  const status = ride.status || "pending";
+  if (ride.driverId) return false;
+  if (ride.groupId) return false;
+  return UOFA_PENDING_STATUSES.includes(status);
+}
 
 /**
  * Helper: calculate distance between two lat/lng points in kilometers (Haversine).
@@ -69,6 +119,7 @@ exports.notifyDriverOnNewRide = functions.firestore
         .collection("drivers")
         .where("isOnline", "==", true)
         .where("fcmToken", ">", "")
+        .orderBy("fcmToken")
         .limit(10)
         .get();
 
@@ -78,10 +129,12 @@ exports.notifyDriverOnNewRide = functions.firestore
       }
 
       const tokens = [];
+      const tokenDocMap = new Map();
       driversSnap.forEach((docSnap) => {
         const d = docSnap.data();
         if (d.fcmToken) {
           tokens.push(d.fcmToken);
+          tokenDocMap.set(d.fcmToken, docSnap.ref);
         }
       });
 
@@ -112,6 +165,34 @@ exports.notifyDriverOnNewRide = functions.firestore
       console.log(
         `[notifyDriverOnNewRide] Sent notifications for ride ${rideId}. Success count: ${response.successCount}`
       );
+
+      const invalidTokenCodes = new Set([
+        "messaging/registration-token-not-registered",
+        "messaging/invalid-registration-token",
+      ]);
+
+      const cleanupPromises = [];
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success && invalidTokenCodes.has(resp.error?.code)) {
+          const badToken = tokens[idx];
+          const docRef = tokenDocMap.get(badToken);
+          if (docRef) {
+            cleanupPromises.push(
+              docRef.update({
+                fcmToken: FieldValue.delete(),
+              })
+            );
+          }
+        }
+      });
+
+      if (cleanupPromises.length) {
+        await Promise.all(cleanupPromises);
+        console.log(
+          `[notifyDriverOnNewRide] Cleaned up ${cleanupPromises.length} invalid driver tokens.`
+        );
+      }
+
       return null;
     } catch (err) {
       console.error("[notifyDriverOnNewRide] Error:", err);
@@ -127,60 +208,28 @@ exports.uofaAutoPool = functions.firestore
     const newRideId = context.params.rideId;
 
     try {
-      // 1) Basic eligibility: must be U of A unlimited & verified & solo rider
-      const membershipType =
-        newRide.membershipType ||
-        newRide.membership ||
-        "";
+      const newDetails = extractUofaRideDetails(newRide);
 
-      const isUofaUnlimited = membershipType === "uofa_unlimited";
-
-      const isVerified =
-        !!newRide.uofaVerified ||
-        !!newRide.isUofaVerified ||
-        false;
-
-      const numRiders =
-        newRide.numRiders ||
-        newRide.riderCount ||
-        1;
-
-      if (!isUofaUnlimited || !isVerified || numRiders !== 1) {
+      if (!isUofaEligibleRide(newDetails)) {
         console.log(
           `[uofaAutoPool] Ride ${newRideId} not eligible for U of A pooling.`
         );
         return null;
       }
 
-      // Optional: basic "Fayetteville only" guard if you store city
-      const pickupCity =
-        newRide.pickupCity ||
-        newRide.city ||
-        "";
-      if (
-        pickupCity &&
-        pickupCity.toLowerCase() !== "fayetteville"
-      ) {
+      if (newDetails.pickupCity && newDetails.pickupCity !== "fayetteville") {
         console.log(
-          `[uofaAutoPool] Ride ${newRideId} not in Fayetteville (pickupCity=${pickupCity}).`
+          `[uofaAutoPool] Ride ${newRideId} not in Fayetteville (pickupCity=${newDetails.pickupCity}).`
         );
         return null;
       }
 
-      // 2) Need pickup coords to measure distance
-      const fromLoc = newRide.fromLocation || newRide.pickupLocation;
-      if (
-        !fromLoc ||
-        typeof fromLoc.lat !== "number" ||
-        typeof fromLoc.lng !== "number"
-      ) {
-        console.log(
-          `[uofaAutoPool] Ride ${newRideId} missing fromLocation lat/lng.`
-        );
-        return null;
-      }
+      const fromLoc = newDetails.fromLocation;
 
       // 3) Query other U of A rides with pending-like status
+      const cutoffTimestamp = Timestamp.fromMillis(
+        Date.now() - CANDIDATE_LOOKBACK_MINUTES * 60 * 1000
+      );
       const candidatesSnap = await db
         .collection("rideRequests")
         .where("membershipType", "==", "uofa_unlimited")
@@ -189,6 +238,7 @@ exports.uofaAutoPool = functions.firestore
           "pool_searching",
           "pooled_pending_driver",
         ])
+        .where("createdAt", ">=", cutoffTimestamp)
         .orderBy("createdAt", "desc")
         .limit(20)
         .get();
@@ -201,53 +251,28 @@ exports.uofaAutoPool = functions.firestore
         if (cid === newRideId) return;
 
         const data = docSnap.data();
+        if (!isRideAvailableForPooling(data)) return;
 
-        // Already has driver? skip
-        if (data.driverId) return;
-
-        // Already grouped with someone else? skip (for now)
-        if (data.groupId) return;
-
-        const cNumRiders =
-          data.numRiders ||
-          data.riderCount ||
-          1;
-        if (cNumRiders !== 1) return;
-
-        const cIsVerified =
-          !!data.uofaVerified ||
-          !!data.isUofaVerified ||
-          false;
-        if (!cIsVerified) return;
-
-        const cFromLoc = data.fromLocation || data.pickupLocation;
+        const candidateDetails = extractUofaRideDetails(data);
+        if (!isUofaEligibleRide(candidateDetails)) return;
         if (
-          !cFromLoc ||
-          typeof cFromLoc.lat !== "number" ||
-          typeof cFromLoc.lng !== "number"
-        ) {
-          return;
-        }
-
-        // (Optional) city guard
-        const cCity =
-          data.pickupCity ||
-          data.city ||
-          "";
-        if (
-          cCity &&
-          pickupCity &&
-          cCity.toLowerCase() !== pickupCity.toLowerCase()
+          !pickupCitiesMatch(
+            candidateDetails.pickupCity,
+            newDetails.pickupCity
+          )
         ) {
           return;
         }
 
         const dist = distanceKm(
           { lat: fromLoc.lat, lng: fromLoc.lng },
-          { lat: cFromLoc.lat, lng: cFromLoc.lng }
+          {
+            lat: candidateDetails.fromLocation.lat,
+            lng: candidateDetails.fromLocation.lng,
+          }
         );
 
-        if (dist < 3 && dist < bestDistance) {
+        if (dist < MAX_POOL_DISTANCE_KM && dist < bestDistance) {
           bestDistance = dist;
           bestMatch = {
             id: cid,
@@ -269,35 +294,63 @@ exports.uofaAutoPool = functions.firestore
         )}km`
       );
 
-      // 4) Make them a group
       const groupId = bestMatch.id; // use earlier ride as group host
-
       const newRideRef = snap.ref;
       const matchRideRef = db.collection("rideRequests").doc(bestMatch.id);
 
-      const batch = db.batch();
+      await db.runTransaction(async (tx) => {
+        const [freshNewSnap, freshMatchSnap] = await Promise.all([
+          tx.get(newRideRef),
+          tx.get(matchRideRef),
+        ]);
 
-      // update new ride
-      batch.update(newRideRef, {
-        poolType: "uofa",
-        isGroupRide: true,
-        groupId: groupId,
-        currentRiderCount: 2,
-        maxRiders: 2,
-        status: "pooled_pending_driver",
+        if (!freshNewSnap.exists || !freshMatchSnap.exists) {
+          throw new Error("Ride document missing during pooling transaction.");
+        }
+
+        const freshNew = freshNewSnap.data();
+        const freshMatch = freshMatchSnap.data();
+
+        if (
+          !isRideAvailableForPooling(freshNew) ||
+          !isRideAvailableForPooling(freshMatch)
+        ) {
+          throw new Error(
+            "Ride already assigned before transaction could complete."
+          );
+        }
+
+        const freshNewDetails = extractUofaRideDetails(freshNew);
+        const freshMatchDetails = extractUofaRideDetails(freshMatch);
+
+        if (
+          !isUofaEligibleRide(freshNewDetails) ||
+          !isUofaEligibleRide(freshMatchDetails)
+        ) {
+          throw new Error("Ride no longer eligible for U of A pooling.");
+        }
+
+        if (
+          !pickupCitiesMatch(
+            freshNewDetails.pickupCity,
+            freshMatchDetails.pickupCity
+          )
+        ) {
+          throw new Error("Ride city mismatch discovered during transaction.");
+        }
+
+        const updatePayload = {
+          poolType: "uofa",
+          isGroupRide: true,
+          groupId: groupId,
+          currentRiderCount: 2,
+          maxRiders: 2,
+          status: "pooled_pending_driver",
+        };
+
+        tx.update(newRideRef, updatePayload);
+        tx.update(matchRideRef, updatePayload);
       });
-
-      // update matched ride
-      batch.update(matchRideRef, {
-        poolType: "uofa",
-        isGroupRide: true,
-        groupId: groupId,
-        currentRiderCount: 2,
-        maxRiders: 2,
-        status: "pooled_pending_driver",
-      });
-
-      await batch.commit();
 
       console.log(
         `[uofaAutoPool] Created group ${groupId} with rides ${newRideId} & ${bestMatch.id}`
