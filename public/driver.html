@@ -417,36 +417,6 @@
       color:#cbd5f5;
       margin-bottom:1px;
     }
-    .support-panel {
-      border:1px solid rgba(148,163,184,0.4);
-      border-radius:14px;
-      padding:12px;
-      background:rgba(2,6,23,0.92);
-      margin-top:8px;
-      display:none;
-    }
-    .support-panel.active { display:block; }
-    .support-panel-header {
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      margin-bottom:6px;
-    }
-    .support-panel-text {
-      font-size:0.8rem;
-      color:#cbd5f5;
-      margin-bottom:8px;
-    }
-    .support-actions {
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
-    }
-    .support-actions a {
-      flex:1 1 140px;
-      text-align:center;
-      text-decoration:none;
-    }
   </style>
 </head>
 <body>
@@ -649,18 +619,7 @@
 
     const APP_CONFIG = await loadAppConfig();
     const firebaseConfig = APP_CONFIG.firebaseConfig || {};
-    const supportConfig = APP_CONFIG.support || {};
     const geoConfig = APP_CONFIG.geo || {};
-    const placeholderConfig = APP_CONFIG.placeholders || {};
-
-    const SUPPORT_PHONE_NUMBER = supportConfig.phoneNumber || "";
-    const SUPPORT_TEL_LINK = SUPPORT_PHONE_NUMBER
-      ? `tel:${SUPPORT_PHONE_NUMBER}`
-      : "#";
-    const SUPPORT_SMS_LINK = SUPPORT_PHONE_NUMBER
-      ? `sms:${SUPPORT_PHONE_NUMBER}`
-      : "#";
-    const RIDER_PLACEHOLDER_AVATAR = placeholderConfig.riderAvatar || "";
     const DROPOFF_GEOFENCE_METERS =
       geoConfig.dropoffGeofenceMeters ?? 45; // ~150ft
 
@@ -942,20 +901,6 @@
       return value;
     }
 
-    function formatPhoneDisplay(phone) {
-      if (!phone) return "";
-      const digits = phone.replace(/\D/g, "");
-      if (!digits) return "";
-      let clean = digits;
-      if (clean.length === 11 && clean.startsWith("1")) {
-        clean = clean.slice(1);
-      }
-      if (clean.length === 10) {
-        return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
-      }
-      return phone;
-    }
-
     function membershipLabel(value) {
       if (value === "uofa_unlimited") return "Membership: U of A Unlimited";
       if (value === "nwa_unlimited") return "Membership: NWA Unlimited";
@@ -1158,31 +1103,39 @@
       });
     }
 
+    async function getUnassignedGroupRides(ride) {
+      if (!ride) return [];
+      if (!(ride.isGroupRide || ride.groupId) || !ride.groupId) {
+        return [ride];
+      }
+
+      try {
+        const q = query(
+          collection(db, "rideRequests"),
+          where("groupId", "==", ride.groupId)
+        );
+        const snap = await getDocs(q);
+        const rides = [];
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (!data.driverId) {
+            rides.push({ id: docSnap.id, ...data });
+          }
+        });
+        return rides.length ? rides : [ride];
+      } catch (err) {
+        console.error("getUnassignedGroupRides error", err);
+        return [ride];
+      }
+    }
+
     async function declineRide(ride) {
       if (!currentUser) return;
       driverError.textContent = "";
       driverMessage.textContent = "";
 
       try {
-        let groupRides = [ride];
-
-        if ((ride.isGroupRide || ride.groupId) && ride.groupId) {
-          const q = query(
-            collection(db, "rideRequests"),
-            where("groupId", "==", ride.groupId)
-          );
-          const snap = await getDocs(q);
-          groupRides = [];
-          snap.forEach((docSnap) => {
-            const d = docSnap.data();
-            if (!d.driverId) {
-              groupRides.push({ id: docSnap.id, ...d });
-            }
-          });
-          if (!groupRides.length) {
-            groupRides = [ride];
-          }
-        }
+        const groupRides = await getUnassignedGroupRides(ride);
 
         const batch = writeBatch(db);
         groupRides.forEach((r) => {
@@ -1208,25 +1161,7 @@
       driverMessage.textContent = "";
 
       try {
-        let groupRides = [ride];
-
-        if ((ride.isGroupRide || ride.groupId) && ride.groupId) {
-          const q = query(
-            collection(db, "rideRequests"),
-            where("groupId", "==", ride.groupId)
-          );
-          const snap = await getDocs(q);
-          groupRides = [];
-          snap.forEach((docSnap) => {
-            const d = docSnap.data();
-            if (!d.driverId) {
-              groupRides.push({ id: docSnap.id, ...d });
-            }
-          });
-          if (!groupRides.length) {
-            groupRides = [ride];
-          }
-        }
+        const groupRides = await getUnassignedGroupRides(ride);
 
         const batch = writeBatch(db);
         const driverRef = doc(db, "drivers", currentUser.uid);
