@@ -23,8 +23,10 @@
       color: #f9fafb;
       min-height: 100vh;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 12px;
       padding: 10px;
     }
     .card {
@@ -3035,6 +3037,15 @@
       }
     }
 
+      function ensureBackgroundMapReady() {
+        if (map) return;
+        if (window.google && google.maps) {
+          initMapOnce();
+          return;
+        }
+        setTimeout(ensureBackgroundMapReady, 600);
+      }
+
       function trySetupAutocompleteEarly() {
         if (!window.google || !google.maps || !google.maps.places) {
           setTimeout(trySetupAutocompleteEarly, 800);
@@ -3043,6 +3054,7 @@
         setupDestinationAutocomplete();
       }
 
+      ensureBackgroundMapReady();
       trySetupAutocompleteEarly();
   </script>
 </body>

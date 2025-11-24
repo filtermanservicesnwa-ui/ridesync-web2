@@ -19,8 +19,10 @@
       color: #f9fafb;
       min-height: 100vh;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 12px;
       padding: 10px;
     }
     .card {
@@ -1756,6 +1758,15 @@
       return R * c;
     }
 
+    function ensureBackgroundMapReady() {
+      if (map) return;
+      if (window.google && google.maps) {
+        initMap();
+        return;
+      }
+      setTimeout(ensureBackgroundMapReady, 600);
+    }
+
     if (driverOfferAcceptButton) {
       driverOfferAcceptButton.addEventListener("click", handleDriverOfferAccept);
     }
@@ -1797,6 +1808,8 @@
         activeRideOverlay?.classList.remove("active");
       });
     }
+
+    ensureBackgroundMapReady();
   </script>
 </body>
 </html>
