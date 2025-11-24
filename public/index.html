@@ -1485,6 +1485,40 @@
       return window.__rideSyncMapsPromise;
     }
 
+    function loadStripeJs() {
+      if (!STRIPE_ENABLED) {
+        return Promise.reject(
+          new Error("Stripe payments are not available right now.")
+        );
+      }
+      if (window.Stripe) {
+        return Promise.resolve(window.Stripe);
+      }
+      if (!stripeJsPromise) {
+        stripeJsPromise = new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = STRIPE_JS_URL;
+          script.async = true;
+          script.onload = () => {
+            if (window.Stripe) {
+              resolve(window.Stripe);
+            } else {
+              reject(
+                new Error("Stripe.js loaded but Stripe was unavailable.")
+              );
+            }
+          };
+          script.onerror = () =>
+            reject(new Error("Stripe.js failed to load."));
+          document.head.appendChild(script);
+        }).catch((err) => {
+          stripeJsPromise = null;
+          throw err;
+        });
+      }
+      return stripeJsPromise;
+    }
+
     const APP_CONFIG = await loadAppConfig();
     const firebaseConfig = APP_CONFIG.firebaseConfig || {};
     const supportConfig = APP_CONFIG.support || {};
@@ -1510,6 +1544,7 @@
     const STRIPE_PUBLISHABLE_KEY = stripeConfig.publishableKey || "";
     const stripeMembershipConfig = stripeConfig.membershipPlans || {};
     const STRIPE_ENABLED = !!STRIPE_PUBLISHABLE_KEY;
+    const STRIPE_JS_URL = "https://js.stripe.com/v3/";
 
     const createMembershipPaymentIntentFn = httpsCallable(
       functionsClient,
@@ -1765,6 +1800,7 @@
     let stripeElements = null;
     let stripePaymentElement = null;
     let activePaymentContext = null;
+    let stripeJsPromise = null;
 
     const RIDER_STATES = {
       HIDDEN: "hidden",
@@ -3954,11 +3990,12 @@
       if (!STRIPE_ENABLED) {
         throw new Error("Stripe payments are not available right now.");
       }
+      await loadStripeJs();
       if (!window.Stripe) {
         throw new Error("Stripe.js is not available.");
       }
       if (!stripeInstance) {
-        stripeInstance = Stripe(STRIPE_PUBLISHABLE_KEY);
+        stripeInstance = window.Stripe(STRIPE_PUBLISHABLE_KEY);
       }
       return stripeInstance;
     }
