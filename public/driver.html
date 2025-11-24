@@ -101,6 +101,12 @@
       gap: 10px;
       margin-bottom: 10px;
     }
+    .driver-avatar-column {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
     .driver-avatar {
       width: 58px;
       height: 58px;
@@ -115,6 +121,12 @@
       color: #9ca3af;
       font-size: 1.1rem;
       overflow: hidden;
+      cursor: pointer;
+      position: relative;
+    }
+    .driver-avatar[role="button"]:focus-visible {
+      outline: 2px solid #2563eb;
+      outline-offset: 2px;
     }
     .driver-header-text { flex: 1 1 auto; min-width: 0; }
     .driver-name { font-size: 1rem; font-weight: 600; }
@@ -541,6 +553,17 @@
     .driver-profile-editor-actions button {
       flex:1 1 140px;
     }
+    .sr-only-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      border: 0;
+      clip: rect(0 0 0 0);
+      overflow: hidden;
+      white-space: nowrap;
+    }
     .hidden { display:none !important; }
   </style>
 </head>
@@ -569,7 +592,30 @@
       <p class="subtitle">Go online to start receiving RideSync requests.</p>
 
       <div class="driver-header">
-        <div id="driverAvatar" class="driver-avatar">DR</div>
+        <div class="driver-avatar-column">
+          <div
+            id="driverAvatar"
+            class="driver-avatar"
+            role="button"
+            tabindex="0"
+            aria-label="Change profile photo"
+          >
+            DR
+          </div>
+          <button
+            id="driverAvatarChangeButton"
+            class="btn-secondary btn-small driver-avatar-trigger"
+            type="button"
+          >
+            Change photo
+          </button>
+          <input
+            id="driverAvatarUploadInput"
+            class="sr-only-input"
+            type="file"
+            accept="image/*"
+          />
+        </div>
         <div class="driver-header-text">
           <div class="driver-name" id="driverName">Driver</div>
           <div class="driver-detail" id="driverDetail"></div>
@@ -695,8 +741,8 @@
             <div><strong>Riders:</strong> <span id="driverOfferRiderCount"></span></div>
           </div>
           <div class="button-row">
-            <button id="driverOfferRejectButton" class="btn-secondary" type="button">Not now</button>
-            <button id="driverOfferAcceptButton" class="btn-primary" type="button">Accept ride</button>
+            <button id="driverOfferRejectButton" class="btn-secondary" type="button">Decline</button>
+            <button id="driverOfferAcceptButton" class="btn-primary" type="button">Accept</button>
           </div>
         </div>
 
@@ -919,6 +965,8 @@
     const passwordEl = document.getElementById("password");
 
     const driverAvatar = document.getElementById("driverAvatar");
+    const driverAvatarChangeButton = document.getElementById("driverAvatarChangeButton");
+    const driverAvatarUploadInput = document.getElementById("driverAvatarUploadInput");
     const driverNameEl = document.getElementById("driverName");
     const driverDetailEl = document.getElementById("driverDetail");
     const onlineDot = document.getElementById("onlineDot");
@@ -1350,6 +1398,52 @@
         driverEditNameInput?.value?.trim() || getDriverDisplayName(),
         null
       );
+    }
+
+    function openDriverAvatarPicker() {
+      if (!currentUser) {
+        driverError.textContent = "Sign in to update your photo.";
+        return;
+      }
+      driverAvatarUploadInput?.click();
+    }
+
+    function resetDriverAvatarPicker() {
+      if (driverAvatarUploadInput) {
+        driverAvatarUploadInput.value = "";
+      }
+    }
+
+    async function handleDriverAvatarUpload(event) {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      if (!currentUser) {
+        driverError.textContent = "Sign in to update your photo.";
+        resetDriverAvatarPicker();
+        return;
+      }
+      if (file.size > PROFILE_PHOTO_MAX_BYTES) {
+        driverError.textContent = "Choose a photo smaller than 4 MB.";
+        resetDriverAvatarPicker();
+        return;
+      }
+      try {
+        const dataUrl = await prepareProfilePhoto(file);
+        const ref = doc(db, "drivers", currentUser.uid);
+        await updateDoc(ref, {
+          profilePicUrl: dataUrl,
+          avatarUrl: dataUrl,
+          photoURL: dataUrl,
+          updatedAt: serverTimestamp()
+        });
+        driverMessage.textContent = "Profile photo updated.";
+        driverError.textContent = "";
+        resetDriverAvatarPicker();
+        await loadDriverProfile();
+      } catch (err) {
+        console.error("handleDriverAvatarUpload error", err);
+        driverError.textContent = err.message || "Unable to update photo.";
+      }
     }
 
     async function prepareProfilePhoto(file) {
@@ -2633,6 +2727,21 @@
     }
     if (driverEditNameInput) {
       driverEditNameInput.addEventListener("input", handleDriverNameInputChange);
+    }
+    if (driverAvatarChangeButton) {
+      driverAvatarChangeButton.addEventListener("click", openDriverAvatarPicker);
+    }
+    if (driverAvatarUploadInput) {
+      driverAvatarUploadInput.addEventListener("change", handleDriverAvatarUpload);
+    }
+    if (driverAvatar) {
+      driverAvatar.addEventListener("click", openDriverAvatarPicker);
+      driverAvatar.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openDriverAvatarPicker();
+        }
+      });
     }
 
     if (driverOfferAcceptButton) {
