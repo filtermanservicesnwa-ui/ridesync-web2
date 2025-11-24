@@ -841,12 +841,23 @@ exports.createRidePaymentIntent = functions.https.onCall(
       );
     }
 
-    const plan = normalizeMembershipPlan(
-      rideInput.membershipType ||
-        rideInput.membership ||
-        rideInput.plan ||
-        "basic"
-    );
+    const { customerId, profile } = await getOrCreateStripeCustomer(uid);
+    const profilePlanRaw =
+      profile?.membershipType || profile?.membership || profile?.plan || "";
+    const normalizedProfilePlan = normalizeMembershipPlan(profilePlanRaw);
+    const profileMembershipStatus =
+      typeof profile?.membershipStatus === "string"
+        ? profile.membershipStatus.trim()
+        : "";
+    const isProfileMembershipActive =
+      !profileMembershipStatus ||
+      profileMembershipStatus.toLowerCase() === "active";
+    const plan =
+      isProfileMembershipActive &&
+      normalizedProfilePlan &&
+      MEMBERSHIP_PLAN_DEFAULTS[normalizedProfilePlan]
+        ? normalizedProfilePlan
+        : "basic";
     const fare = computeFareForMembership(
       plan,
       minutes,
@@ -870,7 +881,7 @@ exports.createRidePaymentIntent = functions.https.onCall(
       sanitizedPayload.startedByUserId || uid;
     sanitizedPayload.membershipType = plan;
     sanitizedPayload.membershipStatus =
-      sanitizedPayload.membershipStatus || "active";
+      profileMembershipStatus || "active";
     sanitizedPayload.inHomeZone = !!rideInput.inHomeZone;
     sanitizedPayload.isGroupRide = !!rideInput.isGroupRide;
     sanitizedPayload.maxRiders = Math.max(
@@ -903,7 +914,6 @@ exports.createRidePaymentIntent = functions.https.onCall(
     const pendingRef = db.collection("pendingRidePayments").doc();
 
     const stripe = getStripeClient();
-    const { customerId } = await getOrCreateStripeCustomer(uid);
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountCents,
