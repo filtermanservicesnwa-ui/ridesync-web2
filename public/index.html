@@ -270,6 +270,198 @@
       min-height:18px;
       margin-bottom:6px;
     }
+    .driver-identity-card,
+    .driver-vehicle-card,
+    .driver-license-card,
+    .eta-card,
+    .support-panel {
+      border: 1px solid rgba(148,163,184,0.4);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(2,6,23,0.92);
+      margin-top: 10px;
+    }
+    .driver-identity-card {
+      margin-top: 0;
+    }
+    .driver-identity-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .driver-identity-avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,0.7);
+      overflow: hidden;
+      background: #0f172a;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .driver-identity-avatar img,
+    .driver-vehicle-photo img,
+    .driver-license-photo img,
+    .eta-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+    .avatar-fallback {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      color: #94a3b8;
+      font-size: 0.9rem;
+    }
+    .driver-identity-meta { flex: 1 1 auto; min-width: 0; }
+    .driver-identity-name-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .driver-identity-name {
+      font-size: 1rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .driver-rating-pill {
+      font-size: 0.76rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(251,191,36,0.6);
+      color: #fcd34d;
+      background: rgba(120,53,15,0.25);
+      display: none;
+      white-space: nowrap;
+    }
+    .driver-identity-status {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+    .driver-identity-phone {
+      font-size: 0.82rem;
+      color: #e5e7eb;
+      margin-top: 4px;
+    }
+    .driver-identity-badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .driver-badge-pill {
+      font-size: 0.7rem;
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(94,234,212,0.5);
+      color: #99f6e4;
+      background: rgba(13,148,136,0.2);
+    }
+    .driver-vehicle-card,
+    .driver-license-card {
+      display: none;
+    }
+    .driver-vehicle-body,
+    .driver-license-body {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .driver-vehicle-photo,
+    .driver-license-photo {
+      width: 96px;
+      height: 72px;
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.5);
+      overflow: hidden;
+      background: #0f172a;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .driver-vehicle-details,
+    .driver-license-details {
+      font-size: 0.82rem;
+      color: #e5e7eb;
+    }
+    .driver-vehicle-name {
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .driver-license-card .driver-license-summary {
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .driver-license-meta {
+      font-size: 0.75rem;
+      color: #94a3b8;
+    }
+    .eta-card {
+      display: none;
+      align-items: center;
+      gap: 12px;
+    }
+    .eta-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.7);
+      overflow: hidden;
+      background: #0f172a;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .eta-text {
+      font-size: 0.8rem;
+      color: #e5e7eb;
+    }
+    .eta-driver-label {
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .eta-driver-status {
+      color: #bbf7d0;
+      margin-bottom: 1px;
+    }
+    .support-panel {
+      display: none;
+      scroll-margin-top: 16px;
+    }
+    .support-panel.active {
+      display: block;
+    }
+    .support-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .support-panel-text {
+      font-size: 0.82rem;
+      color: #cbd5f5;
+      margin-bottom: 10px;
+    }
+    .support-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .support-actions a {
+      flex: 1 1 140px;
+      text-align: center;
+      text-decoration: none;
+    }
+    .hidden {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
@@ -566,9 +758,84 @@
         <div id="riderOverlayInfo"></div>
         <div id="riderOverlayStatus"></div>
 
-        <button id="contactDriverBtn" class="overlay-close" style="margin-top:8px;">
-          Contact driver
+        <div id="driverIdentityCard" class="driver-identity-card">
+          <div class="driver-identity-header">
+            <div class="driver-identity-avatar">
+              <img id="driverIdentityAvatarImg" alt="Driver avatar" />
+              <div id="driverIdentityAvatarFallback" class="avatar-fallback">RS</div>
+            </div>
+            <div class="driver-identity-meta">
+              <div class="driver-identity-name-row">
+                <div id="driverIdentityName" class="driver-identity-name">RideSync driver</div>
+                <div id="driverIdentityRating" class="driver-rating-pill"></div>
+              </div>
+              <div id="driverIdentityStatus" class="driver-identity-status"></div>
+              <div id="driverIdentityPhoneRow" class="driver-identity-phone">
+                <span id="driverIdentityPhone"></span>
+              </div>
+            </div>
+          </div>
+          <div id="driverIdentityBadges" class="driver-identity-badges"></div>
+        </div>
+
+        <div id="driverVehicleSection" class="driver-vehicle-card">
+          <div class="section-title" style="margin-top:0;">Vehicle</div>
+          <div class="driver-vehicle-body">
+            <div class="driver-vehicle-photo">
+              <img id="driverVehiclePhoto" alt="Driver vehicle" />
+              <div id="driverVehicleFallback" class="avatar-fallback">RS</div>
+            </div>
+            <div class="driver-vehicle-details">
+              <div id="driverVehicleName" class="driver-vehicle-name"></div>
+              <div id="driverVehiclePlate"></div>
+              <div id="driverVehicleNote" class="driver-license-meta"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="driverLicenseSection" class="driver-license-card">
+          <div class="section-title" style="margin-top:0;">License &amp; verification</div>
+          <div class="driver-license-body">
+            <div class="driver-license-photo">
+              <img id="driverLicensePhoto" alt="Driver license" />
+              <div id="driverLicenseFallback" class="avatar-fallback">ID</div>
+            </div>
+            <div class="driver-license-details">
+              <div id="driverLicenseSummary" class="driver-license-summary"></div>
+              <div id="driverLicenseMeta" class="driver-license-meta"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="etaCard" class="eta-card">
+          <div class="eta-avatar">
+            <img id="etaDriverAvatarImg" alt="Driver ETA avatar" />
+            <div id="etaDriverAvatarFallback" class="avatar-fallback">RS</div>
+          </div>
+          <div class="eta-text">
+            <div id="etaDriverLabel" class="eta-driver-label"></div>
+            <div id="etaDriverStatus" class="eta-driver-status"></div>
+            <div id="etaDriverEta"></div>
+          </div>
+        </div>
+
+        <button id="contactDriverBtn" type="button" class="btn-secondary" style="margin-top:8px;">
+          Support
         </button>
+
+        <div id="supportPanel" class="support-panel">
+          <div class="support-panel-header">
+            <div style="font-weight:600;">RideSync support</div>
+            <button id="supportBackButton" type="button" class="btn-small btn-secondary">Back</button>
+          </div>
+          <div class="support-panel-text">
+            Choose how you'd like to contact RideSync support.
+          </div>
+          <div class="support-actions">
+            <a id="supportCallButton" class="btn-primary" href="#" role="button">Call support</a>
+            <a id="supportTextButton" class="btn-secondary" href="#" role="button">Text support</a>
+          </div>
+        </div>
 
         <div style="margin-top:10px;">
           <canvas id="boardingQrCanvas"></canvas>
@@ -653,6 +920,12 @@
     const UNLIMITED_COOLDOWN_MINUTES = 30;
     const SURGE_MODE = false;
     const SURGE_COOLDOWN_MINUTES = 60;
+    const DRIVER_PLACEHOLDER_AVATAR = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI5NiIgaGVpZ2h0PSI5NiIgdmlld0JveD0iMCAwIDk2IDk2Ij4KICA8cmVjdCB3aWR0aD0iOTYiIGhlaWdodD0iOTYiIHJ4PSI0OCIgZmlsbD0iIzAyMDYxNyIvPgogIDxwYXRoIGQ9Ik00OCA1MGMtOS4xIDAtMTYuNS03LjQtMTYuNS0xNi41UzM4LjkgMTcgNDggMTdzMTYuNSA3LjQgMTYuNSAxNi41UzU3LjEgNTAgNDggNTBabTAgNmMxMi4yIDAgMjQuNSA0LjUgMjQuNSAxMS41djQuNUgyMy41di00LjVDMjMuNSA2MC41IDM1LjggNTYgNDggNTZaIiBmaWxsPSIjMzM0MTU1Ii8+Cjwvc3ZnPg==";
+    const VEHICLE_PLACEHOLDER_IMG = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTEwIiB2aWV3Qm94PSIwIDAgMTYwIDExMCI+CiAgPHJlY3Qgd2lkdGg9IjE2MCIgaGVpZ2h0PSIxMTAiIHJ4PSIxOCIgZmlsbD0iIzAyMDYxNyIvPgogIDxyZWN0IHg9IjE4IiB5PSIzOCIgd2lkdGg9IjEyNCIgaGVpZ2h0PSI0MCIgcng9IjEyIiBmaWxsPSIjMWUyOTNiIi8+CiAgPGNpcmNsZSBjeD0iNDUiIGN5PSI5MCIgcj0iMTIiIGZpbGw9IiMwZjE3MmEiIHN0cm9rZT0iIzQ3NTU2OSIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPGNpcmNsZSBjeD0iMTE1IiBjeT0iOTAiIHI9IjEyIiBmaWxsPSIjMGYxNzJhIiBzdHJva2U9IiM0NzU1NjkiIHN0cm9rZS13aWR0aD0iNCIvPgo8L3N2Zz4=";
+    const LICENSE_PLACEHOLDER_IMG = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTEwIiB2aWV3Qm94PSIwIDAgMTYwIDExMCI+CiAgPHJlY3Qgd2lkdGg9IjE2MCIgaGVpZ2h0PSIxMTAiIHJ4PSIxNiIgZmlsbD0iIzAyMDYxNyIvPgogIDxyZWN0IHg9IjE2IiB5PSIyMCIgd2lkdGg9IjEyOCIgaGVpZ2h0PSI3MCIgcng9IjEwIiBmaWxsPSIjMGYxNzJhIiBzdHJva2U9IiMzMzQxNTUiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxyZWN0IHg9IjI4IiB5PSIzMiIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iOCIgZmlsbD0iIzFlM2E4YSIvPgo8L3N2Zz4=";
+    const SUPPORT_PHONE_NUMBER = "+14794221508";
+    const SUPPORT_TEL_LINK = `tel:${SUPPORT_PHONE_NUMBER}`;
+    const SUPPORT_SMS_LINK = `sms:${SUPPORT_PHONE_NUMBER}`;
 
     const urlParams = new URLSearchParams(window.location.search);
     const joinRideIdFromUrl = urlParams.get("join");
@@ -761,6 +1034,41 @@
 
     const riderMiniBar = document.getElementById("riderMiniBar");
 
+    const driverIdentityCardEl = document.getElementById("driverIdentityCard");
+    const driverIdentityNameEl = document.getElementById("driverIdentityName");
+    const driverIdentityStatusEl = document.getElementById("driverIdentityStatus");
+    const driverIdentityRatingEl = document.getElementById("driverIdentityRating");
+    const driverIdentityAvatarImg = document.getElementById("driverIdentityAvatarImg");
+    const driverIdentityAvatarFallback = document.getElementById("driverIdentityAvatarFallback");
+    const driverIdentityPhoneRow = document.getElementById("driverIdentityPhoneRow");
+    const driverIdentityPhoneEl = document.getElementById("driverIdentityPhone");
+    const driverIdentityBadgesEl = document.getElementById("driverIdentityBadges");
+
+    const driverVehicleSection = document.getElementById("driverVehicleSection");
+    const driverVehiclePhotoImg = document.getElementById("driverVehiclePhoto");
+    const driverVehicleFallbackEl = document.getElementById("driverVehicleFallback");
+    const driverVehicleNameEl = document.getElementById("driverVehicleName");
+    const driverVehiclePlateEl = document.getElementById("driverVehiclePlate");
+    const driverVehicleNoteEl = document.getElementById("driverVehicleNote");
+
+    const driverLicenseSection = document.getElementById("driverLicenseSection");
+    const driverLicensePhotoImg = document.getElementById("driverLicensePhoto");
+    const driverLicenseFallbackEl = document.getElementById("driverLicenseFallback");
+    const driverLicenseSummaryEl = document.getElementById("driverLicenseSummary");
+    const driverLicenseMetaEl = document.getElementById("driverLicenseMeta");
+
+    const etaCardEl = document.getElementById("etaCard");
+    const etaDriverAvatarImg = document.getElementById("etaDriverAvatarImg");
+    const etaDriverAvatarFallback = document.getElementById("etaDriverAvatarFallback");
+    const etaDriverLabelEl = document.getElementById("etaDriverLabel");
+    const etaDriverStatusEl = document.getElementById("etaDriverStatus");
+    const etaDriverEtaEl = document.getElementById("etaDriverEta");
+
+    const supportPanel = document.getElementById("supportPanel");
+    const supportBackButton = document.getElementById("supportBackButton");
+    const supportCallButton = document.getElementById("supportCallButton");
+    const supportTextButton = document.getElementById("supportTextButton");
+
     const rideSummary = document.getElementById("rideSummary");
     const rideSummaryText = document.getElementById("rideSummaryText");
 
@@ -832,6 +1140,7 @@
       function returnToHomeAfterRide(message = "", isError = false) {
         if (riderOverlay) riderOverlay.classList.remove("active");
         if (riderMiniBar) riderMiniBar.classList.remove("active");
+        if (supportPanel) supportPanel.classList.remove("active");
         if (rideSummary) rideSummary.style.display = "none";
         showRideView();
         clearPoolGroupUI();
@@ -847,6 +1156,210 @@
           profileError.textContent = "";
         }
       }
+
+    function safeImageUrl(url) {
+      if (!url && url !== 0) return null;
+      const value = String(url).trim();
+      if (!value || value === "null" || value === "undefined") return null;
+      return value;
+    }
+
+    function applyImage(imgEl, fallbackEl, url, placeholder) {
+      if (!imgEl) return;
+      const finalUrl = safeImageUrl(url);
+      const hasRealImage = !!finalUrl;
+      const source = hasRealImage ? finalUrl : (placeholder || null);
+      if (source) {
+        imgEl.src = source;
+        imgEl.style.display = "block";
+        imgEl.onerror = () => {
+          imgEl.onerror = null;
+          if (placeholder) {
+            imgEl.src = placeholder;
+          }
+        };
+        if (fallbackEl) {
+          fallbackEl.style.display = hasRealImage ? "none" : "flex";
+        }
+      } else {
+        imgEl.removeAttribute("src");
+        imgEl.style.display = "none";
+        if (fallbackEl) {
+          fallbackEl.style.display = "flex";
+        }
+      }
+    }
+
+    function formatPhoneDisplay(phone) {
+      if (!phone) return "";
+      const digits = phone.replace(/\D/g, "");
+      if (!digits) return "";
+      let clean = digits;
+      if (clean.length === 11 && clean.startsWith("1")) {
+        clean = clean.slice(1);
+      }
+      if (clean.length === 10) {
+        return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
+      }
+      return phone;
+    }
+
+    function renderDriverBadges(data) {
+      if (!driverIdentityBadgesEl) return;
+      const badges = [];
+      if (data?.driverVerifiedId) badges.push("Verified ID");
+      if (data?.driverDrugTestCleared) badges.push("Drug Test Cleared");
+      if (data?.driverBackgroundCheckCleared) badges.push("Background Check Cleared");
+      if (badges.length) {
+        driverIdentityBadgesEl.innerHTML = badges
+          .map((label) => `<span class="driver-badge-pill">${label}</span>`)
+          .join("");
+        driverIdentityBadgesEl.style.display = "flex";
+      } else {
+        driverIdentityBadgesEl.innerHTML = "";
+        driverIdentityBadgesEl.style.display = "none";
+      }
+    }
+
+    function renderDriverIdentity(data) {
+      if (!driverIdentityCardEl) return;
+      const name = data?.driverName || "RideSync driver";
+      driverIdentityNameEl.textContent = name;
+
+      const avatarUrl =
+        safeImageUrl(data?.driverAvatarUrl) ||
+        safeImageUrl(data?.driverPhotoUrl) ||
+        safeImageUrl(data?.driverProfilePicUrl);
+      applyImage(driverIdentityAvatarImg, driverIdentityAvatarFallback, avatarUrl, DRIVER_PLACEHOLDER_AVATAR);
+      if (driverIdentityAvatarFallback) {
+        const initials = name
+          .split(" ")
+          .filter(Boolean)
+          .map((part) => part[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase() || "RS";
+        driverIdentityAvatarFallback.textContent = initials;
+      }
+
+      const ratingValue = Number(data?.driverRating);
+      const hasRating = !Number.isNaN(ratingValue) && ratingValue > 0;
+      if (hasRating) {
+        driverIdentityRatingEl.textContent = `★ ${ratingValue.toFixed(1)}`;
+        driverIdentityRatingEl.style.display = "inline-flex";
+        const rideCount = Number(data?.driverRatingCount);
+        driverIdentityStatusEl.textContent = rideCount
+          ? `${rideCount}+ RideSync trips`
+          : "RideSync trusted";
+      } else {
+        driverIdentityRatingEl.style.display = "none";
+        driverIdentityStatusEl.textContent = "New RideSync driver";
+      }
+
+      const rawPhone = data?.driverPhone || data?.driverPhoneNumber;
+      const formattedPhone = formatPhoneDisplay(rawPhone || "");
+      if (formattedPhone) {
+        driverIdentityPhoneEl.textContent = `Call or text ${formattedPhone}`;
+        driverIdentityPhoneRow?.classList.remove("hidden");
+      } else if (data?.driverContactViaRideSync) {
+        driverIdentityPhoneEl.textContent = "Contact RideSync support";
+        driverIdentityPhoneRow?.classList.remove("hidden");
+      } else {
+        driverIdentityPhoneEl.textContent = "";
+        driverIdentityPhoneRow?.classList.add("hidden");
+      }
+
+      renderDriverBadges(data);
+    }
+
+    function buildVehicleName(data) {
+      if (data?.driverVehicleName) return data.driverVehicleName;
+      if (data?.driverVehicleDisplayName) return data.driverVehicleDisplayName;
+      const parts = [
+        data?.driverVehicleYear,
+        data?.driverVehicleColor,
+        data?.driverVehicleMake,
+        data?.driverVehicleModel
+      ].filter(Boolean);
+      return parts.join(" ").replace(/\s+/g, " ").trim();
+    }
+
+    function renderVehicleSection(data) {
+      if (!driverVehicleSection) return;
+      const vehicleName = buildVehicleName(data);
+      const plate = data?.driverVehiclePlate || data?.driverLicensePlate;
+      const photoUrl = data?.driverVehiclePhotoUrl || data?.driverVehiclePhoto;
+      const hasAny =
+        vehicleName ||
+        plate ||
+        safeImageUrl(photoUrl);
+      if (!hasAny) {
+        driverVehicleSection.style.display = "none";
+        return;
+      }
+      driverVehicleSection.style.display = "block";
+      applyImage(driverVehiclePhotoImg, driverVehicleFallbackEl, photoUrl, VEHICLE_PLACEHOLDER_IMG);
+      driverVehicleNameEl.textContent = vehicleName || "Vehicle verified with RideSync";
+      driverVehiclePlateEl.textContent = plate ? `Plate: ${plate}` : "";
+      driverVehiclePlateEl.style.display = plate ? "block" : "none";
+      driverVehicleNoteEl.textContent = !vehicleName && !plate ? "Vehicle verified with RideSync" : "";
+      driverVehicleNoteEl.style.display = driverVehicleNoteEl.textContent ? "block" : "none";
+    }
+
+    function renderLicenseSection(data) {
+      if (!driverLicenseSection) return;
+      const licenseSummary =
+        data?.driverLicenseSummary ||
+        data?.driverLicenseStatus ||
+        (data?.driverLicenseVerified ? "License verified with RideSync" : "");
+      const licenseMeta = data?.driverLicenseMeta || (data?.driverLicenseLast4 ? `Ending in ${data.driverLicenseLast4}` : "");
+      const photoUrl = data?.driverLicenseImageUrl || data?.driverLicensePhotoUrl;
+      const hasAny = licenseSummary || licenseMeta || safeImageUrl(photoUrl);
+      if (!hasAny) {
+        driverLicenseSection.style.display = "none";
+        return;
+      }
+      driverLicenseSection.style.display = "block";
+      applyImage(driverLicensePhotoImg, driverLicenseFallbackEl, photoUrl, LICENSE_PLACEHOLDER_IMG);
+      driverLicenseSummaryEl.textContent = licenseSummary || "License verified with RideSync";
+      driverLicenseMetaEl.textContent = licenseMeta || "";
+      driverLicenseMetaEl.style.display = licenseMeta ? "block" : "none";
+    }
+
+    function friendlyDriverStatus(data) {
+      if (!data?.status) return "";
+      if (data.status === "driver_arrived") return "Driver has arrived";
+      if (data.status === "driver_assigned") return "Driver en route to pickup";
+      if (data.status === "in_progress") return "Ride in progress";
+      if (data.status === "completed") return "Ride completed";
+      return data.status.replaceAll("_", " ");
+    }
+
+    function renderEtaCard(data) {
+      if (!etaCardEl) return;
+      const shouldShow =
+        data?.status === "driver_assigned" ||
+        data?.status === "driver_arrived" ||
+        data?.status === "in_progress";
+      if (!shouldShow) {
+        etaCardEl.style.display = "none";
+        return;
+      }
+      etaCardEl.style.display = "flex";
+      const avatarUrl =
+        safeImageUrl(data?.driverAvatarUrl) ||
+        safeImageUrl(data?.driverPhotoUrl) ||
+        safeImageUrl(data?.driverProfilePicUrl);
+      applyImage(etaDriverAvatarImg, etaDriverAvatarFallback, avatarUrl, DRIVER_PLACEHOLDER_AVATAR);
+      etaDriverLabelEl.textContent = data?.driverName ? `Driver: ${data.driverName}` : "Driver assigned";
+      etaDriverStatusEl.textContent = friendlyDriverStatus(data);
+      const etaCopy =
+        typeof data?.driverEtaMinutes === "number"
+          ? `Approx. ${Math.max(1, Math.round(data.driverEtaMinutes))} min away`
+          : formatTripEstimate(data);
+      etaDriverEtaEl.textContent = etaCopy || "";
+      etaDriverEtaEl.style.display = etaCopy ? "block" : "none";
+    }
 
     function showAuthView() {
       authView.classList.add("active");
@@ -1577,28 +2090,23 @@
         if (!riderOverlay) return;
         latestRideForOverlay = { rideId, data };
 
+        renderDriverIdentity(data);
+        renderVehicleSection(data);
+        renderLicenseSection(data);
+        renderEtaCard(data);
+        if (supportPanel) supportPanel.classList.remove("active");
+
         const dest =
           data.toDestination ||
           data.toAddress ||
           data.destAddress ||
           "Destination";
 
-        const driverName = data.driverName || "Your driver";
-        const vehicleParts = [
-          data.driverVehicleColor || "",
-          data.driverVehicleMake || "",
-          data.driverVehicleModel || ""
-        ].filter(Boolean);
-        const vehicleStr = vehicleParts.join(" ").trim();
-        const plate = data.driverLicensePlate || "";
-
         riderOverlayTitle.textContent = "Driver assigned";
         riderOverlayTag.textContent = dest;
 
-        const infoLines = [];
-        infoLines.push(`<strong>${driverName}</strong>`);
-        if (vehicleStr) infoLines.push(vehicleStr);
-        if (plate) infoLines.push(`Plate: ${plate}`);
+        const infoLines = [`<strong>Destination:</strong> ${dest}`];
+        if (data.pickupNote) infoLines.push(`Pickup notes: ${data.pickupNote}`);
         riderOverlayInfo.innerHTML = infoLines.join("<br/>");
 
         const friendlyStatus = (() => {
@@ -1799,19 +2307,28 @@
     if (closeRiderOverlayButton && riderOverlay) {
       closeRiderOverlayButton.addEventListener("click", () => {
         riderOverlay.classList.remove("active");
+        supportPanel?.classList.remove("active");
       });
+    }
+
+    if (supportCallButton) {
+      supportCallButton.href = SUPPORT_TEL_LINK;
+    }
+    if (supportTextButton) {
+      supportTextButton.href = SUPPORT_SMS_LINK;
     }
 
     if (contactDriverBtn) {
       contactDriverBtn.addEventListener("click", () => {
-        if (!latestRideForOverlay || !latestRideForOverlay.data) return;
-        const email = latestRideForOverlay.data.driverEmail;
-        if (!email) {
-          alert("Driver contact info not available yet.");
-          return;
-        }
-        // Opens default mail app to contact driver; can switch to SMS later if you store phone
-        window.location.href = `mailto:${email}`;
+        if (!supportPanel) return;
+        supportPanel.classList.add("active");
+        supportPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+
+    if (supportBackButton) {
+      supportBackButton.addEventListener("click", () => {
+        supportPanel?.classList.remove("active");
       });
     }
 
@@ -1921,6 +2438,10 @@
 
       const riderPhone =
         currentUserProfile?.phone || currentUserProfile?.phoneNumber || "";
+      const riderPhotoUrl =
+        currentUserProfile?.profilePicUrl ||
+        currentUserProfile?.photoURL ||
+        null;
 
       const maxRiders = numRiders;
       const isGroupRide = maxRiders > 1;
@@ -1937,7 +2458,10 @@
         uofaPoolEligible,
         riderName,
         riderPhone,
-        riderProfilePicUrl: currentUserProfile?.profilePicUrl || null,
+        riderProfilePicUrl: riderPhotoUrl,
+        riderPhotoUrl,
+        riderAvatarUrl: riderPhotoUrl,
+        riderImageUrl: riderPhotoUrl,
         isGroupRide,
         maxRiders,
         currentRiderCount: 1,
@@ -2049,6 +2573,10 @@
 
         const riderPhone =
           currentUserProfile?.phone || currentUserProfile?.phoneNumber || "";
+        const riderPhotoUrl =
+          currentUserProfile?.profilePicUrl ||
+          currentUserProfile?.photoURL ||
+          null;
 
         const groupId = host.groupId || hostSnap.id;
 
@@ -2063,7 +2591,10 @@
           gender,
           riderName,
           riderPhone,
-          riderProfilePicUrl: currentUserProfile?.profilePicUrl || null,
+          riderProfilePicUrl: riderPhotoUrl,
+          riderPhotoUrl,
+          riderAvatarUrl: riderPhotoUrl,
+          riderImageUrl: riderPhotoUrl,
           isGroupRide: true,
           maxRiders: host.maxRiders || 1,
           currentRiderCount: 1,
