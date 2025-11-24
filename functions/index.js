@@ -11,6 +11,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
+const PIN_CHARSET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
 const MAX_POOL_DISTANCE_KM = 3;
 const CANDIDATE_LOOKBACK_MINUTES = 10;
@@ -82,23 +83,83 @@ function distanceKm(a, b) {
   return R * c;
 }
 
-/**
- * Auto U of A pooling:
- * - Triggered when ANY rideRequest is created.
- * - If it is U of A eligible (unlimited, verified, 1 rider),
- *   we look for another similar U of A ride:
- *   - no driver yet
- *   - no group yet
- *   - 1 rider
- *   - close by (pickup distance < 3 km)
- * - If found, we make them a group:
- *   - poolType: "uofa"
- *   - isGroupRide: true
- *   - groupId: one shared ID
- *   - currentRiderCount: 2
- *   - maxRiders: 2
- *   - status: "pooled_pending_driver"
- */
+function generateRideCode(length = 4) {
+  let code = "";
+  for (let i = 0; i < length; i += 1) {
+    const idx = Math.floor(Math.random() * PIN_CHARSET.length);
+    code += PIN_CHARSET.charAt(idx);
+  }
+  return code;
+}
+
+function normalizeRideCode(value) {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim().toUpperCase();
+  return str || null;
+}
+
+function ensurePinUpdates(ride = {}, overrides = {}) {
+  const updates = {};
+  const overridePickup = normalizeRideCode(overrides.pickupCode);
+  const overrideDropoff = normalizeRideCode(overrides.dropoffCode);
+  const existingPickup =
+    normalizeRideCode(ride.pickupCode) ||
+    normalizeRideCode(ride.pickupPin) ||
+    normalizeRideCode(ride.pickupPIN) ||
+    normalizeRideCode(ride.pickup_code) ||
+    normalizeRideCode(ride.boardingCode);
+  const existingDropoff =
+    normalizeRideCode(ride.dropoffCode) ||
+    normalizeRideCode(ride.dropoffPin) ||
+    normalizeRideCode(ride.dropoffPIN) ||
+    normalizeRideCode(ride.dropoff_code) ||
+    normalizeRideCode(ride.dropoffBoardingCode);
+
+  if (overridePickup) {
+    updates.pickupCode = overridePickup;
+    updates.pickupPin = overridePickup;
+  } else if (!existingPickup) {
+    const code = generateRideCode();
+    updates.pickupCode = code;
+    updates.pickupPin = code;
+  }
+
+  if (overrideDropoff) {
+    updates.dropoffCode = overrideDropoff;
+    updates.dropoffPin = overrideDropoff;
+  } else if (!existingDropoff) {
+    const code = generateRideCode();
+    updates.dropoffCode = code;
+    updates.dropoffPin = code;
+  }
+
+  if (!Object.keys(updates).length) {
+    return null;
+  }
+  updates.pinGeneratedAt = FieldValue.serverTimestamp();
+  return updates;
+}
+
+exports.ensureRidePins = functions.firestore
+  .document("rideRequests/{rideId}")
+  .onCreate(async (snap, context) => {
+    try {
+      const ride = snap.data() || {};
+      const updates = ensurePinUpdates(ride);
+      if (!updates) {
+        return null;
+      }
+      await snap.ref.update(updates);
+      console.log(
+        `[ensureRidePins] Added ride codes for ${context.params.rideId}.`
+      );
+      return null;
+    } catch (err) {
+      console.error("[ensureRidePins] Error:", err);
+      return null;
+    }
+  });
+
 exports.notifyDriverOnNewRide = functions.firestore
   .document("rideRequests/{rideId}")
   .onCreate(async (snap, context) => {
@@ -200,7 +261,23 @@ exports.notifyDriverOnNewRide = functions.firestore
     }
   });
 
-
+/**
+ * Auto U of A pooling:
+ * - Triggered when ANY rideRequest is created.
+ * - If it is U of A eligible (unlimited, verified, 1 rider),
+ *   we look for another similar U of A ride:
+ *   - no driver yet
+ *   - no group yet
+ *   - 1 rider
+ *   - close by (pickup distance < 3 km)
+ * - If found, we make them a group:
+ *   - poolType: "uofa"
+ *   - isGroupRide: true
+ *   - groupId: one shared ID
+ *   - currentRiderCount: 2
+ *   - maxRiders: 2
+ *   - status: "pooled_pending_driver"
+ */
 exports.uofaAutoPool = functions.firestore
   .document("rideRequests/{rideId}")
   .onCreate(async (snap, context) => {
@@ -339,6 +416,19 @@ exports.uofaAutoPool = functions.firestore
           throw new Error("Ride city mismatch discovered during transaction.");
         }
 
+        const sharedPickup =
+          normalizeRideCode(freshMatch.pickupCode) ||
+          normalizeRideCode(freshMatch.pickupPin) ||
+          normalizeRideCode(freshNew.pickupCode) ||
+          normalizeRideCode(freshNew.pickupPin) ||
+          generateRideCode();
+        const sharedDropoff =
+          normalizeRideCode(freshMatch.dropoffCode) ||
+          normalizeRideCode(freshMatch.dropoffPin) ||
+          normalizeRideCode(freshNew.dropoffCode) ||
+          normalizeRideCode(freshNew.dropoffPin) ||
+          generateRideCode();
+
         const updatePayload = {
           poolType: "uofa",
           isGroupRide: true,
@@ -347,9 +437,16 @@ exports.uofaAutoPool = functions.firestore
           maxRiders: 2,
           status: "pooled_pending_driver",
         };
+        const sharedCodes = {
+          pickupCode: sharedPickup,
+          pickupPin: sharedPickup,
+          dropoffCode: sharedDropoff,
+          dropoffPin: sharedDropoff,
+          pinGeneratedAt: FieldValue.serverTimestamp(),
+        };
 
-        tx.update(newRideRef, updatePayload);
-        tx.update(matchRideRef, updatePayload);
+        tx.update(newRideRef, { ...updatePayload, ...sharedCodes });
+        tx.update(matchRideRef, { ...updatePayload, ...sharedCodes });
       });
 
       console.log(

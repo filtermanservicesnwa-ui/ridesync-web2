@@ -135,6 +135,60 @@
       font-size: 0.8rem;
       margin-bottom: 10px;
     }
+    .trip-builder-card {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      padding: 14px;
+    }
+    .trip-builder-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .trip-field {
+      display: flex;
+      flex-direction: column;
+    }
+    .trip-map-preview {
+      position: relative;
+      min-height: 180px;
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.3);
+      background: #020617;
+      overflow: hidden;
+    }
+    .trip-map-canvas {
+      position: absolute;
+      inset: 0;
+    }
+    .map-empty-state {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 14px;
+      text-align: center;
+      font-size: 0.8rem;
+      color: #94a3b8;
+      background: linear-gradient(135deg, rgba(15,23,42,0.92), rgba(2,6,23,0.92));
+      transition: opacity 0.25s ease;
+    }
+    .trip-map-preview.has-destination .map-empty-state {
+      opacity: 0;
+      pointer-events: none;
+    }
+    @media (min-width: 640px) {
+      .trip-builder-card {
+        flex-direction: row;
+        align-items: stretch;
+      }
+      .trip-builder-fields,
+      .trip-map-preview {
+        flex: 1 1 0%;
+      }
+    }
     .fare-row {
       display: flex;
       justify-content: space-between;
@@ -350,17 +404,30 @@
     .driver-info-stack {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 14px;
+      border: 1px solid rgba(148,163,184,0.5);
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(2,6,23,0.95);
+    }
+    .driver-info-stack > :not(:first-child) {
+      border-top: 1px solid rgba(148,163,184,0.25);
+      padding-top: 14px;
     }
     .driver-identity-card,
     .driver-vehicle-card,
     .driver-license-card,
-    .eta-card,
+    .eta-card {
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
+    }
     .support-panel {
-      border: 1px solid rgba(148,163,184,0.4);
-      border-radius: 14px;
-      padding: 12px;
-      background: rgba(2,6,23,0.92);
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
     }
     .driver-identity-card {
       margin-top: 0;
@@ -810,21 +877,31 @@
         <div class="small" id="joinBannerText"></div>
       </div>
 
-      <div class="section-title">Destination</div>
-      <label for="destination">Where are you going?</label>
-      <input id="destination" type="text" placeholder="Enter destination address" />
-
-      <div class="section-title">Riders</div>
-      <div id="ridersSection">
-        <label for="numRiders">Number of riders</label>
-        <select id="numRiders">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-        </select>
-        <div class="small">
-          For U of A pooling, choose 1 rider. For private group rides with friends, choose 2–4 and use the QR.
+      <div class="section-title">Trip setup</div>
+      <div class="fare-box trip-builder-card">
+        <div class="trip-builder-fields">
+          <div class="trip-field">
+            <label for="destination">Where are you going?</label>
+            <input id="destination" type="text" placeholder="Enter destination address" />
+          </div>
+          <div id="ridersSection" class="trip-field">
+            <label for="numRiders">Number of riders</label>
+            <select id="numRiders">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+            <div class="small">
+              For U of A pooling, choose 1 rider. For private group rides with friends, choose 2–4 and use the QR.
+            </div>
+          </div>
+        </div>
+        <div id="tripMapPreview" class="trip-map-preview" aria-hidden="true">
+          <div id="destinationPreviewMap" class="trip-map-canvas"></div>
+          <div id="destinationPreviewEmpty" class="map-empty-state">
+            Add a destination to preview your pickup &amp; dropoff pins.
+          </div>
         </div>
       </div>
 
@@ -1202,6 +1279,16 @@
     let joinMode = false;
     let joinTargetRide = null;
 
+    const PIN_CHARSET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    function generateRidePin(length = 4) {
+      let code = "";
+      for (let i = 0; i < length; i += 1) {
+        const idx = Math.floor(Math.random() * PIN_CHARSET.length);
+        code += PIN_CHARSET.charAt(idx);
+      }
+      return code;
+    }
+
     let lastDestinationPlace = null;
     let lastDestinationIsFayetteville = false;
 
@@ -1276,6 +1363,9 @@
     const destinationEl = document.getElementById("destination");
     const numRidersEl = document.getElementById("numRiders");
     const ridersSection = document.getElementById("ridersSection");
+    const tripMapPreviewEl = document.getElementById("tripMapPreview");
+    const destinationPreviewMapEl = document.getElementById("destinationPreviewMap");
+    const destinationPreviewEmptyEl = document.getElementById("destinationPreviewEmpty");
     const fareNotReady = document.getElementById("fareNotReady");
     const fareReady = document.getElementById("fareReady");
     const fareTime = document.getElementById("fareTime");
@@ -1398,6 +1488,9 @@
     let directionsRenderer;
     let pickupMarker;
     let destMarker;
+    let destinationPreviewMap;
+    let destinationPreviewPickupMarker;
+    let destinationPreviewDestMarker;
     let currentLocation = null;
     let destinationLatLng = null;
     let destAutocomplete = null;
@@ -1458,6 +1551,7 @@
         clearPoolGroupUI();
         resetJoinModeUi();
         hideGroupQr();
+        resetTripPlanner();
         resetRatingForm();
         if (cancelError) cancelError.textContent = "";
 
@@ -1782,10 +1876,22 @@
         groupOccupancyUnsub = null;
       }
       hideGroupQr();
+      clearPoolGroupUI();
+      resetTripPlanner();
       joinBanner.style.display = "none";
       ridersSection.style.display = "block";
       showAuthView();
     });
+
+    if (destinationEl) {
+      destinationEl.addEventListener("input", () => {
+        const currentValue = destinationEl.value.trim();
+        const lastValue = (lastDestinationPlace?.formatted_address || "").trim();
+        if (!currentValue || currentValue !== lastValue) {
+          clearDestinationSelection();
+        }
+      });
+    }
 
     async function uploadFileIfAny(fileInput, path) {
       const file = fileInput.files[0];
@@ -2061,6 +2167,10 @@
             };
             pickupMarker.setPosition(currentLocation);
             map.setCenter(currentLocation);
+            if (destinationLatLng) {
+              updateTripPreviewMap();
+              updateRouteAndFare();
+            }
           },
           (err) => {
             console.warn("Geolocation error", err);
@@ -2092,9 +2202,119 @@
           destMarker.setPosition(destinationLatLng);
           destMarker.setVisible(true);
 
+          updateTripPreviewMap();
           updateRouteAndFare();
         });
       }
+    }
+
+    function latLngToLiteral(value) {
+      if (!value) return null;
+      if (typeof value.lat === "function" && typeof value.lng === "function") {
+        return { lat: value.lat(), lng: value.lng() };
+      }
+      if (typeof value.lat === "number" && typeof value.lng === "number") {
+        return value;
+      }
+      return null;
+    }
+
+    function ensureDestinationPreviewMap() {
+      if (googleMapsLoadFailed) return;
+      if (!destinationPreviewMapEl || destinationPreviewMap) return;
+      if (!window.google || !google.maps) return;
+      destinationPreviewMap = new google.maps.Map(destinationPreviewMapEl, {
+        center: { lat: 36.06, lng: -94.16 },
+        zoom: 13,
+        disableDefaultUI: true,
+        draggable: false,
+        keyboardShortcuts: false,
+        gestureHandling: "none",
+        mapTypeControl: false,
+        clickableIcons: false,
+        styles: [
+          { featureType: "poi", stylers: [{ visibility: "off" }] },
+          { featureType: "transit", stylers: [{ visibility: "off" }] }
+        ]
+      });
+
+      destinationPreviewPickupMarker = new google.maps.Marker({
+        map: destinationPreviewMap,
+        title: "Pickup",
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 6,
+          fillColor: "#22c55e",
+          fillOpacity: 1,
+          strokeColor: "#022c22",
+          strokeWeight: 2
+        },
+        visible: false
+      });
+
+      destinationPreviewDestMarker = new google.maps.Marker({
+        map: destinationPreviewMap,
+        title: "Destination",
+        icon: "https://maps.gstatic.com/mapfiles/api-3/images/spotlight-poi2_hdpi.png",
+        visible: false
+      });
+    }
+
+    function hideTripPreviewMap() {
+      if (tripMapPreviewEl) {
+        tripMapPreviewEl.classList.remove("has-destination");
+        tripMapPreviewEl.setAttribute("aria-hidden", "true");
+      }
+      if (destinationPreviewPickupMarker) {
+        destinationPreviewPickupMarker.setVisible(false);
+      }
+      if (destinationPreviewDestMarker) {
+        destinationPreviewDestMarker.setVisible(false);
+      }
+      if (destinationPreviewEmptyEl) {
+        destinationPreviewEmptyEl.style.opacity = "";
+      }
+    }
+
+    function updateTripPreviewMap() {
+      if (!tripMapPreviewEl || !destinationLatLng) {
+        hideTripPreviewMap();
+        return;
+      }
+      if (googleMapsLoadFailed) return;
+      if (!window.google || !google.maps) {
+        setTimeout(updateTripPreviewMap, 700);
+        return;
+      }
+      ensureDestinationPreviewMap();
+      if (!destinationPreviewMap) return;
+
+      const destLiteral = latLngToLiteral(destinationLatLng);
+      if (!destLiteral) return;
+
+      destinationPreviewDestMarker.setPosition(destLiteral);
+      destinationPreviewDestMarker.setVisible(true);
+
+      const bounds = new google.maps.LatLngBounds();
+      bounds.extend(destLiteral);
+
+      if (currentLocation && typeof currentLocation.lat === "number" && typeof currentLocation.lng === "number") {
+        destinationPreviewPickupMarker.setPosition(currentLocation);
+        destinationPreviewPickupMarker.setVisible(true);
+        bounds.extend(currentLocation);
+      } else if (destinationPreviewPickupMarker) {
+        destinationPreviewPickupMarker.setVisible(false);
+      }
+
+      if (destinationPreviewPickupMarker?.getVisible()) {
+        destinationPreviewMap.fitBounds(bounds);
+      } else {
+        destinationPreviewMap.setCenter(destLiteral);
+        destinationPreviewMap.setZoom(14);
+      }
+
+      tripMapPreviewEl.classList.add("has-destination");
+      tripMapPreviewEl.setAttribute("aria-hidden", "false");
     }
 
     async function updateRouteAndFare() {
@@ -2165,7 +2385,44 @@
         fareTotal.textContent = `$${fareInfo.total.toFixed(2)}`;
 
         updateSyncButtonLabel();
+        updateTripPreviewMap();
       });
+    }
+
+    function clearDestinationSelection(options = {}) {
+      const { resetInput = false } = options;
+      lastDestinationPlace = null;
+      lastDestinationIsFayetteville = false;
+      destinationLatLng = null;
+      lastRideMetrics = null;
+      hideTripPreviewMap();
+      if (resetInput && destinationEl) {
+        destinationEl.value = "";
+      }
+      if (fareReady) {
+        fareReady.style.display = "none";
+      }
+      if (fareNotReady) {
+        fareNotReady.style.display = "block";
+      }
+      fareTime.textContent = "";
+      fareDistance.textContent = "";
+      fareMembership.textContent = "";
+      fareTotal.textContent = "";
+      if (destMarker) {
+        destMarker.setVisible(false);
+      }
+      if (directionsRenderer) {
+        directionsRenderer.set("directions", null);
+      }
+    }
+
+    function resetTripPlanner() {
+      clearDestinationSelection({ resetInput: true });
+      if (numRidersEl) {
+        numRidersEl.value = "1";
+        numRidersEl.disabled = false;
+      }
     }
 
     function clearPoolGroupUI() {
@@ -2934,6 +3191,8 @@
 
       const maxRiders = numRiders;
       const isGroupRide = maxRiders > 1;
+      const pickupCode = generateRidePin();
+      const dropoffCode = generateRidePin();
 
       const rideBase = {
         userId: user.uid,
@@ -2964,6 +3223,10 @@
           : null,
         distanceMeters: lastRideMetrics.distanceMeters || null,
         fare,
+        pickupCode,
+        pickupPin: pickupCode,
+        dropoffCode,
+        dropoffPin: dropoffCode
       };
 
       try {
@@ -3036,6 +3299,23 @@
           return;
         }
 
+        const normalizeHostPin = (value) =>
+          value == null ? "" : String(value).trim().toUpperCase();
+        const hostPickupCode = normalizeHostPin(
+          host.pickupCode ||
+            host.pickupPin ||
+            host.pickupPIN ||
+            host.boardingCode
+        );
+        const hostDropoffCode = normalizeHostPin(
+          host.dropoffCode ||
+            host.dropoffPin ||
+            host.dropoffPIN ||
+            host.dropoffBoardingCode
+        );
+        const pickupCode = hostPickupCode || generateRidePin();
+        const dropoffCode = hostDropoffCode || generateRidePin();
+
         const plan = currentUserProfile?.membershipType || currentUserProfile?.membership || "basic";
         const isStudent = !!currentUserProfile?.isStudent;
         const uofaVerified = !!currentUserProfile?.uofaVerified;
@@ -3096,7 +3376,11 @@
           distanceMeters: host.distanceMeters || null,
           fare,
           driverId: host.driverId || "clifton",
-          joinedExistingRideId: hostSnap.id
+          joinedExistingRideId: hostSnap.id,
+          pickupCode,
+          pickupPin: pickupCode,
+          dropoffCode,
+          dropoffPin: dropoffCode
         };
 
         let docRef;
