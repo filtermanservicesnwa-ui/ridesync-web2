@@ -1040,32 +1040,57 @@
       getDownloadURL
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyA4BPyi7sDZtcsOZM-FDzl2DQ61wUTcejo",
-      authDomain: "ride-sync-nwa.firebaseapp.com",
-      projectId: "ride-sync-nwa",
-      storageBucket: "ride-sync-nwa.firebasestorage.app",
-      messagingSenderId: "221636626778",
-      appId: "1:221636626778:web:fe1afd1f95a16747898b63",
-      measurementId: "G-K3ZD4YWSZZ"
-    };
+    async function loadAppConfig() {
+      if (window.__rideSyncConfigPromise) {
+        return window.__rideSyncConfigPromise;
+      }
+
+      window.__rideSyncConfigPromise = fetch("/app-config.json", {
+        cache: "no-store"
+      })
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`Failed to load app config: ${res.status}`);
+          }
+          return res.json();
+        })
+        .catch((err) => {
+          console.error("App config load failed", err);
+          throw err;
+        });
+
+      return window.__rideSyncConfigPromise;
+    }
+
+    const APP_CONFIG = await loadAppConfig();
+    const firebaseConfig = APP_CONFIG.firebaseConfig || {};
+    const supportConfig = APP_CONFIG.support || {};
+    const geoConfig = APP_CONFIG.geo || {};
+    const ridePolicyConfig = APP_CONFIG.ridePolicy || {};
+    const placeholderConfig = APP_CONFIG.placeholders || {};
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
     const storage = getStorage(app);
 
-    const NWA_CENTER = { lat: 36.334, lng: -94.118 };
-    const NWA_RADIUS_MILES = 30;
-    const UNLIMITED_COOLDOWN_MINUTES = 30;
-    const SURGE_MODE = false;
-    const SURGE_COOLDOWN_MINUTES = 60;
-    const DRIVER_PLACEHOLDER_AVATAR = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI5NiIgaGVpZ2h0PSI5NiIgdmlld0JveD0iMCAwIDk2IDk2Ij4KICA8cmVjdCB3aWR0aD0iOTYiIGhlaWdodD0iOTYiIHJ4PSI0OCIgZmlsbD0iIzAyMDYxNyIvPgogIDxwYXRoIGQ9Ik00OCA1MGMtOS4xIDAtMTYuNS03LjQtMTYuNS0xNi41UzM4LjkgMTcgNDggMTdzMTYuNSA3LjQgMTYuNSAxNi41UzU3LjEgNTAgNDggNTBabTAgNmMxMi4yIDAgMjQuNSA0LjUgMjQuNSAxMS41djQuNUgyMy41di00LjVDMjMuNSA2MC41IDM1LjggNTYgNDggNTZaIiBmaWxsPSIjMzM0MTU1Ii8+Cjwvc3ZnPg==";
-    const VEHICLE_PLACEHOLDER_IMG = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTEwIiB2aWV3Qm94PSIwIDAgMTYwIDExMCI+CiAgPHJlY3Qgd2lkdGg9IjE2MCIgaGVpZ2h0PSIxMTAiIHJ4PSIxOCIgZmlsbD0iIzAyMDYxNyIvPgogIDxyZWN0IHg9IjE4IiB5PSIzOCIgd2lkdGg9IjEyNCIgaGVpZ2h0PSI0MCIgcng9IjEyIiBmaWxsPSIjMWUyOTNiIi8+CiAgPGNpcmNsZSBjeD0iNDUiIGN5PSI5MCIgcj0iMTIiIGZpbGw9IiMwZjE3MmEiIHN0cm9rZT0iIzQ3NTU2OSIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPGNpcmNsZSBjeD0iMTE1IiBjeT0iOTAiIHI9IjEyIiBmaWxsPSIjMGYxNzJhIiBzdHJva2U9IiM0NzU1NjkiIHN0cm9rZS13aWR0aD0iNCIvPgo8L3N2Zz4=";
-    const LICENSE_PLACEHOLDER_IMG = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTEwIiB2aWV3Qm94PSIwIDAgMTYwIDExMCI+CiAgPHJlY3Qgd2lkdGg9IjE2MCIgaGVpZ2h0PSIxMTAiIHJ4PSIxNiIgZmlsbD0iIzAyMDYxNyIvPgogIDxyZWN0IHg9IjE2IiB5PSIyMCIgd2lkdGg9IjEyOCIgaGVpZ2h0PSI3MCIgcng9IjEwIiBmaWxsPSIjMGYxNzJhIiBzdHJva2U9IiMzMzQxNTUiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxyZWN0IHg9IjI4IiB5PSIzMiIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iOCIgZmlsbD0iIzFlM2E4YSIvPgo8L3N2Zz4=";
-    const SUPPORT_PHONE_NUMBER = "+14794221508";
-    const SUPPORT_TEL_LINK = `tel:${SUPPORT_PHONE_NUMBER}`;
-    const SUPPORT_SMS_LINK = `sms:${SUPPORT_PHONE_NUMBER}`;
+    const NWA_CENTER = geoConfig.nwaCenter || { lat: 36.334, lng: -94.118 };
+    const NWA_RADIUS_MILES = geoConfig.nwaRadiusMiles ?? 30;
+    const UNLIMITED_COOLDOWN_MINUTES =
+      ridePolicyConfig.unlimitedCooldownMinutes ?? 30;
+    const SURGE_MODE = ridePolicyConfig.surgeMode ?? false;
+    const SURGE_COOLDOWN_MINUTES =
+      ridePolicyConfig.surgeCooldownMinutes ?? 60;
+    const DRIVER_PLACEHOLDER_AVATAR = placeholderConfig.driverAvatar || "";
+    const VEHICLE_PLACEHOLDER_IMG = placeholderConfig.vehicleImage || "";
+    const LICENSE_PLACEHOLDER_IMG = placeholderConfig.licenseImage || "";
+    const SUPPORT_PHONE_NUMBER = supportConfig.phoneNumber || "";
+    const SUPPORT_TEL_LINK = SUPPORT_PHONE_NUMBER
+      ? `tel:${SUPPORT_PHONE_NUMBER}`
+      : "#";
+    const SUPPORT_SMS_LINK = SUPPORT_PHONE_NUMBER
+      ? `sms:${SUPPORT_PHONE_NUMBER}`
+      : "#";
 
     const urlParams = new URLSearchParams(window.location.search);
     const joinRideIdFromUrl = urlParams.get("join");
