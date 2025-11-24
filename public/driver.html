@@ -793,6 +793,7 @@
       avatarImg.src = finalSrc;
       avatarImg.onerror = () => {
         avatarWrapper.classList.remove("has-photo");
+        avatarImg.onerror = null; // prevent infinite loop if placeholder fails
         avatarImg.src = RIDER_PLACEHOLDER_AVATAR;
       };
       if (photoUrl) {
