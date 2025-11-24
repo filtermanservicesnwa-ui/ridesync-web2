@@ -461,6 +461,73 @@
       padding:12px;
       margin-bottom:10px;
     }
+    .profile-photo-row {
+      display:flex;
+      gap:12px;
+      align-items:center;
+      margin-bottom:12px;
+    }
+    .profile-photo-preview {
+      width:72px;
+      height:72px;
+      border-radius:18px;
+      border:1px solid rgba(148,163,184,0.6);
+      background:#0f172a;
+      overflow:hidden;
+      position:relative;
+      flex-shrink:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:600;
+      color:#94a3af;
+      font-size:0.9rem;
+    }
+    .profile-photo-preview img {
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
+    }
+    .profile-photo-actions {
+      flex:1 1 auto;
+    }
+    .profile-photo-buttons {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:6px;
+    }
+    .driver-nav-map-shell {
+      border-radius:16px;
+      border:1px solid rgba(148,163,184,0.35);
+      overflow:hidden;
+      position:relative;
+      background:#0f172a;
+      height:220px;
+    }
+    .driver-nav-map {
+      width:100%;
+      height:100%;
+    }
+    .driver-nav-map-status {
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding:12px;
+      color:#cbd5f5;
+      font-size:0.85rem;
+      background:rgba(2,6,23,0.82);
+      opacity:0;
+      transition:opacity 0.2s ease;
+      pointer-events:none;
+    }
+    .driver-nav-map-status.visible {
+      opacity:1;
+    }
     .driver-profile-editor .row > div {
       flex:1 1 140px;
     }
@@ -524,6 +591,27 @@
         </div>
         <label for="driverEditName">Full name</label>
         <input id="driverEditName" type="text" placeholder="Driver Name" />
+
+        <div class="profile-photo-row">
+          <div id="driverPhotoPreview" class="profile-photo-preview">
+            <span class="avatar-initials">DR</span>
+          </div>
+          <div class="profile-photo-actions">
+            <label for="driverPhotoInput">Profile photo</label>
+            <input id="driverPhotoInput" type="file" accept="image/*" />
+            <div class="profile-photo-buttons">
+              <button
+                id="driverPhotoRemoveButton"
+                class="btn-secondary btn-small"
+                type="button"
+              >
+                Remove photo
+              </button>
+            </div>
+            <div class="small">Square photo recommended. Images are resized to 512px max.</div>
+            <div id="driverPhotoError" class="error"></div>
+          </div>
+        </div>
 
         <div class="row">
           <div>
@@ -619,7 +707,16 @@
             <div><strong>Pickup:</strong> <span id="driverNavPickupAddress"></span></div>
             <div id="driverNavPickupEta"></div>
           </div>
-          <button id="driverArriveButton" class="btn-primary" type="button">Arrive</button>
+          <div class="driver-nav-map-shell">
+            <div id="driverPickupMap" class="driver-nav-map"></div>
+            <div id="driverPickupMapStatus" class="driver-nav-map-status">Loading map…</div>
+          </div>
+          <div class="button-row">
+            <button id="driverPickupNavigateButton" class="btn-secondary" type="button">
+              Open in Google Maps
+            </button>
+            <button id="driverArriveButton" class="btn-primary" type="button">Arrive</button>
+          </div>
         </div>
 
         <div id="driverStateEnterPickup" class="driver-state">
@@ -640,10 +737,19 @@
             <div><strong>Destination:</strong> <span id="driverNavDropoffAddress"></span></div>
             <div id="driverDropoffEta"></div>
           </div>
+          <div class="driver-nav-map-shell">
+            <div id="driverDropoffMap" class="driver-nav-map"></div>
+            <div id="driverDropoffMapStatus" class="driver-nav-map-status">Loading map…</div>
+          </div>
           <div id="driverGeofenceStatus" class="driver-geofence-status"></div>
-          <button id="driverCompleteButton" class="btn-primary" type="button" disabled>
-            Complete ride
-          </button>
+          <div class="button-row">
+            <button id="driverDropoffNavigateButton" class="btn-secondary" type="button">
+              Open in Google Maps
+            </button>
+            <button id="driverCompleteButton" class="btn-primary" type="button" disabled>
+              Complete ride
+            </button>
+          </div>
           <button
             id="driverCompleteOverrideButton"
             class="btn-secondary btn-small"
@@ -797,6 +903,8 @@
     const RIDER_PLACEHOLDER_AVATAR = placeholderConfig.riderAvatar || "";
     const DROPOFF_GEOFENCE_METERS =
       geoConfig.dropoffGeofenceMeters ?? 45; // ~150ft
+    const PROFILE_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
+    const PROFILE_PHOTO_MAX_DIMENSION = 512;
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
@@ -832,6 +940,10 @@
     const driverProfileCancelButton = document.getElementById("driverProfileCancelButton");
     const driverProfileEditorMessage = document.getElementById("driverProfileEditorMessage");
     const driverProfileEditorError = document.getElementById("driverProfileEditorError");
+    const driverPhotoInput = document.getElementById("driverPhotoInput");
+    const driverPhotoPreview = document.getElementById("driverPhotoPreview");
+    const driverPhotoRemoveButton = document.getElementById("driverPhotoRemoveButton");
+    const driverPhotoError = document.getElementById("driverPhotoError");
 
     try {
       await loadGoogleMapsSdk({ apiKey: mapsApiKey, libraries: mapsLibraries });
@@ -881,12 +993,20 @@
     const driverCancelRideLink = document.getElementById("driverCancelRideLink");
     const activeRideError = document.getElementById("activeRideError");
     const closeActiveRideButton = document.getElementById("closeActiveRideButton");
+    const driverPickupMapEl = document.getElementById("driverPickupMap");
+    const driverPickupMapStatus = document.getElementById("driverPickupMapStatus");
+    const driverPickupNavigateButton = document.getElementById("driverPickupNavigateButton");
+    const driverDropoffMapEl = document.getElementById("driverDropoffMap");
+    const driverDropoffMapStatus = document.getElementById("driverDropoffMapStatus");
+    const driverDropoffNavigateButton = document.getElementById("driverDropoffNavigateButton");
 
     let currentUser = null;
     let currentDriverProfile = null;
     let driverProfileEditorVisible = false;
     let map;
     let driverMarker;
+    let pendingProfilePhotoDataUrl = null;
+    let pendingProfilePhotoRemoved = false;
     let ridesUnsub = null;
     let isOnline = false;
 
@@ -907,8 +1027,20 @@
     let driverOverlayDismissed = false;
     let driverCurrentPosition = null;
     let driverLocationWatcherId = null;
+    let pickupNavMap;
+    let pickupDirectionsRenderer;
+    let pickupDirectionsService;
+    let dropoffNavMap;
+    let dropoffDirectionsRenderer;
+    let dropoffDirectionsService;
+    let activePickupLocation = null;
     let activeDropoffLocation = null;
     let geofenceOverride = false;
+    let rideOfferQueue = [];
+    const seenRideOfferIds = new Set();
+    const NAV_ROUTE_REFRESH_MS = 15000;
+    let lastPickupRouteAt = 0;
+    let lastDropoffRouteAt = 0;
 
     function showAuth() {
       authView.classList.add("active");
@@ -917,6 +1049,74 @@
     function showDriver() {
       authView.classList.remove("active");
       driverView.classList.add("active");
+    }
+
+    function driverInitials(name) {
+      return (name || "Driver")
+        .split(" ")
+        .filter(Boolean)
+        .map((part) => part[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase() || "DR";
+    }
+
+    function getDriverDisplayName() {
+      return currentDriverProfile?.fullName || currentUser?.email || "Driver";
+    }
+
+    function renderDriverAvatar(name, photoUrl) {
+      if (!driverAvatar) return;
+      driverAvatar.innerHTML = "";
+      const safeUrl = safeImageUrl(photoUrl);
+      if (safeUrl) {
+        const img = document.createElement("img");
+        img.src = safeUrl;
+        img.alt = name || "Driver avatar";
+        img.onerror = () => {
+          driverAvatar.textContent = driverInitials(name);
+        };
+        driverAvatar.appendChild(img);
+        return;
+      }
+      driverAvatar.textContent = driverInitials(name);
+    }
+
+    function updateDriverPhotoPreview(name, photoUrl) {
+      if (!driverPhotoPreview) return;
+      driverPhotoPreview.innerHTML = "";
+      const safeUrl = safeImageUrl(photoUrl);
+      if (safeUrl) {
+        const img = document.createElement("img");
+        img.src = safeUrl;
+        img.alt = name || "Driver avatar";
+        img.onerror = () => {
+          driverPhotoPreview.textContent = driverInitials(name);
+        };
+        driverPhotoPreview.appendChild(img);
+        return;
+      }
+      const span = document.createElement("span");
+      span.className = "avatar-initials";
+      span.textContent = driverInitials(name);
+      driverPhotoPreview.appendChild(span);
+    }
+
+    function resetProfilePhotoDraft() {
+      pendingProfilePhotoDataUrl = null;
+      pendingProfilePhotoRemoved = false;
+      if (driverPhotoInput) {
+        driverPhotoInput.value = "";
+      }
+      if (driverPhotoError) {
+        driverPhotoError.textContent = "";
+      }
+    }
+
+    function getEditorPhotoPreviewUrl() {
+      if (pendingProfilePhotoRemoved) return null;
+      if (pendingProfilePhotoDataUrl) return pendingProfilePhotoDataUrl;
+      return safeImageUrl(currentDriverProfile?.profilePicUrl) || null;
     }
 
     loginButton.addEventListener("click", async () => {
@@ -991,18 +1191,10 @@
         driverDetailEl.textContent =
           `${currentDriverProfile.vehicleYear || ""} ${currentDriverProfile.vehicleColor || ""} ${currentDriverProfile.vehicleMake || ""} ${currentDriverProfile.vehicleModel || ""}`.trim();
 
-        if (currentDriverProfile.profilePicUrl) {
-          const img = new Image();
-          img.src = currentDriverProfile.profilePicUrl;
-          img.onload = () => {
-            driverAvatar.innerHTML = "";
-            driverAvatar.appendChild(img);
-          };
-        } else {
-          driverAvatar.textContent = name.charAt(0).toUpperCase();
-        }
-
+        renderDriverAvatar(name, currentDriverProfile.profilePicUrl);
+        resetProfilePhotoDraft();
         populateDriverProfileEditor();
+        updateDriverPhotoPreview(name, getEditorPhotoPreviewUrl());
       } catch (err) {
         console.error("loadDriverProfile error", err);
       }
@@ -1035,6 +1227,13 @@
       if (driverEditLicensePlateInput) {
         driverEditLicensePlateInput.value = profile.licensePlate || "";
       }
+
+      updateDriverPhotoPreview(
+        profile.fullName ||
+          currentUser?.email ||
+          "Driver",
+        getEditorPhotoPreviewUrl()
+      );
     }
 
     function toggleDriverProfileEditor(show) {
@@ -1048,6 +1247,9 @@
         if (driverProfileEditorError) driverProfileEditorError.textContent = "";
         populateDriverProfileEditor();
         driverProfileEditor.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else {
+        resetProfilePhotoDraft();
+        updateDriverPhotoPreview(getDriverDisplayName(), getEditorPhotoPreviewUrl());
       }
     }
 
@@ -1082,6 +1284,12 @@
         updatedAt: serverTimestamp()
       };
 
+      if (pendingProfilePhotoRemoved) {
+        payload.profilePicUrl = null;
+      } else if (pendingProfilePhotoDataUrl) {
+        payload.profilePicUrl = pendingProfilePhotoDataUrl;
+      }
+
       try {
         const ref = doc(db, "drivers", currentUser.uid);
         await updateDoc(ref, payload);
@@ -1098,6 +1306,87 @@
             err.message || "Could not update driver profile.";
         }
       }
+    }
+
+    async function handleDriverPhotoSelected(event) {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      if (driverPhotoError) driverPhotoError.textContent = "";
+      if (file.size > PROFILE_PHOTO_MAX_BYTES) {
+        if (driverPhotoError) {
+          driverPhotoError.textContent = "Choose a photo smaller than 4 MB.";
+        }
+        return;
+      }
+      try {
+        const dataUrl = await prepareProfilePhoto(file);
+        pendingProfilePhotoDataUrl = dataUrl;
+        pendingProfilePhotoRemoved = false;
+        updateDriverPhotoPreview(
+          driverEditNameInput?.value?.trim() || getDriverDisplayName(),
+          dataUrl
+        );
+      } catch (err) {
+        console.error("handleDriverPhotoSelected error", err);
+        if (driverPhotoError) {
+          driverPhotoError.textContent = "Unable to process that photo. Try a smaller image.";
+        }
+      }
+    }
+
+    function handleDriverPhotoRemove() {
+      pendingProfilePhotoDataUrl = null;
+      pendingProfilePhotoRemoved = true;
+      if (driverPhotoInput) driverPhotoInput.value = "";
+      updateDriverPhotoPreview(
+        driverEditNameInput?.value?.trim() || getDriverDisplayName(),
+        null
+      );
+    }
+
+    function handleDriverNameInputChange() {
+      if (getEditorPhotoPreviewUrl()) return;
+      updateDriverPhotoPreview(
+        driverEditNameInput?.value?.trim() || getDriverDisplayName(),
+        null
+      );
+    }
+
+    async function prepareProfilePhoto(file) {
+      const dataUrl = await readFileAsDataUrl(file);
+      return resizeImageDataUrl(dataUrl, PROFILE_PHOTO_MAX_DIMENSION);
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error || new Error("Failed to read file."));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function resizeImageDataUrl(dataUrl, maxDimension) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+          const width = Math.max(1, Math.round(img.width * scale));
+          const height = Math.max(1, Math.round(img.height * scale));
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Could not process image."));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.9));
+        };
+        img.onerror = () => reject(new Error("Image failed to load."));
+        img.src = dataUrl;
+      });
     }
 
     function initMap() {
@@ -1140,7 +1429,15 @@
         onlineDot.classList.remove("online");
         onlineLabel.textContent = "Offline";
         toggleOnlineButton.textContent = "Sync online";
+        resetRideOfferQueue();
+        if (pendingRideOffer) {
+          pendingRideOffer = null;
+          if (driverOverlayState === DRIVER_STATES.OFFER) {
+            setDriverOverlayState(DRIVER_STATES.HIDDEN);
+          }
+        }
       }
+      updateRidesListMessage([]);
     }
 
     toggleOnlineButton.addEventListener("click", async () => {
@@ -1321,6 +1618,14 @@
       if (driverCompleteOverrideButton && state !== DRIVER_STATES.NAV_DROPOFF) {
         driverCompleteOverrideButton.style.display = "none";
       }
+      if (state === DRIVER_STATES.NAV_PICKUP) {
+        resizeInsetMap(pickupNavMap);
+        refreshNavigationRoutes({ force: true });
+      }
+      if (state === DRIVER_STATES.NAV_DROPOFF) {
+        resizeInsetMap(dropoffNavMap);
+        refreshNavigationRoutes({ force: true });
+      }
     }
 
     function openRideOfferOverlay(ride) {
@@ -1336,7 +1641,6 @@
     }
 
     function renderRides(allRides) {
-      ridesList.innerHTML = "";
       const allowedStatuses = ["pending_driver", "pool_searching", "pooled_pending_driver", "pending"];
 
       const visible = allRides.filter((r) => {
@@ -1346,57 +1650,78 @@
         return allowedStatuses.includes(st);
       });
 
-      if (!visible.length) {
-        ridesList.innerHTML = '<div class="small">No rides waiting right now.</div>';
+      syncRideOfferQueue(visible);
+      updateRidesListMessage(visible);
+      maybeShowNextRideOffer();
+    }
+
+    function updateRidesListMessage(visibleRides) {
+      if (!ridesList) return;
+      if (!isOnline) {
+        ridesList.innerHTML = '<div class="small">Go online to receive ride requests.</div>';
         return;
       }
+      const pendingCount = rideOfferQueue.length + (pendingRideOffer ? 1 : 0);
+      if (!visibleRides.length && pendingCount === 0) {
+        ridesList.innerHTML =
+          '<div class="small">Awaiting new ride requests… they will appear as overlays.</div>';
+        return;
+      }
+      ridesList.innerHTML = `<div class="small">Ride offers pop up automatically. ${
+        pendingCount
+          ? `Reviewing ${pendingCount} ride request${pendingCount === 1 ? "" : "s"}…`
+          : "Processing latest ride data…"
+      }</div>`;
+    }
 
-      visible.forEach((r) => {
-        const div = document.createElement("div");
-        div.className = "ride-card";
-        const st = r.status || "pending";
-
-        const isPool = !!r.isGroupRide || !!r.groupId;
-        const tags = [];
-        tags.push(membershipTag(r.membershipType || r.membership));
-        if (isPool) tags.push('<span class="tag tag-pooled">Pooled</span>');
-        if (r.poolType === "uofa") tags.push('<span class="tag tag-uofa">U of A</span>');
-
-        div.innerHTML = `
-          <div class="ride-header">
-            <span>${r.riderName || "Rider"}</span>
-            <span>${st}</span>
-          </div>
-          <div class="ride-line">${tags.join(" ")}</div>
-          <div class="ride-line ride-meta">
-            Dest: ${r.toDestination || r.toAddress || "Unknown"}
-          </div>
-          <div class="ride-line ride-meta">
-            Group: ${r.groupId || "(none)"} • Riders: ${r.numRiders || r.riderCount || 1}
-          </div>
-          <div style="margin-top:4px;display:flex;justify-content:flex-end;gap:6px;">
-            <button class="btn-secondary btn-small" data-decline-id="${r.id}">Decline</button>
-            <button class="btn-primary btn-small" data-accept-id="${r.id}">Accept ride</button>
-          </div>
-        `;
-        ridesList.appendChild(div);
+    function syncRideOfferQueue(visibleRides) {
+      const visibleMap = new Map();
+      visibleRides.forEach((ride) => {
+        visibleMap.set(ride.id, ride);
       });
 
-      ridesList.querySelectorAll("button[data-accept-id]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const rideId = btn.getAttribute("data-accept-id");
-          const ride = visible.find((r) => r.id === rideId);
-          if (ride) openRideOfferOverlay(ride);
-        });
+      rideOfferQueue = rideOfferQueue.filter((ride) => visibleMap.has(ride.id));
+
+      if (pendingRideOffer && !visibleMap.has(pendingRideOffer.id)) {
+        pendingRideOffer = null;
+        if (!activeRideGroup.length) {
+          setDriverOverlayState(DRIVER_STATES.HIDDEN);
+          maybeShowNextRideOffer();
+        }
+      }
+
+      visibleRides.forEach((ride) => {
+        if (!seenRideOfferIds.has(ride.id)) {
+          seenRideOfferIds.add(ride.id);
+          rideOfferQueue.push(ride);
+        }
       });
 
-      ridesList.querySelectorAll("button[data-decline-id]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const rideId = btn.getAttribute("data-decline-id");
-          const ride = visible.find((r) => r.id === rideId);
-          if (ride) declineRide(ride);
-        });
+      pruneSeenRideOffers(visibleMap);
+    }
+
+    function pruneSeenRideOffers(visibleMap) {
+      if (seenRideOfferIds.size <= 200) return;
+      seenRideOfferIds.forEach((id) => {
+        if (!visibleMap.has(id)) {
+          seenRideOfferIds.delete(id);
+        }
       });
+    }
+
+    function resetRideOfferQueue() {
+      rideOfferQueue = [];
+      seenRideOfferIds.clear();
+    }
+
+    function maybeShowNextRideOffer() {
+      if (pendingRideOffer) return;
+      if (activeRideGroup.length) return;
+      if (!rideOfferQueue.length) return;
+      const nextRide = rideOfferQueue.shift();
+      if (nextRide) {
+        openRideOfferOverlay(nextRide);
+      }
     }
 
     async function getUnassignedGroupRides(ride) {
@@ -1602,12 +1927,16 @@
     function clearActiveRideFlow() {
       clearActiveRideWatchers();
       activeRideGroup = [];
+      activePickupLocation = null;
       activeDropoffLocation = null;
+      lastPickupRouteAt = 0;
+      lastDropoffRouteAt = 0;
       geofenceOverride = false;
       pendingRideOffer = null;
       driverOverlayDismissed = false;
       activeRideError.textContent = "";
       setDriverOverlayState(DRIVER_STATES.HIDDEN);
+      maybeShowNextRideOffer();
     }
 
     function normalizedRideStatus(ride) {
@@ -1670,6 +1999,8 @@
       driverNavPickupEta.textContent = etaMinutes
         ? `Approx. ${Math.max(1, Math.round(etaMinutes))} min away`
         : "";
+      activePickupLocation = extractPickupLocation(ride);
+      renderPickupNavigation(ride, { force: true });
     }
 
     function updatePickupCodeView() {
@@ -1690,6 +2021,7 @@
       geofenceOverride = false;
       driverCompleteOverrideButton.style.display = activeDropoffLocation ? "none" : "inline-flex";
       evaluateDropoffGeofence();
+      renderDropoffNavigation(ride, { force: true });
     }
 
     function updateDropoffCodeView() {
@@ -1764,16 +2096,18 @@
 
     async function handleDriverOfferAccept() {
       if (!pendingRideOffer) return;
+      const ride = pendingRideOffer;
       activeRideError.textContent = "";
       driverOfferAcceptButton.disabled = true;
       driverOfferRejectButton.disabled = true;
       try {
-        const group = await acceptRide(pendingRideOffer);
+        const group = await acceptRide(ride);
         pendingRideOffer = null;
         if (group && group.length) {
           beginDriverRideFlow(group);
         } else {
           setDriverOverlayState(DRIVER_STATES.HIDDEN);
+          maybeShowNextRideOffer();
         }
       } catch (err) {
         activeRideError.textContent = err.message || "Error accepting ride.";
@@ -1783,9 +2117,26 @@
       }
     }
 
-    function handleDriverOfferReject() {
-      pendingRideOffer = null;
-      setDriverOverlayState(DRIVER_STATES.HIDDEN);
+    async function handleDriverOfferReject() {
+      if (!pendingRideOffer) {
+        setDriverOverlayState(DRIVER_STATES.HIDDEN);
+        return;
+      }
+      const ride = pendingRideOffer;
+      activeRideError.textContent = "";
+      driverOfferAcceptButton.disabled = true;
+      driverOfferRejectButton.disabled = true;
+      try {
+        await declineRide(ride);
+        pendingRideOffer = null;
+        setDriverOverlayState(DRIVER_STATES.HIDDEN);
+        maybeShowNextRideOffer();
+      } catch (err) {
+        activeRideError.textContent = err.message || "Error declining ride.";
+      } finally {
+        driverOfferAcceptButton.disabled = false;
+        driverOfferRejectButton.disabled = false;
+      }
     }
 
     async function handleDriverArriveAtPickup() {
@@ -1892,6 +2243,32 @@
       }
     }
 
+    function extractPickupLocation(ride) {
+      const candidates = [
+        ride?.pickupLocation,
+        ride?.fromLocation,
+        ride?.originLocation,
+        ride?.pickupGeo,
+        ride?.pickupCoordinates,
+        ride?.fromCoordinates
+      ];
+      for (const candidate of candidates) {
+        const parsed = parseLatLngCandidate(candidate);
+        if (parsed) return parsed;
+      }
+      const pairCandidates = [
+        ["pickupLat", "pickupLng"],
+        ["fromLat", "fromLng"],
+        ["originLat", "originLng"]
+      ];
+      for (const [latKey, lngKey] of pairCandidates) {
+        if (typeof ride?.[latKey] === "number" && typeof ride?.[lngKey] === "number") {
+          return { lat: ride[latKey], lng: ride[lngKey] };
+        }
+      }
+      return null;
+    }
+
     function extractDropoffLocation(ride) {
       const candidates = [
         ride?.dropoffLocation,
@@ -1976,6 +2353,222 @@
       }
     }
 
+    function updateNavMapStatus(el, message) {
+      if (!el) return;
+      if (message) {
+        el.textContent = message;
+        el.classList.add("visible");
+      } else {
+        el.textContent = "";
+        el.classList.remove("visible");
+      }
+    }
+
+    function getBaseMapCenter() {
+      if (driverCurrentPosition) return driverCurrentPosition;
+      if (map?.getCenter) {
+        const center = map.getCenter();
+        if (center) {
+          return { lat: center.lat(), lng: center.lng() };
+        }
+      }
+      return { lat: 36.0626, lng: -94.1574 };
+    }
+
+    function ensurePickupNavArtifacts() {
+      if (!driverPickupMapEl || googleMapsLoadFailed) return false;
+      if (!window.google || !google.maps) return false;
+      if (!pickupNavMap) {
+        pickupNavMap = new google.maps.Map(driverPickupMapEl, {
+          center: getBaseMapCenter(),
+          zoom: 13,
+          disableDefaultUI: true
+        });
+      }
+      if (!pickupDirectionsService) {
+        pickupDirectionsService = new google.maps.DirectionsService();
+      }
+      if (!pickupDirectionsRenderer) {
+        pickupDirectionsRenderer = new google.maps.DirectionsRenderer({
+          map: pickupNavMap,
+          preserveViewport: true,
+          polylineOptions: { strokeColor: "#22c55e", strokeWeight: 6 }
+        });
+      }
+      return true;
+    }
+
+    function ensureDropoffNavArtifacts() {
+      if (!driverDropoffMapEl || googleMapsLoadFailed) return false;
+      if (!window.google || !google.maps) return false;
+      if (!dropoffNavMap) {
+        dropoffNavMap = new google.maps.Map(driverDropoffMapEl, {
+          center: getBaseMapCenter(),
+          zoom: 13,
+          disableDefaultUI: true
+        });
+      }
+      if (!dropoffDirectionsService) {
+        dropoffDirectionsService = new google.maps.DirectionsService();
+      }
+      if (!dropoffDirectionsRenderer) {
+        dropoffDirectionsRenderer = new google.maps.DirectionsRenderer({
+          map: dropoffNavMap,
+          preserveViewport: true,
+          polylineOptions: { strokeColor: "#0ea5e9", strokeWeight: 6 }
+        });
+      }
+      return true;
+    }
+
+    function requestDirections(service, request) {
+      if (!service) return Promise.reject(new Error("Directions service unavailable."));
+      return new Promise((resolve, reject) => {
+        service.route(request, (result, status) => {
+          if (status === "OK" && result) {
+            resolve(result);
+          } else {
+            reject(new Error(`Directions request failed: ${status}`));
+          }
+        });
+      });
+    }
+
+    async function renderPickupNavigation(ride, { force = false } = {}) {
+      if (!ride || !driverPickupMapEl) return;
+      if (googleMapsLoadFailed) {
+        updateNavMapStatus(driverPickupMapStatus, "Google Maps failed to load.");
+        return;
+      }
+      if (!ensurePickupNavArtifacts()) {
+        updateNavMapStatus(driverPickupMapStatus, "Loading Google Maps…");
+        return;
+      }
+      if (!activePickupLocation) {
+        updateNavMapStatus(driverPickupMapStatus, "Pickup location not available yet.");
+        return;
+      }
+      if (!driverCurrentPosition) {
+        updateNavMapStatus(driverPickupMapStatus, "Waiting for your GPS location…");
+        return;
+      }
+      const now = Date.now();
+      if (!force && now - lastPickupRouteAt < NAV_ROUTE_REFRESH_MS) {
+        return;
+      }
+      try {
+        const directions = await requestDirections(pickupDirectionsService, {
+          origin: driverCurrentPosition,
+          destination: activePickupLocation,
+          travelMode: google.maps.TravelMode.DRIVING
+        });
+        pickupDirectionsRenderer.setDirections(directions);
+        fitInsetMapToRoute(pickupNavMap, directions);
+        resizeInsetMap(pickupNavMap);
+        updateNavMapStatus(driverPickupMapStatus, "");
+        lastPickupRouteAt = Date.now();
+      } catch (err) {
+        console.error("renderPickupNavigation error", err);
+        updateNavMapStatus(driverPickupMapStatus, "Unable to build route. Open in Google Maps.");
+      }
+    }
+
+    async function renderDropoffNavigation(ride, { force = false } = {}) {
+      if (!ride || !driverDropoffMapEl) return;
+      if (googleMapsLoadFailed) {
+        updateNavMapStatus(driverDropoffMapStatus, "Google Maps failed to load.");
+        return;
+      }
+      if (!ensureDropoffNavArtifacts()) {
+        updateNavMapStatus(driverDropoffMapStatus, "Loading Google Maps…");
+        return;
+      }
+      if (!activeDropoffLocation) {
+        updateNavMapStatus(driverDropoffMapStatus, "Destination location not available yet.");
+        return;
+      }
+      if (!driverCurrentPosition) {
+        updateNavMapStatus(driverDropoffMapStatus, "Waiting for your GPS location…");
+        return;
+      }
+      const now = Date.now();
+      if (!force && now - lastDropoffRouteAt < NAV_ROUTE_REFRESH_MS) {
+        return;
+      }
+      try {
+        const directions = await requestDirections(dropoffDirectionsService, {
+          origin: driverCurrentPosition,
+          destination: activeDropoffLocation,
+          travelMode: google.maps.TravelMode.DRIVING
+        });
+        dropoffDirectionsRenderer.setDirections(directions);
+        fitInsetMapToRoute(dropoffNavMap, directions);
+        resizeInsetMap(dropoffNavMap);
+        updateNavMapStatus(driverDropoffMapStatus, "");
+        lastDropoffRouteAt = Date.now();
+      } catch (err) {
+        console.error("renderDropoffNavigation error", err);
+        updateNavMapStatus(driverDropoffMapStatus, "Unable to build route. Open in Google Maps.");
+      }
+    }
+
+    function fitInsetMapToRoute(mapInstance, directions) {
+      if (!mapInstance || !directions?.routes?.length) return;
+      const bounds = directions.routes[0].bounds;
+      if (bounds) {
+        mapInstance.fitBounds(bounds);
+      }
+    }
+
+    function resizeInsetMap(mapInstance) {
+      if (!mapInstance) return;
+      if (!window.google || !google.maps?.event) return;
+      setTimeout(() => {
+        google.maps.event.trigger(mapInstance, "resize");
+      }, 120);
+    }
+
+    function refreshNavigationRoutes(options = {}) {
+      if (driverOverlayState === DRIVER_STATES.NAV_PICKUP && activePickupLocation) {
+        renderPickupNavigation(getPrimaryRide(), options);
+      }
+      if (driverOverlayState === DRIVER_STATES.NAV_DROPOFF && activeDropoffLocation) {
+        renderDropoffNavigation(getPrimaryRide(), options);
+      }
+    }
+
+    function openNavigationInGoogleMaps(destination) {
+      if (!destination) {
+        activeRideError.textContent = "Location not available yet.";
+        return;
+      }
+      const params = new URLSearchParams({
+        api: "1",
+        destination: `${destination.lat},${destination.lng}`,
+        travelmode: "driving"
+      });
+      if (driverCurrentPosition) {
+        params.set("origin", `${driverCurrentPosition.lat},${driverCurrentPosition.lng}`);
+      }
+      window.open(`https://www.google.com/maps/dir/?${params.toString()}`, "_blank", "noopener");
+    }
+
+    function handleOpenPickupInMaps() {
+      if (!activePickupLocation) {
+        activeRideError.textContent = "Pickup location not available yet.";
+        return;
+      }
+      openNavigationInGoogleMaps(activePickupLocation);
+    }
+
+    function handleOpenDropoffInMaps() {
+      if (!activeDropoffLocation) {
+        activeRideError.textContent = "Destination not available yet.";
+        return;
+      }
+      openNavigationInGoogleMaps(activeDropoffLocation);
+    }
+
     function startDriverLocationWatch() {
       if (!navigator.geolocation || driverLocationWatcherId) return;
       driverLocationWatcherId = navigator.geolocation.watchPosition(
@@ -1988,6 +2581,7 @@
             driverMarker.setPosition(driverCurrentPosition);
           }
           evaluateDropoffGeofence();
+          refreshNavigationRoutes();
         },
         (err) => {
           console.warn("watchPosition error", err);
@@ -2031,6 +2625,15 @@
     if (driverProfileSaveButton) {
       driverProfileSaveButton.addEventListener("click", saveDriverProfileChanges);
     }
+    if (driverPhotoInput) {
+      driverPhotoInput.addEventListener("change", handleDriverPhotoSelected);
+    }
+    if (driverPhotoRemoveButton) {
+      driverPhotoRemoveButton.addEventListener("click", handleDriverPhotoRemove);
+    }
+    if (driverEditNameInput) {
+      driverEditNameInput.addEventListener("input", handleDriverNameInputChange);
+    }
 
     if (driverOfferAcceptButton) {
       driverOfferAcceptButton.addEventListener("click", handleDriverOfferAccept);
@@ -2050,12 +2653,18 @@
     if (driverCompleteButton) {
       driverCompleteButton.addEventListener("click", handleDriverArriveAtDropoff);
     }
+    if (driverPickupNavigateButton) {
+      driverPickupNavigateButton.addEventListener("click", handleOpenPickupInMaps);
+    }
     if (driverCompleteOverrideButton) {
       driverCompleteOverrideButton.addEventListener("click", () => {
         geofenceOverride = true;
         driverCompleteOverrideButton.style.display = "none";
         evaluateDropoffGeofence();
       });
+    }
+    if (driverDropoffNavigateButton) {
+      driverDropoffNavigateButton.addEventListener("click", handleOpenDropoffInMaps);
     }
     if (driverDropoffConfirmButton) {
       driverDropoffConfirmButton.addEventListener("click", handleDropoffCodeConfirm);
