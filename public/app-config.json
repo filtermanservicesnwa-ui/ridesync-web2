@@ -8,6 +8,10 @@
     "appId": "1:221636626778:web:fe1afd1f95a16747898b63",
     "measurementId": "G-K3ZD4YWSZZ"
   },
+  "maps": {
+    "apiKey": "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0",
+    "libraries": ["places"]
+  },
   "support": {
     "phoneNumber": "+14794221508"
   },

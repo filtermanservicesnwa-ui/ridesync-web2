@@ -5,8 +5,6 @@
   <title>RideSync Driver</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Google Maps -->
-  <script async src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0"></script>
   <!-- QR code library for boarding / dropoff codes -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 
@@ -121,6 +119,15 @@
     .driver-header-text { flex: 1 1 auto; min-width: 0; }
     .driver-name { font-size: 1rem; font-weight: 600; }
     .driver-detail { font-size: 0.8rem; color: #9ca3af; }
+    .driver-header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .driver-header-actions button {
+      flex: 1 1 140px;
+    }
 
     .status-dot {
       width: 8px;
@@ -447,6 +454,27 @@
       text-align:center;
       text-decoration:none;
     }
+    .driver-profile-editor {
+      border-radius:14px;
+      border:1px solid rgba(148,163,184,0.35);
+      background:rgba(2,6,23,0.9);
+      padding:12px;
+      margin-bottom:10px;
+    }
+    .driver-profile-editor .row > div {
+      flex:1 1 140px;
+    }
+    .driver-profile-editor-actions {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+      margin-top:8px;
+    }
+    .driver-profile-editor-actions button {
+      flex:1 1 140px;
+    }
+    .hidden { display:none !important; }
   </style>
 </head>
 <body>
@@ -483,20 +511,76 @@
             <span id="onlineLabel">Offline</span>
           </div>
         </div>
-        <button id="logoutButton" class="btn-secondary btn-small">Log out</button>
       </div>
 
-      <button id="toggleOnlineButton" class="btn-primary" style="width:100%;margin-bottom:4px;">
-        Sync online
-      </button>
-      <div id="driverMessage" class="success"></div>
-      <div id="driverError" class="error"></div>
+      <div class="driver-header-actions">
+        <button id="editDriverButton" class="btn-secondary btn-small" type="button">Edit profile</button>
+        <button id="logoutButton" class="btn-secondary btn-small" type="button">Log out</button>
+      </div>
+
+      <div id="driverProfileEditor" class="driver-profile-editor hidden">
+        <div class="section-title" style="margin-top:0;border-top:none;padding-top:0;">
+          Driver profile
+        </div>
+        <label for="driverEditName">Full name</label>
+        <input id="driverEditName" type="text" placeholder="Driver Name" />
+
+        <div class="row">
+          <div>
+            <label for="driverEditPhone">Phone</label>
+            <input id="driverEditPhone" type="tel" placeholder="555-123-4567" />
+          </div>
+          <div>
+            <label for="driverEditVehicleYear">Vehicle year</label>
+            <input id="driverEditVehicleYear" type="text" placeholder="2022" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="driverEditVehicleMake">Vehicle make</label>
+            <input id="driverEditVehicleMake" type="text" placeholder="Toyota" />
+          </div>
+          <div>
+            <label for="driverEditVehicleModel">Vehicle model</label>
+            <input id="driverEditVehicleModel" type="text" placeholder="Camry" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="driverEditVehicleColor">Vehicle color</label>
+            <input id="driverEditVehicleColor" type="text" placeholder="Blue" />
+          </div>
+          <div>
+            <label for="driverEditLicensePlate">License plate</label>
+            <input id="driverEditLicensePlate" type="text" placeholder="ABC123" />
+          </div>
+        </div>
+
+        <div class="driver-profile-editor-actions">
+          <button id="driverProfileCancelButton" class="btn-secondary btn-small" type="button">
+            Cancel
+          </button>
+          <button id="driverProfileSaveButton" class="btn-primary btn-small" type="button">
+            Save changes
+          </button>
+        </div>
+        <div id="driverProfileEditorMessage" class="success"></div>
+        <div id="driverProfileEditorError" class="error"></div>
+      </div>
 
       <div class="section-title">Available rides</div>
       <div id="ridesList"></div>
       <div class="small" id="ridesHint">
         Rides with no driver and status pending/pooled will appear here while you are online.
       </div>
+
+      <button id="toggleOnlineButton" class="btn-primary" style="width:100%;margin-top:12px;">
+        Sync online
+      </button>
+      <div id="driverMessage" class="success"></div>
+      <div id="driverError" class="error"></div>
     </div>
 
     <!-- ACTIVE RIDE OVERLAY -->
@@ -647,11 +731,61 @@
       return window.__rideSyncConfigPromise;
     }
 
+    function loadGoogleMapsSdk({ apiKey, libraries = [] } = {}) {
+      if (window.__rideSyncMapsPromise) {
+        return window.__rideSyncMapsPromise;
+      }
+
+      window.__rideSyncMapsPromise = new Promise((resolve, reject) => {
+        if (window.google && window.google.maps) {
+          resolve(window.google.maps);
+          return;
+        }
+
+        if (!apiKey) {
+          reject(new Error("Missing Google Maps API key"));
+          return;
+        }
+
+        const params = new URLSearchParams({ key: apiKey });
+        if (libraries.length) {
+          params.set("libraries", libraries.join(","));
+        }
+
+        const script = document.createElement("script");
+        script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+          if (window.google && window.google.maps) {
+            resolve(window.google.maps);
+          } else {
+            reject(new Error("Google Maps SDK loaded without maps namespace."));
+          }
+        };
+        script.onerror = () => reject(new Error("Google Maps SDK failed to load."));
+        document.head.appendChild(script);
+      }).catch((err) => {
+        window.__rideSyncMapsPromise = null;
+        throw err;
+      });
+
+      return window.__rideSyncMapsPromise;
+    }
+
     const APP_CONFIG = await loadAppConfig();
     const firebaseConfig = APP_CONFIG.firebaseConfig || {};
     const supportConfig = APP_CONFIG.support || {};
     const geoConfig = APP_CONFIG.geo || {};
     const placeholderConfig = APP_CONFIG.placeholders || {};
+    const mapsConfig = APP_CONFIG.maps || APP_CONFIG.googleMaps || {};
+    const DEFAULT_MAPS_API_KEY = "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0";
+    const mapsApiKey = mapsConfig.apiKey || DEFAULT_MAPS_API_KEY;
+    const mapsLibraries =
+      Array.isArray(mapsConfig.libraries) && mapsConfig.libraries.length
+        ? mapsConfig.libraries
+        : [];
+    let googleMapsLoadFailed = false;
 
     const SUPPORT_PHONE_NUMBER = supportConfig.phoneNumber || "";
     const SUPPORT_TEL_LINK = SUPPORT_PHONE_NUMBER
@@ -685,6 +819,29 @@
     const driverMessage = document.getElementById("driverMessage");
     const driverError = document.getElementById("driverError");
     const ridesList = document.getElementById("ridesList");
+    const editDriverButton = document.getElementById("editDriverButton");
+    const driverProfileEditor = document.getElementById("driverProfileEditor");
+    const driverEditNameInput = document.getElementById("driverEditName");
+    const driverEditPhoneInput = document.getElementById("driverEditPhone");
+    const driverEditVehicleYearInput = document.getElementById("driverEditVehicleYear");
+    const driverEditVehicleMakeInput = document.getElementById("driverEditVehicleMake");
+    const driverEditVehicleModelInput = document.getElementById("driverEditVehicleModel");
+    const driverEditVehicleColorInput = document.getElementById("driverEditVehicleColor");
+    const driverEditLicensePlateInput = document.getElementById("driverEditLicensePlate");
+    const driverProfileSaveButton = document.getElementById("driverProfileSaveButton");
+    const driverProfileCancelButton = document.getElementById("driverProfileCancelButton");
+    const driverProfileEditorMessage = document.getElementById("driverProfileEditorMessage");
+    const driverProfileEditorError = document.getElementById("driverProfileEditorError");
+
+    try {
+      await loadGoogleMapsSdk({ apiKey: mapsApiKey, libraries: mapsLibraries });
+    } catch (err) {
+      googleMapsLoadFailed = true;
+      console.error("Google Maps SDK failed to load", err);
+      if (driverError) {
+        driverError.textContent = "Unable to load maps. Refresh or update the Maps API key.";
+      }
+    }
 
     const activeRideOverlay = document.getElementById("activeRideOverlay");
     const driverOverlayAvatarRow = document.getElementById("driverOverlayAvatarRow");
@@ -727,6 +884,7 @@
 
     let currentUser = null;
     let currentDriverProfile = null;
+    let driverProfileEditorVisible = false;
     let map;
     let driverMarker;
     let ridesUnsub = null;
@@ -797,6 +955,7 @@
           ridesUnsub = null;
         }
         ridesList.innerHTML = "";
+        toggleDriverProfileEditor(false);
         return;
       }
 
@@ -842,12 +1001,108 @@
         } else {
           driverAvatar.textContent = name.charAt(0).toUpperCase();
         }
+
+        populateDriverProfileEditor();
       } catch (err) {
         console.error("loadDriverProfile error", err);
       }
     }
 
+    function populateDriverProfileEditor() {
+      if (!driverProfileEditor) return;
+      const profile = currentDriverProfile || {};
+      if (driverEditNameInput) {
+        driverEditNameInput.value =
+          profile.fullName ||
+          currentUser?.email ||
+          "";
+      }
+      if (driverEditPhoneInput) {
+        driverEditPhoneInput.value = profile.phone || "";
+      }
+      if (driverEditVehicleYearInput) {
+        driverEditVehicleYearInput.value = profile.vehicleYear || "";
+      }
+      if (driverEditVehicleMakeInput) {
+        driverEditVehicleMakeInput.value = profile.vehicleMake || "";
+      }
+      if (driverEditVehicleModelInput) {
+        driverEditVehicleModelInput.value = profile.vehicleModel || "";
+      }
+      if (driverEditVehicleColorInput) {
+        driverEditVehicleColorInput.value = profile.vehicleColor || "";
+      }
+      if (driverEditLicensePlateInput) {
+        driverEditLicensePlateInput.value = profile.licensePlate || "";
+      }
+    }
+
+    function toggleDriverProfileEditor(show) {
+      if (!driverProfileEditor) return;
+      const shouldShow =
+        typeof show === "boolean" ? show : !driverProfileEditorVisible;
+      driverProfileEditorVisible = shouldShow;
+      driverProfileEditor.classList.toggle("hidden", !shouldShow);
+      if (shouldShow) {
+        if (driverProfileEditorMessage) driverProfileEditorMessage.textContent = "";
+        if (driverProfileEditorError) driverProfileEditorError.textContent = "";
+        populateDriverProfileEditor();
+        driverProfileEditor.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    async function saveDriverProfileChanges() {
+      if (!driverProfileEditor) return;
+      if (!currentUser) {
+        if (driverProfileEditorError) {
+          driverProfileEditorError.textContent = "Sign in to update your profile.";
+        }
+        return;
+      }
+
+      if (driverProfileEditorError) driverProfileEditorError.textContent = "";
+      if (driverProfileEditorMessage) driverProfileEditorMessage.textContent = "";
+
+      const fullName = (driverEditNameInput?.value || "").trim();
+      if (!fullName) {
+        if (driverProfileEditorError) {
+          driverProfileEditorError.textContent = "Full name is required.";
+        }
+        return;
+      }
+
+      const payload = {
+        fullName,
+        phone: (driverEditPhoneInput?.value || "").trim(),
+        vehicleYear: (driverEditVehicleYearInput?.value || "").trim(),
+        vehicleMake: (driverEditVehicleMakeInput?.value || "").trim(),
+        vehicleModel: (driverEditVehicleModelInput?.value || "").trim(),
+        vehicleColor: (driverEditVehicleColorInput?.value || "").trim(),
+        licensePlate: (driverEditLicensePlateInput?.value || "").trim(),
+        updatedAt: serverTimestamp()
+      };
+
+      try {
+        const ref = doc(db, "drivers", currentUser.uid);
+        await updateDoc(ref, payload);
+        driverMessage.textContent = "Driver profile updated.";
+        driverError.textContent = "";
+        await loadDriverProfile();
+        if (driverProfileEditorMessage) {
+          driverProfileEditorMessage.textContent = "Profile updated.";
+        }
+      } catch (err) {
+        console.error("saveDriverProfileChanges error", err);
+        if (driverProfileEditorError) {
+          driverProfileEditorError.textContent =
+            err.message || "Could not update driver profile.";
+        }
+      }
+    }
+
     function initMap() {
+      if (googleMapsLoadFailed) return;
+      if (!window.google || !google.maps) return;
       if (map) return;
       map = new google.maps.Map(document.getElementById("map"), {
         center: { lat: 36.0626, lng: -94.1574 },
@@ -1782,12 +2037,23 @@
     }
 
     function ensureBackgroundMapReady() {
+      if (googleMapsLoadFailed) return;
       if (map) return;
       if (window.google && google.maps) {
         initMap();
         return;
       }
       setTimeout(ensureBackgroundMapReady, 600);
+    }
+
+    if (editDriverButton) {
+      editDriverButton.addEventListener("click", () => toggleDriverProfileEditor());
+    }
+    if (driverProfileCancelButton) {
+      driverProfileCancelButton.addEventListener("click", () => toggleDriverProfileEditor(false));
+    }
+    if (driverProfileSaveButton) {
+      driverProfileSaveButton.addEventListener("click", saveDriverProfileChanges);
     }
 
     if (driverOfferAcceptButton) {
