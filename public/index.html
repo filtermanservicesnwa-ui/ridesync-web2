@@ -351,6 +351,10 @@
       border-color: #f97316;
       color: #fed7aa;
     }
+    .membership-status-badge.pending {
+      border-color: #facc15;
+      color: #fef3c7;
+    }
     .membership-plan-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -2356,6 +2360,8 @@
         membershipBadgeLabelEl.textContent = "U of A Unlimited";
         membershipBadgeTagEl.textContent = uofaVerified
           ? "Verified student"
+          : profile?.membershipStatus === "pending_verification"
+          ? "Pending approval"
           : (isStudent ? "Student (pending ID)" : "");
       } else if (plan === "nwa_unlimited") {
         membershipBadgeEl.classList.add("badge-nwa");
@@ -2402,10 +2408,33 @@
 
     updateMembershipPrices();
 
+    function normalizePlanKey(plan) {
+      return (plan || "basic").toString().toLowerCase();
+    }
+
+    function formatMembershipPlanLabel(planKey) {
+      const normalized = normalizePlanKey(planKey);
+      return (
+        MEMBERSHIP_PLAN_COPY[normalized]?.label ||
+        MEMBERSHIP_PLAN_COPY.basic.label
+      );
+    }
+
+    function formatMembershipStatusLabel(status) {
+      const normalized = (status || "active").toString().toLowerCase();
+      if (normalized === "pending_verification") return "Pending approval";
+      if (normalized === "inactive") return "Inactive";
+      if (normalized === "canceled") return "Canceled";
+      return "Active";
+    }
+
+    function planRequiresApproval(planKey) {
+      return normalizePlanKey(planKey) === "uofa_unlimited";
+    }
+
     function renderMembershipCard(profile) {
       if (!membershipCard) return;
-      const plan =
-        (profile?.membershipType || profile?.membership || "basic").toLowerCase();
+      const plan = normalizePlanKey(profile?.membershipType || profile?.membership || "basic");
       const planCopy = MEMBERSHIP_PLAN_COPY[plan] || MEMBERSHIP_PLAN_COPY.basic;
 
       if (membershipStatusText) {
@@ -2413,15 +2442,20 @@
       }
 
       if (membershipStatusBadge) {
-        const isActive =
-          (profile?.membershipStatus || "active").toLowerCase() === "active";
-        membershipStatusBadge.textContent = isActive ? "Active" : "Inactive";
+        const statusLabel = formatMembershipStatusLabel(profile?.membershipStatus);
+        const isActive = statusLabel === "Active";
+        const isPending = statusLabel === "Pending approval";
+        membershipStatusBadge.textContent = statusLabel;
         membershipStatusBadge.classList.toggle("active", isActive);
-        membershipStatusBadge.classList.toggle("inactive", !isActive);
+        membershipStatusBadge.classList.toggle("pending", isPending);
+        membershipStatusBadge.classList.toggle(
+          "inactive",
+          !isActive && !isPending
+        );
       }
 
       membershipPlanButtons?.forEach?.((btn) => {
-        const targetPlan = btn?.dataset?.planAction;
+        const targetPlan = normalizePlanKey(btn?.dataset?.planAction);
         if (!targetPlan) return;
         const isCurrent = targetPlan === plan;
         const card = btn.closest(".membership-plan");
@@ -2436,8 +2470,13 @@
           btn.textContent = "Switch to Basic";
           btn.disabled = false;
         } else if (!STRIPE_ENABLED) {
-          btn.textContent = "Contact support";
-          btn.disabled = true;
+          const needsApproval = planRequiresApproval(targetPlan);
+          const label =
+            MEMBERSHIP_PLAN_COPY[targetPlan]?.label || "Upgrade";
+          btn.textContent = needsApproval
+            ? "Request approval"
+            : `Activate ${label}`;
+          btn.disabled = false;
         } else {
           const label =
             MEMBERSHIP_PLAN_COPY[targetPlan]?.label || "Upgrade";
@@ -2445,6 +2484,29 @@
           btn.disabled = false;
         }
       });
+    }
+
+    async function applyMembershipPlanLocally(plan) {
+      const user = auth.currentUser;
+      if (!user) return;
+      const normalizedPlan = normalizePlanKey(plan || "basic");
+      const needsApproval = planRequiresApproval(normalizedPlan);
+      const updates = {
+        membershipType: normalizedPlan,
+        membershipStatus: needsApproval ? "pending_verification" : "active",
+        membershipRenewedAt: serverTimestamp(),
+        membershipUpdatedAt: serverTimestamp()
+      };
+      if (!needsApproval) {
+        updates.membershipApprovedAt = serverTimestamp();
+      }
+      await setDoc(doc(db, "users", user.uid), updates, { merge: true });
+      await loadUserProfile(user.uid, user.email);
+      if (membershipCardMessage) {
+        membershipCardMessage.textContent = needsApproval
+          ? "U of A membership requested. We'll verify your student ID shortly."
+          : `${formatMembershipPlanLabel(normalizedPlan)} activated.`;
+      }
     }
 
     function updateSyncButtonLabel() {
@@ -2539,6 +2601,19 @@
       return await getDownloadURL(storageRef);
     }
 
+    async function tryUploadFileWithGrace(fileInput, path, label) {
+      if (!fileInput || !fileInput.files || !fileInput.files.length) {
+        return { url: null, error: null, label };
+      }
+      try {
+        const url = await uploadFileIfAny(fileInput, path);
+        return { url, error: null, label };
+      } catch (err) {
+        console.warn(`Upload failed for ${label}`, err);
+        return { url: null, error: err, label };
+      }
+    }
+
     async function saveUserProfile(uid, email) {
       const fullName = fullNameEl.value.trim();
       const gender = (genderEl.value || "").toLowerCase();
@@ -2630,13 +2705,11 @@
       ].filter(Boolean);
       riderAddressDetailEl.textContent = addressParts.join(" • ") || "Not set";
 
-      const plan = p.membershipType || p.membership || "basic";
+      const planKey = normalizePlanKey(p.membershipType || p.membership || "basic");
+      const planLabel = formatMembershipPlanLabel(planKey);
+      const statusLabel = formatMembershipStatusLabel(p.membershipStatus);
       riderMembershipDetailEl.textContent =
-        plan === "uofa_unlimited"
-          ? "U of A Unlimited"
-          : plan === "nwa_unlimited"
-          ? "NWA Unlimited"
-          : "Basic";
+        statusLabel === "Active" ? planLabel : `${planLabel} • ${statusLabel}`;
 
       editFullNameEl.value = p.fullName || "";
       editPhoneEl.value = phone || "";
@@ -2699,29 +2772,65 @@
         gender: (editGenderEl.value || "").toLowerCase(),
         updatedAt: serverTimestamp()
       };
+      const userDocRef = doc(db, "users", user.uid);
+      const uploadDescriptors = [
+        {
+          input: editProfilePicInput,
+          path: `users/${user.uid}/profile.jpg`,
+          key: "profilePicUrl",
+          label: "profile photo"
+        },
+        {
+          input: editLicensePicInput,
+          path: `users/${user.uid}/license.jpg`,
+          key: "licensePicUrl",
+          label: "driver license"
+        },
+        {
+          input: editStudentIdPicInput,
+          path: `users/${user.uid}/studentId.jpg`,
+          key: "studentIdPicUrl",
+          label: "student ID"
+        }
+      ];
+
+      const uploadResults = [];
+      for (const descriptor of uploadDescriptors) {
+        const result = await tryUploadFileWithGrace(
+          descriptor.input,
+          descriptor.path,
+          descriptor.label
+        );
+        uploadResults.push({ ...result, key: descriptor.key });
+        if (result.url) {
+          updates[descriptor.key] = result.url;
+        }
+      }
+
+      const isStudent = !!currentUserProfile?.isStudent;
+      if (updates.studentIdPicUrl && isStudent) {
+        updates.uofaVerified = true;
+      }
 
       try {
-        const profilePicUrl = await uploadFileIfAny(editProfilePicInput, `users/${user.uid}/profile.jpg`);
-        const licensePicUrl = await uploadFileIfAny(editLicensePicInput, `users/${user.uid}/license.jpg`);
-        const studentIdPicUrl = await uploadFileIfAny(editStudentIdPicInput, `users/${user.uid}/studentId.jpg`);
-
-        if (profilePicUrl) updates.profilePicUrl = profilePicUrl;
-        if (licensePicUrl) updates.licensePicUrl = licensePicUrl;
-        if (studentIdPicUrl) updates.studentIdPicUrl = studentIdPicUrl;
-
-        const isStudent = !!currentUserProfile?.isStudent;
-        if (studentIdPicUrl && isStudent) {
-          updates.uofaVerified = true;
-        }
-
-        await setDoc(doc(db, "users", user.uid), updates, { merge: true });
+        await setDoc(userDocRef, updates, { merge: true });
         await loadUserProfile(user.uid, user.email);
-        profileMessage.textContent = "Profile updated.";
         editProfileSection.style.display = "none";
 
         editProfilePicInput.value = "";
         editLicensePicInput.value = "";
         editStudentIdPicInput.value = "";
+
+        const failedUploads = uploadResults
+          .filter((item) => item.error)
+          .map((item) => item.label);
+        if (failedUploads.length) {
+          profileMessage.textContent = "Profile updated, but some files could not upload.";
+          profileError.textContent = `Skipped: ${failedUploads.join(", ")}`;
+        } else {
+          profileMessage.textContent = "Profile updated.";
+          profileError.textContent = "";
+        }
       } catch (err) {
         console.error(err);
         profileError.textContent = "Could not update profile.";
@@ -3804,10 +3913,7 @@
       }
 
       if (!STRIPE_ENABLED) {
-        if (membershipCardMessage) {
-          membershipCardMessage.textContent =
-            "Stripe payments are unavailable. Contact support to upgrade.";
-        }
+        await applyMembershipPlanLocally(normalizedPlan);
         return;
       }
 

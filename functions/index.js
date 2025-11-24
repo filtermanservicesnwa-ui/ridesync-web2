@@ -741,14 +741,20 @@ exports.applyMembershipPlan = functions.https.onCall(async (data, context) => {
   }
 
   const userRef = db.collection("users").doc(uid);
+  const userSnap = await userRef.get();
+  const profileData = userSnap.exists ? userSnap.data() : {};
+  const needsApproval =
+    planKey === "uofa_unlimited" && !profileData?.uofaVerified;
+  const membershipStatus = needsApproval ? "pending_verification" : "active";
 
   if (planConfig.amountCents === 0) {
     await userRef.set(
       {
         membershipType: planKey || "basic",
-        membershipStatus: "active",
+        membershipStatus,
         membershipRenewedAt: FieldValue.serverTimestamp(),
         membershipExpiresAt: null,
+        membershipApprovalRequired: needsApproval || FieldValue.delete(),
       },
       { merge: true }
     );
@@ -799,11 +805,12 @@ exports.applyMembershipPlan = functions.https.onCall(async (data, context) => {
   await userRef.set(
     {
       membershipType: planKey,
-      membershipStatus: "active",
+      membershipStatus,
       membershipRenewedAt: FieldValue.serverTimestamp(),
       membershipPaidAmountCents: pending.amountCents,
       membershipPaidCurrency: pending.currency,
       membershipStripePaymentIntentId: paymentIntentId,
+      membershipApprovalRequired: needsApproval || FieldValue.delete(),
     },
     { merge: true }
   );
