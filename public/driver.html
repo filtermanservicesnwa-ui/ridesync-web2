@@ -775,7 +775,6 @@
 
     const APP_CONFIG = await loadAppConfig();
     const firebaseConfig = APP_CONFIG.firebaseConfig || {};
-    const supportConfig = APP_CONFIG.support || {};
     const geoConfig = APP_CONFIG.geo || {};
     const placeholderConfig = APP_CONFIG.placeholders || {};
     const mapsConfig = APP_CONFIG.maps || APP_CONFIG.googleMaps || {};
@@ -1197,20 +1196,6 @@
       return value;
     }
 
-    function formatPhoneDisplay(phone) {
-      if (!phone) return "";
-      const digits = phone.replace(/\D/g, "");
-      if (!digits) return "";
-      let clean = digits;
-      if (clean.length === 11 && clean.startsWith("1")) {
-        clean = clean.slice(1);
-      }
-      if (clean.length === 10) {
-        return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
-      }
-      return phone;
-    }
-
     function membershipLabel(value) {
       if (value === "uofa_unlimited") return "Membership: U of A Unlimited";
       if (value === "nwa_unlimited") return "Membership: NWA Unlimited";
@@ -1413,31 +1398,39 @@
       });
     }
 
+    async function getUnassignedGroupRides(ride) {
+      if (!ride) return [];
+      if (!(ride.isGroupRide || ride.groupId) || !ride.groupId) {
+        return [ride];
+      }
+
+      try {
+        const q = query(
+          collection(db, "rideRequests"),
+          where("groupId", "==", ride.groupId)
+        );
+        const snap = await getDocs(q);
+        const rides = [];
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (!data.driverId) {
+            rides.push({ id: docSnap.id, ...data });
+          }
+        });
+        return rides.length ? rides : [ride];
+      } catch (err) {
+        console.error("getUnassignedGroupRides error", err);
+        return [ride];
+      }
+    }
+
     async function declineRide(ride) {
       if (!currentUser) return;
       driverError.textContent = "";
       driverMessage.textContent = "";
 
       try {
-        let groupRides = [ride];
-
-        if ((ride.isGroupRide || ride.groupId) && ride.groupId) {
-          const q = query(
-            collection(db, "rideRequests"),
-            where("groupId", "==", ride.groupId)
-          );
-          const snap = await getDocs(q);
-          groupRides = [];
-          snap.forEach((docSnap) => {
-            const d = docSnap.data();
-            if (!d.driverId) {
-              groupRides.push({ id: docSnap.id, ...d });
-            }
-          });
-          if (!groupRides.length) {
-            groupRides = [ride];
-          }
-        }
+        const groupRides = await getUnassignedGroupRides(ride);
 
         const batch = writeBatch(db);
         groupRides.forEach((r) => {
@@ -1463,25 +1456,7 @@
       driverMessage.textContent = "";
 
       try {
-        let groupRides = [ride];
-
-        if ((ride.isGroupRide || ride.groupId) && ride.groupId) {
-          const q = query(
-            collection(db, "rideRequests"),
-            where("groupId", "==", ride.groupId)
-          );
-          const snap = await getDocs(q);
-          groupRides = [];
-          snap.forEach((docSnap) => {
-            const d = docSnap.data();
-            if (!d.driverId) {
-              groupRides.push({ id: docSnap.id, ...d });
-            }
-          });
-          if (!groupRides.length) {
-            groupRides = [ride];
-          }
-        }
+        const groupRides = await getUnassignedGroupRides(ride);
 
         const batch = writeBatch(db);
         const driverRef = doc(db, "drivers", currentUser.uid);
