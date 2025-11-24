@@ -2073,18 +2073,26 @@
           updateNavPickupView(ride);
           setDriverOverlayState(DRIVER_STATES.NAV_PICKUP, { forceReveal: true });
           break;
-        case "arrived_at_pickup":
-          updatePickupCodeView(ride);
+        case "arrived_at_pickup": {
+          const enteringPickup = driverOverlayState !== DRIVER_STATES.ENTER_PICKUP;
+          if (enteringPickup) {
+            updatePickupCodeView(ride);
+          }
           setDriverOverlayState(DRIVER_STATES.ENTER_PICKUP, { forceReveal: true });
           break;
+        }
         case "pickup_code_verified":
           updateNavDropoffView(ride);
           setDriverOverlayState(DRIVER_STATES.NAV_DROPOFF, { forceReveal: true });
           break;
-        case "arrived_at_dropoff":
-          updateDropoffCodeView();
+        case "arrived_at_dropoff": {
+          const enteringDropoff = driverOverlayState !== DRIVER_STATES.ENTER_DROPOFF;
+          if (enteringDropoff) {
+            updateDropoffCodeView();
+          }
           setDriverOverlayState(DRIVER_STATES.ENTER_DROPOFF, { forceReveal: true });
           break;
+        }
         case "dropoff_code_verified":
         case "completed":
           updateCompleteState(ride);

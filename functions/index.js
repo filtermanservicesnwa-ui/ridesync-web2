@@ -11,7 +11,7 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
-const PIN_CHARSET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const PIN_CHARSET = "0123456789";
 
 const MAX_POOL_DISTANCE_KM = 3;
 const CANDIDATE_LOOKBACK_MINUTES = 10;
