@@ -623,21 +623,44 @@
       writeBatch
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyA4BPyi7sDZtcsOZM-FDzl2DQ61wUTcejo",
-      authDomain: "ride-sync-nwa.firebaseapp.com",
-      projectId: "ride-sync-nwa",
-      storageBucket: "ride-sync-nwa.firebasestorage.app",
-      messagingSenderId: "221636626778",
-      appId: "1:221636626778:web:fe1afd1f95a16747898b63",
-      measurementId: "G-K3ZD4YWSZZ"
-    };
+    async function loadAppConfig() {
+      if (window.__rideSyncConfigPromise) {
+        return window.__rideSyncConfigPromise;
+      }
 
-    const SUPPORT_PHONE_NUMBER = "+14794221508";
-    const SUPPORT_TEL_LINK = `tel:${SUPPORT_PHONE_NUMBER}`;
-    const SUPPORT_SMS_LINK = `sms:${SUPPORT_PHONE_NUMBER}`;
-    const RIDER_PLACEHOLDER_AVATAR = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3MiIgaGVpZ2h0PSI3MiIgdmlld0JveD0iMCAwIDcyIDcyIj4KICA8cmVjdCB3aWR0aD0iNzIiIGhlaWdodD0iNzIiIHJ4PSIyMCIgZmlsbD0iIzAyMDYxNyIvPgogIDxwYXRoIGQ9Ik0zNiAzOWMtNyAwLTEyLjgtNS44LTEyLjgtMTIuOFMyOSAxMy41IDM2IDEzLjVzMTIuOCA1LjggMTIuOCAxMi44UzQzIDM5IDM2IDM5Wm0wIDQuOGM5LjUgMCAxOSAzLjUgMTkgOC45djMuNUgxN3YtMy41YzAtNS40IDkuNS04LjkgMTktOC45WiIgZmlsbD0iIzQ3NTU2OSIvPgo8L3N2Zz4=";
-    const DROPOFF_GEOFENCE_METERS = 45; // ~150ft
+      window.__rideSyncConfigPromise = fetch("/app-config.json", {
+        cache: "no-store"
+      })
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`Failed to load app config: ${res.status}`);
+          }
+          return res.json();
+        })
+        .catch((err) => {
+          console.error("App config load failed", err);
+          throw err;
+        });
+
+      return window.__rideSyncConfigPromise;
+    }
+
+    const APP_CONFIG = await loadAppConfig();
+    const firebaseConfig = APP_CONFIG.firebaseConfig || {};
+    const supportConfig = APP_CONFIG.support || {};
+    const geoConfig = APP_CONFIG.geo || {};
+    const placeholderConfig = APP_CONFIG.placeholders || {};
+
+    const SUPPORT_PHONE_NUMBER = supportConfig.phoneNumber || "";
+    const SUPPORT_TEL_LINK = SUPPORT_PHONE_NUMBER
+      ? `tel:${SUPPORT_PHONE_NUMBER}`
+      : "#";
+    const SUPPORT_SMS_LINK = SUPPORT_PHONE_NUMBER
+      ? `sms:${SUPPORT_PHONE_NUMBER}`
+      : "#";
+    const RIDER_PLACEHOLDER_AVATAR = placeholderConfig.riderAvatar || "";
+    const DROPOFF_GEOFENCE_METERS =
+      geoConfig.dropoffGeofenceMeters ?? 45; // ~150ft
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);

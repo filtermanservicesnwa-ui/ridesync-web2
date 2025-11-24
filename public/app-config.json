@@ -1,0 +1,30 @@
+{
+  "firebaseConfig": {
+    "apiKey": "AIzaSyA4BPyi7sDZtcsOZM-FDzl2DQ61wUTcejo",
+    "authDomain": "ride-sync-nwa.firebaseapp.com",
+    "projectId": "ride-sync-nwa",
+    "storageBucket": "ride-sync-nwa.firebasestorage.app",
+    "messagingSenderId": "221636626778",
+    "appId": "1:221636626778:web:fe1afd1f95a16747898b63",
+    "measurementId": "G-K3ZD4YWSZZ"
+  },
+  "support": {
+    "phoneNumber": "+14794221508"
+  },
+  "geo": {
+    "nwaCenter": { "lat": 36.334, "lng": -94.118 },
+    "nwaRadiusMiles": 30,
+    "dropoffGeofenceMeters": 45
+  },
+  "ridePolicy": {
+    "unlimitedCooldownMinutes": 30,
+    "surgeMode": false,
+    "surgeCooldownMinutes": 60
+  },
+  "placeholders": {
+    "driverAvatar": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI5NiIgaGVpZ2h0PSI5NiIgdmlld0JveD0iMCAwIDk2IDk2Ij4KICA8cmVjdCB3aWR0aD0iOTYiIGhlaWdodD0iOTYiIHJ4PSI0OCIgZmlsbD0iIzAyMDYxNyIvPgogIDxwYXRoIGQ9Ik00OCA1MGMtOS4xIDAtMTYuNS03LjQtMTYuNS0xNi41UzM4LjkgMTcgNDggMTdzMTYuNSA3LjQgMTYuNSAxNi41UzU3LjEgNTAgNDggNTBabTAgNmMxMi4yIDAgMjQuNSA0LjUgMjQuNSAxMS41djQuNUgyMy41di00LjVDMjMuNSA2MC41IDM1LjggNTYgNDggNTZaIiBmaWxsPSIjMzM0MTU1Ii8+Cjwvc3ZnPg==",
+    "vehicleImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTEwIiB2aWV3Qm94PSIwIDAgMTYwIDExMCI+CiAgPHJlY3Qgd2lkdGg9IjE2MCIgaGVpZ2h0PSIxMTAiIHJ4PSIxOCIgZmlsbD0iIzAyMDYxNyIvPgogIDxyZWN0IHg9IjE4IiB5PSIzOCIgd2lkdGg9IjEyNCIgaGVpZ2h0PSI0MCIgcng9IjEyIiBmaWxsPSIjMWUyOTNiIi8+CiAgPGNpcmNsZSBjeD0iNDUiIGN5PSI5MCIgcj0iMTIiIGZpbGw9IiMwZjE3MmEiIHN0cm9rZT0iIzQ3NTU2OSIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPGNpcmNsZSBjeD0iMTE1IiBjeT0iOTAiIHI9IjEyIiBmaWxsPSIjMGYxNzJhIiBzdHJva2U9IiM0NzU1NjkiIHN0cm9rZS13aWR0aD0iNCIvPgo8L3N2Zz4=",
+    "licenseImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTEwIiB2aWV3Qm94PSIwIDAgMTYwIDExMCI+CiAgPHJlY3Qgd2lkdGg9IjE2MCIgaGVpZ2h0PSIxMTAiIHJ4PSIxNiIgZmlsbD0iIzAyMDYxNyIvPgogIDxyZWN0IHg9IjE2IiB5PSIyMCIgd2lkdGg9IjEyOCIgaGVpZ2h0PSI3MCIgcng9IjEwIiBmaWxsPSIjMGYxNzJhIiBzdHJva2U9IiMzMzQxNTUiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxyZWN0IHg9IjI4IiB5PSIzMiIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iOCIgZmlsbD0iIzFlM2E4YSIvPgo8L3N2Zz4=",
+    "riderAvatar": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3MiIgaGVpZ2h0PSI3MiIgdmlld0JveD0iMCAwIDcyIDcyIj4KICA8cmVjdCB3aWR0aD0iNzIiIGhlaWdodD0iNzIiIHJ4PSIyMCIgZmlsbD0iIzAyMDYxNyIvPgogIDxwYXRoIGQ9Ik0zNiAzOWMtNyAwLTEyLjgtNS44LTEyLjgtMTIuOFMyOSAxMy41IDM2IDEzLjVzMTIuOCA1LjggMTIuOCAxMi44UzQzIDM5IDM2IDM5Wm0wIDQuOGM5LjUgMCAxOSAzLjUgMTkgOC45djMuNUgxN3YtMy41YzAtNS40IDkuNS04LjkgMTktOC45WiIgZmlsbD0iIzQ3NTU2OSIvPgo8L3N2Zz4="
+  }
+}
