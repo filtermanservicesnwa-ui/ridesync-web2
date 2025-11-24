@@ -28,15 +28,18 @@
       padding: 10px;
     }
     .card {
-      background: rgba(15,23,42,0.96);
+      background: rgba(2,6,23,0.92);
       border-radius: 18px;
-      border: 1px solid rgba(148,163,184,0.5);
-      box-shadow: 0 24px 60px rgba(0,0,0,0.7);
+      border: 1px solid rgba(148,163,184,0.45);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
       width: 100%;
       max-width: 520px;
       max-height: 96vh;
       padding: 22px 18px 18px;
       overflow-y: auto;
+      position: relative;
+      z-index: 2;
+      backdrop-filter: blur(12px);
     }
     h1, h2 { margin: 0 0 8px; text-align: center; }
     h1 { font-size: 1.6rem; }
@@ -119,11 +122,11 @@
     #authView.active, #rideView.active, #loadingView.active { display: block; }
 
     #map {
+      position: fixed;
+      inset: 0;
       width: 100%;
-      height: 220px;
-      border-radius: 14px;
-      border: 1px solid #4b5563;
-      margin-bottom: 10px;
+      height: 100%;
+      z-index: 0;
     }
     .fare-box {
       background: rgba(15,23,42,0.9);
@@ -141,23 +144,6 @@
     .fare-label { color: #9ca3af; }
     .fare-value { color: #e5e7eb; }
     .fare-total { color: #bbf7d0; font-weight: 600; }
-
-    .rider-mini-bar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 60;
-      background: rgba(15,23,42,0.97);
-      color: #e5e7eb;
-      padding: 8px 10px;
-      font-size: 0.8rem;
-      text-align: center;
-      display: none;
-    }
-    .rider-mini-bar.active {
-      display: block;
-    }
 
     .badge {
       display: inline-flex;
@@ -206,6 +192,7 @@
       top: 8px;
       font-size: 0.7rem;
       color: #cbd5f5;
+      z-index: 3;
     }
 
     .loading-center {
@@ -230,45 +217,92 @@
     .overlay {
       position: fixed;
       inset: 0;
-      background: rgba(15,23,42,0.97);
+      background: rgba(2,6,23,0.9);
+      backdrop-filter: blur(10px);
       display: none;
-      flex-direction: column;
-      padding: 14px;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
       z-index: 50;
     }
     .overlay.active { display: flex; }
+    .rider-overlay-shell {
+      width: min(520px, 100%);
+      max-height: 100%;
+      overflow-y: auto;
+      background: rgba(2,6,23,0.95);
+      border: 1px solid rgba(148,163,184,0.45);
+      border-radius: 20px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.65);
+    }
     .overlay-header {
       display:flex;
       justify-content:space-between;
       align-items:center;
-      margin-bottom:6px;
+      gap: 12px;
     }
-    .overlay-title { font-size:1rem; font-weight:600; }
-    .overlay-tag { font-size:0.78rem; color: #9ca3af; }
+    .overlay-title { font-size:1.2rem; font-weight:600; }
+    .overlay-subtitle { font-size:0.85rem; color:#9ca3af; margin-top:2px; }
     .overlay-close {
       border-radius:999px;
       border:1px solid #4b5563;
       background:#020617;
       color:#e5e7eb;
-      padding:4px 10px;
+      padding:6px 12px;
       cursor:pointer;
-      font-size:0.78rem;
+      font-size:0.82rem;
+      flex-shrink: 0;
     }
-    #riderOverlayInfo {
-      font-size:0.8rem;
-      color:#e5e7eb;
-      margin-bottom:8px;
+    .rider-state {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
     }
-    #riderOverlayStatus {
-      font-size:0.8rem;
-      color:#bbf7d0;
-      margin-bottom:8px;
+    .rider-state.active { display: flex; }
+    .state-text {
+      font-size: 1rem;
+      font-weight: 600;
     }
-    #riderOverlayError {
-      color:#fecaca;
-      font-size:0.78rem;
-      min-height:18px;
-      margin-bottom:6px;
+    .state-subtext {
+      font-size: 0.9rem;
+      color: #9ca3af;
+    }
+    .pin-card {
+      border-radius: 16px;
+      border: 1px solid rgba(148,163,184,0.5);
+      background: rgba(15,23,42,0.9);
+      padding: 16px;
+      text-align: center;
+    }
+    .pin-label {
+      font-size: 0.9rem;
+      color: #cbd5f5;
+      margin-bottom: 6px;
+    }
+    .pin-value {
+      font-size: 2.5rem;
+      letter-spacing: 0.4rem;
+      font-weight: 700;
+      color: #f9fafb;
+    }
+    .pin-hint {
+      font-size: 0.85rem;
+      color: #9ca3af;
+      margin-top: 6px;
+    }
+    .driver-info-slot {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .driver-info-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
     .driver-identity-card,
     .driver-vehicle-card,
@@ -279,7 +313,6 @@
       border-radius: 14px;
       padding: 12px;
       background: rgba(2,6,23,0.92);
-      margin-top: 10px;
     }
     .driver-identity-card {
       margin-top: 0;
@@ -459,12 +492,65 @@
       text-align: center;
       text-decoration: none;
     }
+    textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid #4b5563;
+      background: #020617;
+      color: #f9fafb;
+      font-size: 0.9rem;
+      resize: vertical;
+      min-height: 80px;
+    }
+    .rating-stars {
+      display: flex;
+      gap: 6px;
+    }
+    .rating-stars button {
+      flex: 1 1 auto;
+      border: 1px solid rgba(248,250,252,0.3);
+      background: rgba(15,23,42,0.9);
+      color: #fcd34d;
+      font-size: 1.2rem;
+      border-radius: 10px;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+    .rating-stars button.active {
+      background: #fcd34d;
+      color: #1f2937;
+    }
+    .tip-options {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .tip-button {
+      flex: 1 1 80px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.5);
+      background: rgba(15,23,42,0.9);
+      color: #e5e7eb;
+      padding: 8px 0;
+      cursor: pointer;
+    }
+    .tip-button.active {
+      background: #22c55e;
+      color: #022c22;
+      border-color: #22c55e;
+    }
+    #tipCustomInput {
+      margin-top: 6px;
+      display: none;
+    }
     .hidden {
       display: none !important;
     }
   </style>
 </head>
 <body>
+  <div id="map"></div>
   <div class="top-right" id="loginStatus"></div>
 
   <div class="card">
@@ -666,9 +752,6 @@
         <div class="small" id="joinBannerText"></div>
       </div>
 
-      <div class="section-title">Pickup & map</div>
-      <div id="map"></div>
-
       <div class="section-title">Destination</div>
       <label for="destination">Where are you going?</label>
       <input id="destination" type="text" placeholder="Enter destination address" />
@@ -744,107 +827,162 @@
 
       <!-- RIDER ACTIVE RIDE OVERLAY -->
       <div id="riderOverlay" class="overlay">
-        <div class="overlay-header">
-          <div>
-            <div id="riderOverlayTitle" class="overlay-title">Driver assigned</div>
-            <div id="riderOverlayTag" class="overlay-tag"></div>
-          </div>
-          <button id="closeRiderOverlayButton" class="overlay-close">Close</button>
-        </div>
-
-      <!-- MINI STATUS BAR WHEN RIDE IS IN PROGRESS -->
-      <div id="riderMiniBar" class="rider-mini-bar"></div>
-
-        <div id="riderOverlayInfo"></div>
-        <div id="riderOverlayStatus"></div>
-
-        <div id="driverIdentityCard" class="driver-identity-card">
-          <div class="driver-identity-header">
-            <div class="driver-identity-avatar">
-              <img id="driverIdentityAvatarImg" alt="Driver avatar" />
-              <div id="driverIdentityAvatarFallback" class="avatar-fallback">RS</div>
+        <div class="rider-overlay-shell">
+          <div class="overlay-header">
+            <div>
+              <div id="riderOverlayTitle" class="overlay-title">RideSync</div>
+              <div id="riderOverlaySubtitle" class="overlay-subtitle"></div>
             </div>
-            <div class="driver-identity-meta">
-              <div class="driver-identity-name-row">
-                <div id="driverIdentityName" class="driver-identity-name">RideSync driver</div>
-                <div id="driverIdentityRating" class="driver-rating-pill"></div>
+            <button id="closeRiderOverlayButton" class="overlay-close" type="button">Close</button>
+          </div>
+
+          <div id="riderStateSearching" class="rider-state">
+            <div class="loading-spinner"></div>
+            <div class="state-text">Looking for a driver…</div>
+            <div class="state-subtext">We’re syncing you with a nearby verified driver.</div>
+          </div>
+
+          <div id="riderStateDriverEta" class="rider-state">
+            <div class="state-text">Driver accepted</div>
+            <div class="state-subtext">Track their ETA and vehicle details below.</div>
+            <div class="driver-info-slot" data-slot="driver"></div>
+          </div>
+
+          <div id="riderStatePickupPin" class="rider-state">
+            <div class="state-text">Share your pickup code</div>
+            <div class="pin-card">
+              <div class="pin-label">Tell your driver this code when they arrive</div>
+              <div id="riderPickupPinValue" class="pin-value">----</div>
+              <div class="pin-hint">We use codes so only verified rides start.</div>
+            </div>
+          </div>
+
+          <div id="riderStateInTrip" class="rider-state">
+            <div class="state-text">On the way</div>
+            <div id="riderTripEtaText" class="state-subtext"></div>
+            <div class="driver-info-slot" data-slot="driver"></div>
+          </div>
+
+          <div id="riderStateDropoffPin" class="rider-state">
+            <div class="state-text">Almost there</div>
+            <div class="pin-card">
+              <div class="pin-label">Share this code at dropoff</div>
+              <div id="riderDropoffPinValue" class="pin-value">----</div>
+              <div class="pin-hint">Your driver enters this to finish the ride.</div>
+            </div>
+          </div>
+
+          <div id="riderStateRateTip" class="rider-state">
+            <div class="state-text">Rate your ride</div>
+            <div id="ratingStars" class="rating-stars">
+              <button type="button" data-rating="1">★</button>
+              <button type="button" data-rating="2">★</button>
+              <button type="button" data-rating="3">★</button>
+              <button type="button" data-rating="4">★</button>
+              <button type="button" data-rating="5">★</button>
+            </div>
+            <textarea id="riderFeedbackInput" placeholder="Anything we should know?"></textarea>
+            <div class="state-text">Tip your driver</div>
+            <div id="tipOptions" class="tip-options">
+              <button type="button" class="tip-button active" data-tip="0">$0</button>
+              <button type="button" class="tip-button" data-tip="2">$2</button>
+              <button type="button" class="tip-button" data-tip="5">$5</button>
+              <button type="button" class="tip-button" data-tip="10">$10</button>
+              <button type="button" class="tip-button tip-custom" data-tip="custom">Custom</button>
+            </div>
+            <input id="tipCustomInput" type="number" min="0" step="1" placeholder="Custom tip" />
+            <button id="submitRatingButton" class="btn-primary" type="button">Submit</button>
+            <div id="ratingError" class="error"></div>
+          </div>
+
+          <div id="riderStateThanks" class="rider-state">
+            <div class="state-text">Thank you for riding with RideSync!</div>
+            <div class="state-subtext">You’re all set. Request another ride anytime.</div>
+          </div>
+
+          <div id="driverInfoStack" class="driver-info-stack">
+            <div id="driverIdentityCard" class="driver-identity-card">
+              <div class="driver-identity-header">
+                <div class="driver-identity-avatar">
+                  <img id="driverIdentityAvatarImg" alt="Driver avatar" />
+                  <div id="driverIdentityAvatarFallback" class="avatar-fallback">RS</div>
+                </div>
+                <div class="driver-identity-meta">
+                  <div class="driver-identity-name-row">
+                    <div id="driverIdentityName" class="driver-identity-name">RideSync driver</div>
+                    <div id="driverIdentityRating" class="driver-rating-pill"></div>
+                  </div>
+                  <div id="driverIdentityStatus" class="driver-identity-status"></div>
+                  <div id="driverIdentityPhoneRow" class="driver-identity-phone">
+                    <span id="driverIdentityPhone"></span>
+                  </div>
+                </div>
               </div>
-              <div id="driverIdentityStatus" class="driver-identity-status"></div>
-              <div id="driverIdentityPhoneRow" class="driver-identity-phone">
-                <span id="driverIdentityPhone"></span>
+              <div id="driverIdentityBadges" class="driver-identity-badges"></div>
+            </div>
+
+            <div id="driverVehicleSection" class="driver-vehicle-card">
+              <div class="section-title" style="margin-top:0;">Vehicle</div>
+              <div class="driver-vehicle-body">
+                <div class="driver-vehicle-photo">
+                  <img id="driverVehiclePhoto" alt="Driver vehicle" />
+                  <div id="driverVehicleFallback" class="avatar-fallback">RS</div>
+                </div>
+                <div class="driver-vehicle-details">
+                  <div id="driverVehicleName" class="driver-vehicle-name"></div>
+                  <div id="driverVehiclePlate"></div>
+                  <div id="driverVehicleNote" class="driver-license-meta"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="driverLicenseSection" class="driver-license-card">
+              <div class="section-title" style="margin-top:0;">License &amp; verification</div>
+              <div class="driver-license-body">
+                <div class="driver-license-photo">
+                  <img id="driverLicensePhoto" alt="Driver license" />
+                  <div id="driverLicenseFallback" class="avatar-fallback">ID</div>
+                </div>
+                <div class="driver-license-details">
+                  <div id="driverLicenseSummary" class="driver-license-summary"></div>
+                  <div id="driverLicenseMeta" class="driver-license-meta"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="etaCard" class="eta-card">
+              <div class="eta-avatar">
+                <img id="etaDriverAvatarImg" alt="Driver ETA avatar" />
+                <div id="etaDriverAvatarFallback" class="avatar-fallback">RS</div>
+              </div>
+              <div class="eta-text">
+                <div id="etaDriverLabel" class="eta-driver-label"></div>
+                <div id="etaDriverStatus" class="eta-driver-status"></div>
+                <div id="etaDriverEta"></div>
+              </div>
+            </div>
+
+            <button id="contactDriverBtn" type="button" class="btn-secondary" style="margin-top:8px;">
+              Support
+            </button>
+
+            <div id="supportPanel" class="support-panel">
+              <div class="support-panel-header">
+                <div style="font-weight:600;">RideSync support</div>
+                <button id="supportBackButton" type="button" class="btn-small btn-secondary">Back</button>
+              </div>
+              <div class="support-panel-text">
+                Choose how you'd like to contact RideSync support.
+              </div>
+              <div class="support-actions">
+                <a id="supportCallButton" class="btn-primary" href="#" role="button">Call support</a>
+                <a id="supportTextButton" class="btn-secondary" href="#" role="button">Text support</a>
               </div>
             </div>
           </div>
-          <div id="driverIdentityBadges" class="driver-identity-badges"></div>
+
+          <div id="riderOverlayError" class="error"></div>
         </div>
-
-        <div id="driverVehicleSection" class="driver-vehicle-card">
-          <div class="section-title" style="margin-top:0;">Vehicle</div>
-          <div class="driver-vehicle-body">
-            <div class="driver-vehicle-photo">
-              <img id="driverVehiclePhoto" alt="Driver vehicle" />
-              <div id="driverVehicleFallback" class="avatar-fallback">RS</div>
-            </div>
-            <div class="driver-vehicle-details">
-              <div id="driverVehicleName" class="driver-vehicle-name"></div>
-              <div id="driverVehiclePlate"></div>
-              <div id="driverVehicleNote" class="driver-license-meta"></div>
-            </div>
-          </div>
-        </div>
-
-        <div id="driverLicenseSection" class="driver-license-card">
-          <div class="section-title" style="margin-top:0;">License &amp; verification</div>
-          <div class="driver-license-body">
-            <div class="driver-license-photo">
-              <img id="driverLicensePhoto" alt="Driver license" />
-              <div id="driverLicenseFallback" class="avatar-fallback">ID</div>
-            </div>
-            <div class="driver-license-details">
-              <div id="driverLicenseSummary" class="driver-license-summary"></div>
-              <div id="driverLicenseMeta" class="driver-license-meta"></div>
-            </div>
-          </div>
-        </div>
-
-        <div id="etaCard" class="eta-card">
-          <div class="eta-avatar">
-            <img id="etaDriverAvatarImg" alt="Driver ETA avatar" />
-            <div id="etaDriverAvatarFallback" class="avatar-fallback">RS</div>
-          </div>
-          <div class="eta-text">
-            <div id="etaDriverLabel" class="eta-driver-label"></div>
-            <div id="etaDriverStatus" class="eta-driver-status"></div>
-            <div id="etaDriverEta"></div>
-          </div>
-        </div>
-
-        <button id="contactDriverBtn" type="button" class="btn-secondary" style="margin-top:8px;">
-          Support
-        </button>
-
-        <div id="supportPanel" class="support-panel">
-          <div class="support-panel-header">
-            <div style="font-weight:600;">RideSync support</div>
-            <button id="supportBackButton" type="button" class="btn-small btn-secondary">Back</button>
-          </div>
-          <div class="support-panel-text">
-            Choose how you'd like to contact RideSync support.
-          </div>
-          <div class="support-actions">
-            <a id="supportCallButton" class="btn-primary" href="#" role="button">Call support</a>
-            <a id="supportTextButton" class="btn-secondary" href="#" role="button">Text support</a>
-          </div>
-        </div>
-
-        <div style="margin-top:10px;">
-          <canvas id="boardingQrCanvas"></canvas>
-          <div style="font-size:0.75rem; margin-top:4px; color:#9ca3af;">
-            Boarding pass – driver scans before boarding
-          </div>
-        </div>
-
-        <div id="riderOverlayError"></div>
       </div>
 
         <!-- QR section for private group rides -->
@@ -1026,13 +1164,30 @@
     // Rider active-ride overlay + mini bar + summary
     const riderOverlay = document.getElementById("riderOverlay");
     const riderOverlayTitle = document.getElementById("riderOverlayTitle");
-    const riderOverlayTag = document.getElementById("riderOverlayTag");
-    const riderOverlayInfo = document.getElementById("riderOverlayInfo");
-    const riderOverlayStatus = document.getElementById("riderOverlayStatus");
+    const riderOverlaySubtitle = document.getElementById("riderOverlaySubtitle");
     const riderOverlayError = document.getElementById("riderOverlayError");
     const closeRiderOverlayButton = document.getElementById("closeRiderOverlayButton");
-
-    const riderMiniBar = document.getElementById("riderMiniBar");
+    const riderStateElements = {
+      searching: document.getElementById("riderStateSearching"),
+      driverEta: document.getElementById("riderStateDriverEta"),
+      pickupPin: document.getElementById("riderStatePickupPin"),
+      inTrip: document.getElementById("riderStateInTrip"),
+      dropoffPin: document.getElementById("riderStateDropoffPin"),
+      rateTip: document.getElementById("riderStateRateTip"),
+      thanks: document.getElementById("riderStateThanks")
+    };
+    const driverInfoSlotPickup = riderStateElements.driverEta?.querySelector(".driver-info-slot") || null;
+    const driverInfoSlotTrip = riderStateElements.inTrip?.querySelector(".driver-info-slot") || null;
+    const riderPickupPinValue = document.getElementById("riderPickupPinValue");
+    const riderDropoffPinValue = document.getElementById("riderDropoffPinValue");
+    const riderTripEtaText = document.getElementById("riderTripEtaText");
+    const driverInfoStack = document.getElementById("driverInfoStack");
+    const ratingStarsContainer = document.getElementById("ratingStars");
+    const ratingError = document.getElementById("ratingError");
+    const tipOptions = document.getElementById("tipOptions");
+    const tipCustomInput = document.getElementById("tipCustomInput");
+    const submitRatingButton = document.getElementById("submitRatingButton");
+    const riderFeedbackInput = document.getElementById("riderFeedbackInput");
 
     const driverIdentityCardEl = document.getElementById("driverIdentityCard");
     const driverIdentityNameEl = document.getElementById("driverIdentityName");
@@ -1073,10 +1228,26 @@
     const rideSummaryText = document.getElementById("rideSummaryText");
 
     const contactDriverBtn = document.getElementById("contactDriverBtn");
-    const boardingQrCanvas = document.getElementById("boardingQrCanvas");
 
-    let boardingQr = null;
     let latestRideForOverlay = null;
+
+    const RIDER_STATES = {
+      HIDDEN: "hidden",
+      SEARCHING: "searching",
+      DRIVER_TO_PICKUP: "driver_to_pickup",
+      PICKUP_PIN: "pickup_pin",
+      IN_TRIP: "in_trip",
+      DROPOFF_PIN: "dropoff_pin",
+      RATE_TIP: "rate_tip",
+      THANKS: "thanks"
+    };
+
+    let riderOverlayState = RIDER_STATES.HIDDEN;
+    let riderOverlayDismissed = false;
+    let selectedRating = 0;
+    let selectedTipValue = 0;
+    let tipIsCustom = false;
+    let ratingSubmitting = false;
 
     let isSignupMode = false;
     let currentUserProfile = null;
@@ -1138,14 +1309,16 @@
       }
 
       function returnToHomeAfterRide(message = "", isError = false) {
-        if (riderOverlay) riderOverlay.classList.remove("active");
-        if (riderMiniBar) riderMiniBar.classList.remove("active");
-        if (supportPanel) supportPanel.classList.remove("active");
+        clearCurrentRideState();
+        setRiderOverlayState(RIDER_STATES.HIDDEN);
+        riderOverlayDismissed = false;
+        supportPanel?.classList.remove("active");
         if (rideSummary) rideSummary.style.display = "none";
         showRideView();
         clearPoolGroupUI();
         resetJoinModeUi();
         hideGroupQr();
+        resetRatingForm();
         if (cancelError) cancelError.textContent = "";
 
         if (isError) {
@@ -2076,103 +2249,314 @@
       };
     }
 
-      function formatTripEstimate(data) {
-        const estMinutes = data && typeof data.estimatedDurationMinutes === "number"
+    function formatTripEstimate(data) {
+      const estMinutes =
+        data && typeof data.estimatedDurationMinutes === "number"
           ? data.estimatedDurationMinutes
           : null;
-        if (!estMinutes) return "";
-        if (estMinutes < 1) return "Trip under 1 minute.";
-        if (estMinutes < 10) return `Estimated trip: ~${estMinutes.toFixed(1)} min.`;
-        return `Estimated trip: about ${Math.round(estMinutes)} min.`;
+      if (!estMinutes) return "";
+      if (estMinutes < 1) return "Trip under 1 minute.";
+      if (estMinutes < 10) return `Estimated trip: ~${estMinutes.toFixed(1)} min.`;
+      return `Estimated trip: about ${Math.round(estMinutes)} min.`;
+    }
+
+    function normalizeRiderStatus(data) {
+      const status = (data?.status || "").toLowerCase();
+      if (status === "driver_arrived") return "arrived_at_pickup";
+      if (status === "in_progress") return "pickup_code_verified";
+      return status;
+    }
+
+    function getStateElementByState(state) {
+      switch (state) {
+        case RIDER_STATES.SEARCHING:
+          return riderStateElements.searching;
+        case RIDER_STATES.DRIVER_TO_PICKUP:
+          return riderStateElements.driverEta;
+        case RIDER_STATES.PICKUP_PIN:
+          return riderStateElements.pickupPin;
+        case RIDER_STATES.IN_TRIP:
+          return riderStateElements.inTrip;
+        case RIDER_STATES.DROPOFF_PIN:
+          return riderStateElements.dropoffPin;
+        case RIDER_STATES.RATE_TIP:
+          return riderStateElements.rateTip;
+        case RIDER_STATES.THANKS:
+          return riderStateElements.thanks;
+        default:
+          return null;
       }
+    }
 
-      function updateRiderOverlay(rideId, data) {
-        if (!riderOverlay) return;
-        latestRideForOverlay = { rideId, data };
-
-        renderDriverIdentity(data);
-        renderVehicleSection(data);
-        renderLicenseSection(data);
-        renderEtaCard(data);
-        if (supportPanel) supportPanel.classList.remove("active");
-
-        const dest =
-          data.toDestination ||
-          data.toAddress ||
-          data.destAddress ||
-          "Destination";
-
-        riderOverlayTitle.textContent = "Driver assigned";
-        riderOverlayTag.textContent = dest;
-
-        const infoLines = [`<strong>Destination:</strong> ${dest}`];
-        if (data.pickupNote) infoLines.push(`Pickup notes: ${data.pickupNote}`);
-        riderOverlayInfo.innerHTML = infoLines.join("<br/>");
-
-        const friendlyStatus = (() => {
-          if (data.status === "driver_assigned") return "Your driver is on the way.";
-          if (data.status === "driver_arrived") return "Your driver has arrived.";
-          if (data.status === "in_progress") return "Ride in progress.";
-          return data.status || "";
-        })();
-        const tripEstimate = formatTripEstimate(data);
-        const combinedStatus = [friendlyStatus, tripEstimate].filter(Boolean).join(" ").trim();
-        riderOverlayStatus.textContent = combinedStatus;
-
-        riderOverlayError.textContent = "";
-
-        if (boardingQrCanvas) {
-          const boardingValue = `board:${rideId}`;
-          if (!boardingQr) {
-            boardingQr = new QRious({
-              element: boardingQrCanvas,
-              size: 140,
-              value: boardingValue
-            });
-          } else {
-            boardingQr.set({ value: boardingValue });
-          }
+    function setRiderOverlayState(state, options = {}) {
+      const { forceReveal = false } = options;
+      riderOverlayState = state;
+      if (state === RIDER_STATES.HIDDEN) {
+        if (driverInfoStack) {
+          driverInfoStack.style.display = "none";
         }
-
-        riderOverlay.classList.add("active");
-        if (riderMiniBar) riderMiniBar.classList.remove("active");
-        if (rideSummary) rideSummary.style.display = "none";
+        riderOverlay?.classList.remove("active");
+        return;
+      }
+      if (forceReveal) {
+        riderOverlayDismissed = false;
       }
 
-    function showRideSummary(data) {
-      if (!rideSummary || !rideSummaryText) return;
-      if (riderOverlay) riderOverlay.classList.remove("active");
-      if (riderMiniBar) riderMiniBar.classList.remove("active");
-      loadingView.style.display = "none";
-      rideView.style.display = "none";
+      Object.values(riderStateElements).forEach((el) => el?.classList.remove("active"));
+      const target = getStateElementByState(state);
+      if (target) {
+        target.classList.add("active");
+      }
 
-      rideSummary.style.display = "block";
+      if (!riderOverlayDismissed) {
+        riderOverlay?.classList.add("active");
+      }
 
-      const driverName = data.driverName || "Your driver";
-      const minutes = data.estimatedDurationMinutes || data.totalMinutes || null;
-      const miles =
-        data.distanceMeters != null
-          ? (data.distanceMeters / 1609.34).toFixed(2)
-          : data.totalMiles || null;
-      const fare =
-        data.fare && typeof data.fare.total === "number"
-          ? data.fare.total
-          : data.totalCost != null
-          ? data.totalCost
-          : null;
+      if (driverInfoStack) {
+        const needsDriverInfo =
+          state === RIDER_STATES.DRIVER_TO_PICKUP || state === RIDER_STATES.IN_TRIP;
+        if (needsDriverInfo) {
+          const slot =
+            state === RIDER_STATES.DRIVER_TO_PICKUP ? driverInfoSlotPickup : driverInfoSlotTrip;
+          if (slot) {
+            slot.appendChild(driverInfoStack);
+            driverInfoStack.style.display = "flex";
+          }
+        } else {
+          driverInfoStack.style.display = "none";
+        }
+      }
+    }
 
-      const lines = [];
-      lines.push(`<strong>Driver:</strong> ${driverName}`);
-      if (minutes != null)
-        lines.push(`<strong>Estimated time:</strong> ${minutes} min`);
-      if (miles != null)
-        lines.push(`<strong>Estimated distance:</strong> ${miles} mi`);
-      if (fare != null)
-        lines.push(`<strong>Fare:</strong> $${Number(fare).toFixed(2)}`);
+    function setOverlayCopy(title, subtitle) {
+      if (riderOverlayTitle) riderOverlayTitle.textContent = title || "RideSync";
+      if (riderOverlaySubtitle) riderOverlaySubtitle.textContent = subtitle || "";
+    }
 
-      lines.push("<br/>Thank you for choosing RideSync!");
+    function updateDriverModules(data) {
+      renderDriverIdentity(data);
+      renderVehicleSection(data);
+      renderLicenseSection(data);
+      renderEtaCard(data);
+      supportPanel?.classList.remove("active");
+    }
 
-      rideSummaryText.innerHTML = lines.join("<br/>");
+    function formatPinValue(value) {
+      if (value == null) return "----";
+      const str = String(value).trim().toUpperCase();
+      if (!str) return "----";
+      return str.split("").join(" ");
+    }
+
+    function updatePickupPinDisplay(code) {
+      if (riderPickupPinValue) {
+        riderPickupPinValue.textContent = formatPinValue(code);
+      }
+    }
+
+    function updateDropoffPinDisplay(code) {
+      if (riderDropoffPinValue) {
+        riderDropoffPinValue.textContent = formatPinValue(code);
+      }
+    }
+
+    function hasRiderRating(data) {
+      return (
+        typeof data?.rating === "number" ||
+        typeof data?.riderRating === "number"
+      );
+    }
+
+    function handleRideSnapshot(rideId, data) {
+      latestRideForOverlay = { rideId, data };
+      const status = normalizeRiderStatus(data);
+      const destinationLabel =
+        data.toDestination || data.toAddress || data.destAddress || "Destination";
+
+      if (status === "canceled_by_driver") {
+        returnToHomeAfterRide(
+          "Driver canceled your ride. You're back on the home screen.",
+          true
+        );
+        return;
+      }
+
+      if (status === "canceled_by_rider") {
+        returnToHomeAfterRide("Ride canceled.");
+        return;
+      }
+
+      switch (status) {
+        case "pending_driver":
+        case "pending":
+        case "pool_searching":
+        case "pooled_pending_driver":
+          setOverlayCopy("Syncing your ride", "Looking for a verified driver…");
+          setRiderOverlayState(RIDER_STATES.SEARCHING, { forceReveal: true });
+          break;
+        case "driver_assigned":
+          updateDriverModules(data);
+          setOverlayCopy("Driver en route", destinationLabel);
+          setRiderOverlayState(RIDER_STATES.DRIVER_TO_PICKUP, { forceReveal: true });
+          break;
+        case "arrived_at_pickup":
+          updatePickupPinDisplay(getPickupCodeFromRide(data));
+          setOverlayCopy("Share your pickup code", "Only give this to your driver.");
+          setRiderOverlayState(RIDER_STATES.PICKUP_PIN, { forceReveal: true });
+          break;
+        case "pickup_code_verified":
+          updateDriverModules(data);
+          riderTripEtaText.textContent =
+            formatTripEstimate(data) || "Sit back and relax.";
+          setOverlayCopy("On the way", destinationLabel);
+          setRiderOverlayState(RIDER_STATES.IN_TRIP, { forceReveal: true });
+          break;
+        case "arrived_at_dropoff":
+          updateDropoffPinDisplay(getDropoffCodeFromRide(data));
+          setOverlayCopy("Share your dropoff code", "Tell your driver to finish the ride.");
+          setRiderOverlayState(RIDER_STATES.DROPOFF_PIN, { forceReveal: true });
+          break;
+        case "dropoff_code_verified":
+        case "completed":
+          if (hasRiderRating(data)) {
+            setOverlayCopy("All set", "Thanks for riding with RideSync.");
+            setRiderOverlayState(RIDER_STATES.THANKS, { forceReveal: true });
+            setTimeout(() => returnToHomeAfterRide("Thanks for riding!"), 1800);
+          } else {
+            resetRatingForm();
+            setOverlayCopy("Rate & tip", "Let us know how it went.");
+            setRiderOverlayState(RIDER_STATES.RATE_TIP, { forceReveal: true });
+          }
+          break;
+        default:
+          updateDriverModules(data);
+          setOverlayCopy("Ride update", destinationLabel);
+          setRiderOverlayState(RIDER_STATES.DRIVER_TO_PICKUP, { forceReveal: true });
+      }
+    }
+
+    function resetRatingForm() {
+      selectedRating = 0;
+      selectedTipValue = 0;
+      tipIsCustom = false;
+      ratingSubmitting = false;
+      ratingError.textContent = "";
+      riderFeedbackInput.value = "";
+      tipCustomInput.value = "";
+      tipCustomInput.style.display = "none";
+      updateRatingButtons();
+      const defaultTipButton = tipOptions?.querySelector(".tip-button[data-tip='0']");
+      updateTipButtons(defaultTipButton);
+    }
+
+    function updateRatingButtons() {
+      if (!ratingStarsContainer) return;
+      ratingStarsContainer.querySelectorAll("button[data-rating]").forEach((btn) => {
+        const value = Number(btn.dataset.rating);
+        btn.classList.toggle("active", value <= selectedRating);
+      });
+    }
+
+    function updateTipButtons(activeButton) {
+      if (!tipOptions) return;
+      tipOptions.querySelectorAll(".tip-button").forEach((btn) => {
+        btn.classList.toggle("active", btn === activeButton);
+      });
+    }
+
+    function handleRatingStarClick(event) {
+      const button = event.target.closest("button[data-rating]");
+      if (!button) return;
+      const value = Number(button.dataset.rating);
+      if (Number.isNaN(value)) return;
+      selectedRating = value;
+      updateRatingButtons();
+    }
+
+    function handleTipButtonClick(event) {
+      const button = event.target.closest(".tip-button");
+      if (!button) return;
+      updateTipButtons(button);
+      const tipValue = button.dataset.tip;
+      if (tipValue === "custom") {
+        tipIsCustom = true;
+        tipCustomInput.style.display = "block";
+        tipCustomInput.focus();
+        selectedTipValue = 0;
+      } else {
+        tipIsCustom = false;
+        tipCustomInput.style.display = "none";
+        tipCustomInput.value = "";
+        selectedTipValue = Number(tipValue);
+      }
+    }
+
+    async function submitRatingAndTip() {
+      ratingError.textContent = "";
+      if (ratingSubmitting) return;
+      if (!currentRideId) {
+        ratingError.textContent = "Ride not found.";
+        return;
+      }
+      if (selectedRating < 1) {
+        ratingError.textContent = "Select a rating.";
+        return;
+      }
+      let tipValue = selectedTipValue;
+      if (tipIsCustom) {
+        const parsed = Number(tipCustomInput.value);
+        if (Number.isNaN(parsed) || parsed < 0) {
+          ratingError.textContent = "Enter a valid custom tip.";
+          return;
+        }
+        tipValue = parsed;
+      }
+      ratingSubmitting = true;
+      submitRatingButton.disabled = true;
+      try {
+        const updates = {
+          rating: selectedRating,
+          riderRating: selectedRating,
+          riderFeedback: riderFeedbackInput.value.trim() || null,
+          tip: tipValue,
+          tipAmount: tipValue,
+          tipCurrency: "USD",
+          riderRatedAt: serverTimestamp(),
+          riderRated: true
+        };
+        await updateDoc(doc(db, "rideRequests", currentRideId), updates);
+        setOverlayCopy("Thank you!", "Sending your feedback now.");
+        setRiderOverlayState(RIDER_STATES.THANKS, { forceReveal: true });
+        setTimeout(() => returnToHomeAfterRide("Thanks for riding!"), 2000);
+      } catch (err) {
+        console.error("submitRating error", err);
+        ratingError.textContent = err.message || "Could not submit rating.";
+      } finally {
+        ratingSubmitting = false;
+        submitRatingButton.disabled = false;
+      }
+    }
+
+    function getPickupCodeFromRide(ride) {
+      return (
+        ride?.pickupCode ??
+        ride?.pickup_code ??
+        ride?.pickupPin ??
+        ride?.pickupPIN ??
+        ride?.boardingCode ??
+        null
+      );
+    }
+
+    function getDropoffCodeFromRide(ride) {
+      return (
+        ride?.dropoffCode ??
+        ride?.dropoff_code ??
+        ride?.dropoffPin ??
+        ride?.dropoffPIN ??
+        ride?.dropoffBoardingCode ??
+        null
+      );
     }
 
     function startRideStatusWatcher(rideId) {
@@ -2181,50 +2565,11 @@
         currentRideWatcher = null;
       }
       const rideRef = doc(db, "rideRequests", rideId);
-        currentRideWatcher = onSnapshot(rideRef, (snap) => {
-          if (!snap.exists()) return;
-          const data = snap.data();
-          const status = data.status || null;
-
-          currentRideStatus = status;
-
-          if (status === "canceled_by_driver") {
-            clearCurrentRideState();
-            returnToHomeAfterRide("Driver canceled your ride. You're back on the home screen.", true);
-            return;
-          }
-
-          if (status === "canceled_by_rider") {
-            clearCurrentRideState();
-            returnToHomeAfterRide("Ride canceled.");
-            return;
-          }
-
-        // Driver assigned / arrived / in progress → show overlay or mini bar
-        if (
-          status === "driver_assigned" ||
-          status === "driver_arrived" ||
-          status === "in_progress"
-        ) {
-          updateRiderOverlay(rideId, data);
-
-          // When trip is actually in progress, collapse to mini bar
-          if (status === "in_progress" && riderMiniBar && riderOverlay) {
-            const tripEstimateText = formatTripEstimate(data);
-            riderOverlay.classList.remove("active");
-            riderMiniBar.textContent = tripEstimateText
-              ? `Ride in progress — ${tripEstimateText.replace("Estimated trip: ", "")}`
-              : "Ride in progress.";
-            riderMiniBar.classList.add("active");
-          }
-        } else if (status === "completed") {
-          // Done → show summary screen
-          showRideSummary(data);
-        } else {
-          // Any other status → hide overlay + mini bar
-          if (riderOverlay) riderOverlay.classList.remove("active");
-          if (riderMiniBar) riderMiniBar.classList.remove("active");
-        }
+      currentRideWatcher = onSnapshot(rideRef, (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        currentRideStatus = data.status || null;
+        handleRideSnapshot(rideId, data);
       });
     }
       
@@ -2295,7 +2640,6 @@
             canceledAt: serverTimestamp()
           });
 
-          clearCurrentRideState();
           returnToHomeAfterRide("Ride canceled, you won't be charged.");
         } catch (err) {
           console.error(err);
@@ -2304,8 +2648,19 @@
       });
 
     // Rider overlay buttons
+    if (ratingStarsContainer) {
+      ratingStarsContainer.addEventListener("click", handleRatingStarClick);
+    }
+    if (tipOptions) {
+      tipOptions.addEventListener("click", handleTipButtonClick);
+    }
+    if (submitRatingButton) {
+      submitRatingButton.addEventListener("click", submitRatingAndTip);
+    }
+
     if (closeRiderOverlayButton && riderOverlay) {
       closeRiderOverlayButton.addEventListener("click", () => {
+        riderOverlayDismissed = true;
         riderOverlay.classList.remove("active");
         supportPanel?.classList.remove("active");
       });

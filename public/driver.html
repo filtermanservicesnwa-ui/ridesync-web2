@@ -24,15 +24,18 @@
       padding: 10px;
     }
     .card {
-      background: rgba(15,23,42,0.96);
+      background: rgba(2,6,23,0.92);
       border-radius: 18px;
-      border: 1px solid rgba(148,163,184,0.5);
-      box-shadow: 0 24px 60px rgba(0,0,0,0.7);
+      border: 1px solid rgba(148,163,184,0.45);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.6);
       width: 100%;
       max-width: 640px;
       max-height: 96vh;
       padding: 20px 16px 16px;
       overflow-y: auto;
+      position: relative;
+      z-index: 2;
+      backdrop-filter: blur(12px);
     }
     h1, h2 { margin: 0 0 8px; text-align: center; }
     h1 { font-size: 1.6rem; }
@@ -128,11 +131,11 @@
     .status-dot.online { background: #22c55e; }
 
     #map {
+      position: fixed;
+      inset: 0;
       width: 100%;
-      height: 260px;
-      border-radius: 14px;
-      border: 1px solid #4b5563;
-      margin-bottom: 10px;
+      height: 100%;
+      z-index: 0;
     }
 
     .section-title {
@@ -179,39 +182,165 @@
     .overlay {
       position: fixed;
       inset: 0;
-      background: rgba(15,23,42,0.97);
+      background: rgba(2,6,23,0.92);
+      backdrop-filter: blur(10px);
       display: none;
-      flex-direction: column;
-      padding: 14px;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
       z-index: 50;
     }
     .overlay.active { display: flex; }
-    .overlay-header {
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      margin-bottom:6px;
+    .driver-overlay-shell {
+      width: min(520px, 100%);
+      max-height: 100%;
+      overflow-y: auto;
+      background: rgba(2,6,23,0.95);
+      border: 1px solid rgba(148,163,184,0.45);
+      border-radius: 20px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.65);
     }
-    .overlay-title { font-size:1rem; font-weight:600; }
-    .overlay-tag { font-size:0.78rem; color: #9ca3af; }
+    .driver-overlay-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .driver-rider-bar {
+      flex: 1 1 auto;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .driver-rider-avatars {
+      display: flex;
+      gap: 4px;
+    }
+    .driver-top-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.5);
+      overflow: hidden;
+      background: #0f172a;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .driver-top-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .driver-top-avatar .avatar-initials {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      color: #94a3b8;
+      font-size: 0.78rem;
+    }
+    .driver-top-avatar.has-photo .avatar-initials {
+      display: none;
+    }
+    .driver-rider-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .driver-rider-names {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    .driver-rider-membership {
+      font-size: 0.78rem;
+      color: #cbd5f5;
+    }
+    .driver-rider-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .driver-chip {
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.4);
+      font-size: 0.72rem;
+      color: #e5e7eb;
+    }
     .overlay-close {
-      border-radius:999px;
-      border:1px solid #4b5563;
-      background:#020617;
-      color:#e5e7eb;
-      padding:4px 10px;
-      cursor:pointer;
-      font-size:0.78rem;
+      border-radius: 999px;
+      border: 1px solid #4b5563;
+      background: #020617;
+      color: #e5e7eb;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 0.78rem;
+      flex-shrink: 0;
     }
-    #activeRideMap {
-      width:100%;
-      height:210px;
-      border-radius:14px;
-      border:1px solid #4b5563;
-      margin-bottom:8px;
+    .driver-state {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
     }
-    #activeRideInfo { font-size:0.78rem; color:#e5e7eb; margin-bottom:6px; }
-    #activeRideError { color:#fecaca; font-size:0.78rem; min-height:18px; }
+    .driver-state.active { display: flex; }
+    .driver-state h3 {
+      margin: 0;
+      font-size: 1.3rem;
+    }
+    .driver-state .state-subtitle {
+      color: #9ca3af;
+      font-size: 0.9rem;
+    }
+    .driver-state .info-box {
+      background: rgba(15,23,42,0.9);
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.35);
+      padding: 12px;
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+    .driver-state input {
+      background: #020617;
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.5);
+      padding: 10px 12px;
+      color: #f9fafb;
+      font-size: 1.1rem;
+      letter-spacing: 0.2em;
+      text-align: center;
+    }
+    .driver-state .button-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .driver-state .button-row button {
+      flex: 1 1 160px;
+    }
+    .driver-geofence-status {
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+    .driver-geofence-status.armed {
+      color: #bbf7d0;
+    }
+    .driver-spinner {
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      border: 4px solid rgba(148,163,184,0.3);
+      border-top-color: #22c55e;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg);} }
 
     .pill {
       display:inline-flex;
@@ -319,6 +448,7 @@
   </style>
 </head>
 <body>
+  <div id="map"></div>
   <div class="card">
     <!-- AUTH VIEW -->
     <div id="authView" class="active">
@@ -360,9 +490,6 @@
       <div id="driverMessage" class="success"></div>
       <div id="driverError" class="error"></div>
 
-      <div class="section-title">Your map</div>
-      <div id="map"></div>
-
       <div class="section-title">Available rides</div>
       <div id="ridesList"></div>
       <div class="small" id="ridesHint">
@@ -372,76 +499,102 @@
 
     <!-- ACTIVE RIDE OVERLAY -->
     <div id="activeRideOverlay" class="overlay">
-      <div class="overlay-header">
-        <div>
-          <div id="activeRideTitle" class="overlay-title">Active ride</div>
-          <div id="activeRideTag" class="overlay-tag"></div>
+      <div class="driver-overlay-shell">
+        <div class="driver-overlay-top">
+          <div class="driver-rider-bar">
+            <div id="driverOverlayAvatarRow" class="driver-rider-avatars"></div>
+            <div class="driver-rider-meta">
+              <div id="driverOverlayRiderNames" class="driver-rider-names">Rider</div>
+              <div id="driverOverlayMembership" class="driver-rider-membership"></div>
+              <div id="driverOverlayChips" class="driver-rider-chips"></div>
+            </div>
+          </div>
+          <button id="closeActiveRideButton" class="overlay-close" type="button">Hide</button>
         </div>
-        <button id="closeActiveRideButton" class="overlay-close">Close</button>
+
+        <div id="driverStateOffer" class="driver-state">
+          <h3>New ride request</h3>
+          <div class="state-subtitle">Review the details before accepting.</div>
+          <div class="info-box">
+            <div><strong>Pickup:</strong> <span id="driverOfferPickupText"></span></div>
+            <div><strong>Dropoff:</strong> <span id="driverOfferDropoffText"></span></div>
+            <div><strong>Riders:</strong> <span id="driverOfferRiderCount"></span></div>
+          </div>
+          <div class="button-row">
+            <button id="driverOfferRejectButton" class="btn-secondary" type="button">Not now</button>
+            <button id="driverOfferAcceptButton" class="btn-primary" type="button">Accept ride</button>
+          </div>
+        </div>
+
+        <div id="driverStateNavPickup" class="driver-state">
+          <h3>Navigate to pickup</h3>
+          <div class="state-subtitle">Keep the rider updated while en route.</div>
+          <div class="info-box">
+            <div><strong>Pickup:</strong> <span id="driverNavPickupAddress"></span></div>
+            <div id="driverNavPickupEta"></div>
+          </div>
+          <button id="driverArriveButton" class="btn-primary" type="button">Arrive</button>
+        </div>
+
+        <div id="driverStateEnterPickup" class="driver-state">
+          <h3>Verify rider</h3>
+          <div class="state-subtitle">Ask for their pickup code and enter it below.</div>
+          <input id="pickupCodeInput" type="text" inputmode="numeric" maxlength="6" placeholder="••••" />
+          <div id="pickupCodeError" class="error"></div>
+          <div class="button-row">
+            <button id="driverPickupBackButton" class="btn-secondary" type="button">Back</button>
+            <button id="driverPickupConfirmButton" class="btn-primary" type="button">Confirm code</button>
+          </div>
+        </div>
+
+        <div id="driverStateNavDropoff" class="driver-state">
+          <h3>On the way to destination</h3>
+          <div class="state-subtitle">Complete ride once you reach the dropoff.</div>
+          <div class="info-box">
+            <div><strong>Destination:</strong> <span id="driverNavDropoffAddress"></span></div>
+            <div id="driverDropoffEta"></div>
+          </div>
+          <div id="driverGeofenceStatus" class="driver-geofence-status"></div>
+          <button id="driverCompleteButton" class="btn-primary" type="button" disabled>
+            Complete ride
+          </button>
+          <button
+            id="driverCompleteOverrideButton"
+            class="btn-secondary btn-small"
+            type="button"
+            style="align-self:flex-start; display:none;"
+          >
+            Override geofence
+          </button>
+        </div>
+
+        <div id="driverStateEnterDropoff" class="driver-state">
+          <h3>Confirm dropoff</h3>
+          <div class="state-subtitle">Enter the rider's dropoff code to finish.</div>
+          <input id="dropoffCodeInput" type="text" inputmode="numeric" maxlength="6" placeholder="••••" />
+          <div id="dropoffCodeError" class="error"></div>
+          <button id="driverDropoffConfirmButton" class="btn-primary" type="button">Confirm code</button>
+        </div>
+
+        <div id="driverStateComplete" class="driver-state">
+          <h3>Ride complete</h3>
+          <div id="driverWaitingStatus" class="state-subtitle">Waiting for rider rating and tip…</div>
+          <div class="driver-spinner"></div>
+          <div id="driverRatingResult" class="info-box" style="display:none;"></div>
+          <div id="driverTipResult" class="info-box" style="display:none;"></div>
+          <button
+            id="driverCompleteDismissButton"
+            class="btn-primary"
+            type="button"
+            style="display:none;"
+          >
+            Close &amp; return to idle
+          </button>
+        </div>
+
+        <button id="driverCancelRideLink" class="btn-danger" type="button">Cancel ride</button>
+        <div id="activeRideError" class="error"></div>
       </div>
-
-      <div id="activeRideMap"></div>
-      <div id="activeRideInfo"></div>
-
-      <div class="section-title">Rider information</div>
-      <div id="driverRidersContainer" class="driver-riders-container"></div>
-
-      <button id="driverSupportButton" type="button" class="btn-secondary" style="margin-top:6px;">
-        Support
-      </button>
-      <div id="driverSupportPanel" class="support-panel">
-        <div class="support-panel-header">
-          <div style="font-weight:600;">RideSync support</div>
-          <button id="driverSupportBackButton" type="button" class="btn-small btn-secondary">Back</button>
-        </div>
-        <div class="support-panel-text">
-          Choose how to contact RideSync support.
-        </div>
-        <div class="support-actions">
-          <a id="driverSupportCallButton" class="btn-primary" href="#" role="button">Call support</a>
-          <a id="driverSupportTextButton" class="btn-secondary" href="#" role="button">Text support</a>
-        </div>
-      </div>
-
-      <div class="section-title">Ride controls</div>
-
-      <button id="markArrivedButton" class="btn-secondary" style="margin-top:4px;">
-        Mark arrived at pickup
-      </button>
-
-      <!-- Boarding QR (pickup) -->
-      <button id="showBoardingQrButton" class="btn-secondary" style="margin-top:4px;">
-        Show boarding QR
-      </button>
-      <canvas
-        id="boardingQrCanvas"
-        width="140"
-        height="140"
-        style="margin-top:6px; display:none;"
-      ></canvas>
-
-      <!-- Dropoff QR -->
-      <button id="showDropoffQrButton" class="btn-secondary" style="margin-top:4px;">
-        Show dropoff QR
-      </button>
-      <canvas
-        id="dropoffQrCanvas"
-        width="140"
-        height="140"
-        style="margin-top:6px; display:none;"
-      ></canvas>
-
-      <button id="startTripButton" class="btn-secondary" style="margin-top:4px;">
-        Start trip
-      </button>
-      <button id="completeTripButton" class="btn-primary" style="margin-top:4px;">
-        Complete trip
-      </button>
-        <button id="driverCancelButton" class="btn-danger" style="margin-top:4px;">
-          Cancel ride
-        </button>
-
-      <div id="activeRideError" class="error"></div>
     </div>
   </div>
 
@@ -484,6 +637,7 @@
     const SUPPORT_TEL_LINK = `tel:${SUPPORT_PHONE_NUMBER}`;
     const SUPPORT_SMS_LINK = `sms:${SUPPORT_PHONE_NUMBER}`;
     const RIDER_PLACEHOLDER_AVATAR = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3MiIgaGVpZ2h0PSI3MiIgdmlld0JveD0iMCAwIDcyIDcyIj4KICA8cmVjdCB3aWR0aD0iNzIiIGhlaWdodD0iNzIiIHJ4PSIyMCIgZmlsbD0iIzAyMDYxNyIvPgogIDxwYXRoIGQ9Ik0zNiAzOWMtNyAwLTEyLjgtNS44LTEyLjgtMTIuOFMyOSAxMy41IDM2IDEzLjVzMTIuOCA1LjggMTIuOCAxMi44UzQzIDM5IDM2IDM5Wm0wIDQuOGM5LjUgMCAxOSAzLjUgMTkgOC45djMuNUgxN3YtMy41YzAtNS40IDkuNS04LjkgMTktOC45WiIgZmlsbD0iIzQ3NTU2OSIvPgo8L3N2Zz4=";
+    const DROPOFF_GEOFENCE_METERS = 45; // ~150ft
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
@@ -508,26 +662,43 @@
     const ridesList = document.getElementById("ridesList");
 
     const activeRideOverlay = document.getElementById("activeRideOverlay");
-    const activeRideTitle = document.getElementById("activeRideTitle");
-    const activeRideTag = document.getElementById("activeRideTag");
-    const activeRideInfo = document.getElementById("activeRideInfo");
+    const driverOverlayAvatarRow = document.getElementById("driverOverlayAvatarRow");
+    const driverOverlayRiderNames = document.getElementById("driverOverlayRiderNames");
+    const driverOverlayMembership = document.getElementById("driverOverlayMembership");
+    const driverOverlayChips = document.getElementById("driverOverlayChips");
+    const driverStateOffer = document.getElementById("driverStateOffer");
+    const driverStateNavPickup = document.getElementById("driverStateNavPickup");
+    const driverStateEnterPickup = document.getElementById("driverStateEnterPickup");
+    const driverStateNavDropoff = document.getElementById("driverStateNavDropoff");
+    const driverStateEnterDropoff = document.getElementById("driverStateEnterDropoff");
+    const driverStateComplete = document.getElementById("driverStateComplete");
+    const driverOfferPickupText = document.getElementById("driverOfferPickupText");
+    const driverOfferDropoffText = document.getElementById("driverOfferDropoffText");
+    const driverOfferRiderCount = document.getElementById("driverOfferRiderCount");
+    const driverOfferAcceptButton = document.getElementById("driverOfferAcceptButton");
+    const driverOfferRejectButton = document.getElementById("driverOfferRejectButton");
+    const driverNavPickupAddress = document.getElementById("driverNavPickupAddress");
+    const driverNavPickupEta = document.getElementById("driverNavPickupEta");
+    const driverNavDropoffAddress = document.getElementById("driverNavDropoffAddress");
+    const driverDropoffEta = document.getElementById("driverDropoffEta");
+    const driverArriveButton = document.getElementById("driverArriveButton");
+    const pickupCodeInput = document.getElementById("pickupCodeInput");
+    const pickupCodeError = document.getElementById("pickupCodeError");
+    const driverPickupBackButton = document.getElementById("driverPickupBackButton");
+    const driverPickupConfirmButton = document.getElementById("driverPickupConfirmButton");
+    const driverGeofenceStatusEl = document.getElementById("driverGeofenceStatus");
+    const driverCompleteButton = document.getElementById("driverCompleteButton");
+    const driverCompleteOverrideButton = document.getElementById("driverCompleteOverrideButton");
+    const dropoffCodeInput = document.getElementById("dropoffCodeInput");
+    const dropoffCodeError = document.getElementById("dropoffCodeError");
+    const driverDropoffConfirmButton = document.getElementById("driverDropoffConfirmButton");
+    const driverWaitingStatus = document.getElementById("driverWaitingStatus");
+    const driverRatingResult = document.getElementById("driverRatingResult");
+    const driverTipResult = document.getElementById("driverTipResult");
+    const driverCompleteDismissButton = document.getElementById("driverCompleteDismissButton");
+    const driverCancelRideLink = document.getElementById("driverCancelRideLink");
     const activeRideError = document.getElementById("activeRideError");
-    const driverRidersContainer = document.getElementById("driverRidersContainer");
-    const driverSupportButton = document.getElementById("driverSupportButton");
-    const driverSupportPanel = document.getElementById("driverSupportPanel");
-    const driverSupportBackButton = document.getElementById("driverSupportBackButton");
-    const driverSupportCallButton = document.getElementById("driverSupportCallButton");
-    const driverSupportTextButton = document.getElementById("driverSupportTextButton");
     const closeActiveRideButton = document.getElementById("closeActiveRideButton");
-    const markArrivedButton = document.getElementById("markArrivedButton");
-    const startTripButton = document.getElementById("startTripButton");
-    const completeTripButton = document.getElementById("completeTripButton");
-    const driverCancelButton = document.getElementById("driverCancelButton");
-
-    const showBoardingQrButton = document.getElementById("showBoardingQrButton");
-    const showDropoffQrButton = document.getElementById("showDropoffQrButton");
-    const boardingQrCanvas = document.getElementById("boardingQrCanvas");
-    const dropoffQrCanvas = document.getElementById("dropoffQrCanvas");
 
     let currentUser = null;
     let currentDriverProfile = null;
@@ -536,12 +707,25 @@
     let ridesUnsub = null;
     let isOnline = false;
 
-    let activeRideGroup = [];
-    let activeRideMapObj;
-    let activeRideMarkers = [];
+    const DRIVER_STATES = {
+      HIDDEN: "HIDDEN",
+      OFFER: "DRIVER_RIDE_OFFER",
+      NAV_PICKUP: "DRIVER_NAV_TO_PICKUP",
+      ENTER_PICKUP: "DRIVER_ENTER_PICKUP_CODE",
+      NAV_DROPOFF: "DRIVER_NAV_TO_DROPOFF",
+      ENTER_DROPOFF: "DRIVER_ENTER_DROPOFF_CODE",
+      COMPLETE: "DRIVER_RIDE_COMPLETE_WAITING_RATING"
+    };
 
-    let boardingQr = null;
-    let dropoffQr = null;
+    let activeRideGroup = [];
+    let activeRideWatchers = [];
+    let pendingRideOffer = null;
+    let driverOverlayState = DRIVER_STATES.HIDDEN;
+    let driverOverlayDismissed = false;
+    let driverCurrentPosition = null;
+    let driverLocationWatcherId = null;
+    let activeDropoffLocation = null;
+    let geofenceOverride = false;
 
     function showAuth() {
       authView.classList.add("active");
@@ -582,6 +766,7 @@
         driverAvatar.textContent = "DR";
         driverNameEl.textContent = "Driver";
         driverDetailEl.textContent = "";
+        clearActiveRideFlow();
         if (ridesUnsub) {
           ridesUnsub();
           ridesUnsub = null;
@@ -651,14 +836,17 @@
             const { latitude, longitude } = pos.coords;
             const loc = { lat: latitude, lng: longitude };
             map.setCenter(loc);
+            driverCurrentPosition = loc;
             driverMarker = new google.maps.Marker({
               map,
               position: loc,
               title: "You"
             });
+            evaluateDropoffGeofence();
           },
           () => {}
         );
+        startDriverLocationWatch();
       }
     }
 
@@ -765,110 +953,120 @@
       return rider?.toDestination || rider?.toAddress || rider?.destAddress || "";
     }
 
-    function buildDriverRiderCard(rider, index) {
-      const card = document.createElement("div");
-      card.className = "driver-rider-card";
-
-      const avatarWrapper = document.createElement("div");
-      avatarWrapper.className = "driver-rider-avatar";
-      const avatarImg = document.createElement("img");
-      avatarImg.alt = `Rider ${index + 1} avatar`;
-      const initialsDiv = document.createElement("div");
-      initialsDiv.className = "avatar-initials";
-      const displayName = rider?.riderName || `Rider ${index + 1}`;
-      initialsDiv.textContent = displayName
+    function riderInitials(name) {
+      return (name || "RS")
         .split(" ")
         .filter(Boolean)
         .map((part) => part[0])
         .join("")
         .slice(0, 2)
         .toUpperCase() || "RS";
-      const photoUrl =
-        safeImageUrl(rider?.riderProfilePicUrl) ||
-        safeImageUrl(rider?.riderPhotoUrl) ||
-        safeImageUrl(rider?.riderAvatarUrl) ||
-        safeImageUrl(rider?.riderImageUrl) ||
-        null;
-      const finalSrc = photoUrl || RIDER_PLACEHOLDER_AVATAR;
-      avatarImg.src = finalSrc;
-      avatarImg.onerror = () => {
-        avatarWrapper.classList.remove("has-photo");
-        avatarImg.onerror = null; // prevent infinite loop if placeholder fails
-        avatarImg.src = RIDER_PLACEHOLDER_AVATAR;
-      };
-      if (photoUrl) {
-        avatarWrapper.classList.add("has-photo");
-      }
-      avatarWrapper.appendChild(avatarImg);
-      avatarWrapper.appendChild(initialsDiv);
-
-      const body = document.createElement("div");
-      body.className = "driver-rider-body";
-
-      const labelEl = document.createElement("div");
-      labelEl.className = "driver-rider-label";
-      labelEl.textContent = `Rider ${index + 1}`;
-      body.appendChild(labelEl);
-
-      const nameEl = document.createElement("div");
-      nameEl.className = "driver-rider-name";
-      nameEl.textContent = displayName;
-      body.appendChild(nameEl);
-
-      const membershipText = membershipLabel(rider?.membershipType || rider?.membership);
-      if (membershipText) {
-        const membershipEl = document.createElement("div");
-        membershipEl.className = "driver-rider-line";
-        membershipEl.textContent = membershipText;
-        body.appendChild(membershipEl);
-      }
-
-      const phoneText = formatPhoneDisplay(rider?.riderPhone || rider?.phone);
-      if (phoneText) {
-        const phoneEl = document.createElement("div");
-        phoneEl.className = "driver-rider-line";
-        phoneEl.textContent = `Phone: ${phoneText}`;
-        body.appendChild(phoneEl);
-      }
-
-      const pickupText = pickupLabel(rider);
-      if (pickupText) {
-        const pickupEl = document.createElement("div");
-        pickupEl.className = "driver-rider-line";
-        pickupEl.textContent = `Pickup: ${pickupText}`;
-        body.appendChild(pickupEl);
-      }
-
-      const dropoffText = dropoffLabel(rider);
-      if (dropoffText) {
-        const dropoffEl = document.createElement("div");
-        dropoffEl.className = "driver-rider-line";
-        dropoffEl.textContent = `Dropoff: ${dropoffText}`;
-        body.appendChild(dropoffEl);
-      }
-
-      card.appendChild(avatarWrapper);
-      card.appendChild(body);
-      return card;
     }
 
-    function renderDriverRiderCards(riders) {
-      if (!driverRidersContainer) return;
-      driverRidersContainer.innerHTML = "";
-      if (!riders || !riders.length) {
-        const empty = document.createElement("div");
-        empty.className = "small";
-        empty.textContent = "Rider details will appear here once assigned.";
-        driverRidersContainer.appendChild(empty);
+    function renderDriverTopBar(riders) {
+      if (!driverOverlayAvatarRow) return;
+      const list = Array.isArray(riders) ? riders : [];
+      driverOverlayAvatarRow.innerHTML = "";
+      driverOverlayChips.innerHTML = "";
+
+      if (!list.length) {
+        driverOverlayRiderNames.textContent = "Awaiting rider";
+        driverOverlayMembership.textContent = "";
         return;
       }
-      riders.forEach((rider, index) => {
-        driverRidersContainer.appendChild(buildDriverRiderCard(rider, index));
+
+      const nameList = list
+        .map((r, idx) => r?.riderName || `Rider ${idx + 1}`)
+        .join(", ");
+      driverOverlayRiderNames.textContent = nameList;
+
+      const membershipText = membershipLabel(
+        list[0]?.membershipType || list[0]?.membership
+      )
+        ?.replace("Membership: ", "") || "";
+      driverOverlayMembership.textContent = membershipText;
+
+      list.forEach((rider, index) => {
+        const displayName = rider?.riderName || `Rider ${index + 1}`;
+        const avatarWrapper = document.createElement("div");
+        avatarWrapper.className = "driver-top-avatar";
+
+        const avatarImg = document.createElement("img");
+        avatarImg.alt = displayName;
+        const fallback = document.createElement("div");
+        fallback.className = "avatar-initials";
+        fallback.textContent = riderInitials(displayName);
+
+        const photoUrl =
+          safeImageUrl(rider?.riderProfilePicUrl) ||
+          safeImageUrl(rider?.riderPhotoUrl) ||
+          safeImageUrl(rider?.riderAvatarUrl) ||
+          safeImageUrl(rider?.riderImageUrl) ||
+          null;
+        if (photoUrl) {
+          avatarImg.src = photoUrl;
+          avatarImg.onerror = () => {
+            avatarWrapper.classList.remove("has-photo");
+            avatarImg.remove();
+          };
+          avatarWrapper.classList.add("has-photo");
+          avatarWrapper.appendChild(avatarImg);
+        }
+        avatarWrapper.appendChild(fallback);
+        driverOverlayAvatarRow.appendChild(avatarWrapper);
+
+        const chip = document.createElement("span");
+        chip.className = "driver-chip";
+        chip.textContent = `Rider ${index + 1}`;
+        driverOverlayChips.appendChild(chip);
       });
     }
 
-    function hideDriverSupportPanel() {
-      driverSupportPanel?.classList.remove("active");
+    function setDriverOverlayState(state, options = {}) {
+      const { forceReveal = false } = options;
+      driverOverlayState = state;
+      if (state === DRIVER_STATES.HIDDEN) {
+        activeRideOverlay?.classList.remove("active");
+        return;
+      }
+      if (forceReveal) {
+        driverOverlayDismissed = false;
+      }
+      const pairs = [
+        [driverStateOffer, DRIVER_STATES.OFFER],
+        [driverStateNavPickup, DRIVER_STATES.NAV_PICKUP],
+        [driverStateEnterPickup, DRIVER_STATES.ENTER_PICKUP],
+        [driverStateNavDropoff, DRIVER_STATES.NAV_DROPOFF],
+        [driverStateEnterDropoff, DRIVER_STATES.ENTER_DROPOFF],
+        [driverStateComplete, DRIVER_STATES.COMPLETE]
+      ];
+      pairs.forEach(([el, key]) => {
+        if (!el) return;
+        if (state === key) {
+          el.classList.add("active");
+        } else {
+          el.classList.remove("active");
+        }
+      });
+      if (!driverOverlayDismissed) {
+        activeRideOverlay?.classList.add("active");
+      }
+      evaluateDropoffGeofence();
+      if (driverCompleteOverrideButton && state !== DRIVER_STATES.NAV_DROPOFF) {
+        driverCompleteOverrideButton.style.display = "none";
+      }
+    }
+
+    function openRideOfferOverlay(ride) {
+      if (!ride) return;
+      pendingRideOffer = ride;
+      activeRideError.textContent = "";
+      renderDriverTopBar([ride]);
+      driverOfferPickupText.textContent = pickupLabel(ride) || "Pickup pending";
+      driverOfferDropoffText.textContent = dropoffLabel(ride) || "Dropoff pending";
+      const riderCount = ride?.numRiders || ride?.riderCount || ride?.currentRiderCount || 1;
+      driverOfferRiderCount.textContent = `${riderCount} rider${riderCount === 1 ? "" : "s"}`;
+      setDriverOverlayState(DRIVER_STATES.OFFER, { forceReveal: true });
     }
 
     function renderRides(allRides) {
@@ -922,7 +1120,7 @@
         btn.addEventListener("click", () => {
           const rideId = btn.getAttribute("data-accept-id");
           const ride = visible.find((r) => r.id === rideId);
-          if (ride) acceptRide(ride);
+          if (ride) openRideOfferOverlay(ride);
         });
       });
 
@@ -980,7 +1178,7 @@
     }
 
     async function acceptRide(ride) {
-      if (!currentUser) return;
+      if (!currentUser) return null;
       driverError.textContent = "";
       driverMessage.textContent = "";
 
@@ -1088,154 +1286,331 @@
 
         driverMessage.textContent = `Assigned to ${groupRides.length} rider(s).`;
 
-        activeRideGroup = groupRides.map((r) => ({
+        return groupRides.map((r) => ({
           ...r,
           ...driverInfo
         }));
-        openActiveRideOverlay();
       } catch (err) {
         console.error("acceptRide error", err);
         driverError.textContent = err.message || "Error accepting ride.";
+        throw err;
       }
     }
 
-    function openActiveRideOverlay() {
-      if (!activeRideGroup.length) return;
-      hideDriverSupportPanel();
-      activeRideOverlay.classList.add("active");
-      activeRideError.textContent = "";
-
-      const isPooled = activeRideGroup.length > 1;
-      const primary = activeRideGroup[0];
-
-      activeRideTitle.textContent = isPooled
-        ? `Pool ride (${activeRideGroup.length} riders)`
-        : "Single ride";
-
-      activeRideTag.textContent = primary.toDestination || primary.toAddress || "Destination unknown";
-
-      const ridersInfo = activeRideGroup
-        .map((r, idx) => {
-          const name = r.riderName || `Rider ${idx + 1}`;
-          const phone = r.riderPhone || "";
-          const membership = r.membershipType || r.membership || "Unknown";
-          const gender = r.gender || "";
-          const fromLoc = r.fromLocation;
-          const pickupStr =
-            fromLoc && typeof fromLoc.lat === "number" && typeof fromLoc.lng === "number"
-              ? `(${fromLoc.lat.toFixed(4)}, ${fromLoc.lng.toFixed(4)})`
-              : "(no pickup coords)";
-
-          return [
-            `<strong>${name}</strong>`,
-            phone ? `Phone: ${phone}` : "",
-            `Membership: ${membership}`,
-            gender ? `Gender: ${gender}` : "",
-            `Pickup: ${pickupStr}`
-          ]
-            .filter(Boolean)
-            .join(" • ");
-        })
-        .join("<br/>");
-
-      activeRideInfo.innerHTML = ridersInfo;
-      renderDriverRiderCards(activeRideGroup);
-
-      if (!activeRideMapObj) {
-        activeRideMapObj = new google.maps.Map(document.getElementById("activeRideMap"), {
-          center: { lat: 36.0626, lng: -94.1574 },
-          zoom: 12,
-          disableDefaultUI: true
-        });
-      }
-      activeRideMarkers.forEach((m) => m.setMap(null));
-      activeRideMarkers = [];
-
-      const bounds = new google.maps.LatLngBounds();
-
-      activeRideGroup.forEach((r, idx) => {
-        const fromLoc = r.fromLocation;
-        if (fromLoc && typeof fromLoc.lat === "number" && typeof fromLoc.lng === "number") {
-          const pos = { lat: fromLoc.lat, lng: fromLoc.lng };
-          const marker = new google.maps.Marker({
-            map: activeRideMapObj,
-            position: pos,
-            label: String(idx + 1),
-            title: r.riderName || `Rider ${idx + 1}`
-          });
-          activeRideMarkers.push(marker);
-          bounds.extend(pos);
-        }
+    function clearActiveRideWatchers() {
+      activeRideWatchers.forEach((unsub) => {
+        if (typeof unsub === "function") unsub();
       });
+      activeRideWatchers = [];
+    }
 
-      if (!bounds.isEmpty()) {
-        activeRideMapObj.fitBounds(bounds);
-      }
+    function getPrimaryRide() {
+      return activeRideGroup.length ? activeRideGroup[0] : null;
     }
 
     function getPrimaryRideId() {
-      if (!activeRideGroup.length) return null;
-      return activeRideGroup[0].id;
+      const primary = getPrimaryRide();
+      return primary ? primary.id : null;
     }
 
-    function showBoardingQr() {
-      const rideId = getPrimaryRideId();
-      if (!rideId || !boardingQrCanvas) return;
+    function beginDriverRideFlow(groupRides) {
+      if (!Array.isArray(groupRides) || !groupRides.length) return;
+      driverOverlayDismissed = false;
+      subscribeToActiveRideGroup(groupRides);
+      setDriverOverlayState(DRIVER_STATES.NAV_PICKUP, { forceReveal: true });
+    }
 
-      const url = `${window.location.origin}/rider.html?checkin=start&ride=${encodeURIComponent(
-        rideId
-      )}`;
-
-      boardingQrCanvas.style.display = "block";
-
-      if (!boardingQr) {
-        boardingQr = new QRious({
-          element: boardingQrCanvas,
-          size: 140,
-          value: url
+    function subscribeToActiveRideGroup(group) {
+      clearActiveRideWatchers();
+      activeRideGroup = group.slice();
+      if (!activeRideGroup.length) {
+        setDriverOverlayState(DRIVER_STATES.HIDDEN);
+        return;
+      }
+      renderDriverTopBar(activeRideGroup);
+      updateDriverStateFromRide(activeRideGroup[0]);
+      activeRideWatchers = activeRideGroup.map((ride, index) => {
+        const ref = doc(db, "rideRequests", ride.id);
+        return onSnapshot(ref, (snap) => {
+          if (!snap.exists()) return;
+          const data = { id: snap.id, ...snap.data() };
+          activeRideGroup[index] = data;
+          renderDriverTopBar(activeRideGroup);
+          if (index === 0) {
+            updateDriverStateFromRide(data);
+          }
         });
-      } else {
-        boardingQr.set({ value: url });
+      });
+    }
+
+    function clearActiveRideFlow() {
+      clearActiveRideWatchers();
+      activeRideGroup = [];
+      activeDropoffLocation = null;
+      geofenceOverride = false;
+      pendingRideOffer = null;
+      driverOverlayDismissed = false;
+      activeRideError.textContent = "";
+      setDriverOverlayState(DRIVER_STATES.HIDDEN);
+    }
+
+    function normalizedRideStatus(ride) {
+      const status = (ride?.status || "").toLowerCase();
+      if (status === "driver_arrived") return "arrived_at_pickup";
+      if (status === "in_progress") return "pickup_code_verified";
+      return status;
+    }
+
+    function updateDriverStateFromRide(ride) {
+      if (!ride) {
+        setDriverOverlayState(DRIVER_STATES.HIDDEN);
+        return;
+      }
+
+      const status = normalizedRideStatus(ride);
+
+      switch (status) {
+        case "driver_assigned":
+        case "pending_driver":
+        case "pool_searching":
+        case "pooled_pending_driver":
+          updateNavPickupView(ride);
+          setDriverOverlayState(DRIVER_STATES.NAV_PICKUP, { forceReveal: true });
+          break;
+        case "arrived_at_pickup":
+          updatePickupCodeView(ride);
+          setDriverOverlayState(DRIVER_STATES.ENTER_PICKUP, { forceReveal: true });
+          break;
+        case "pickup_code_verified":
+          updateNavDropoffView(ride);
+          setDriverOverlayState(DRIVER_STATES.NAV_DROPOFF, { forceReveal: true });
+          break;
+        case "arrived_at_dropoff":
+          updateDropoffCodeView();
+          setDriverOverlayState(DRIVER_STATES.ENTER_DROPOFF, { forceReveal: true });
+          break;
+        case "dropoff_code_verified":
+        case "completed":
+          updateCompleteState(ride);
+          setDriverOverlayState(DRIVER_STATES.COMPLETE, { forceReveal: true });
+          break;
+        case "canceled_by_rider":
+          driverMessage.textContent = "Rider canceled the ride.";
+          clearActiveRideFlow();
+          break;
+        default:
+          updateNavPickupView(ride);
+          setDriverOverlayState(DRIVER_STATES.NAV_PICKUP, { forceReveal: true });
       }
     }
 
-    function showDropoffQr() {
-      const rideId = getPrimaryRideId();
-      if (!rideId || !dropoffQrCanvas) return;
+    function updateNavPickupView(ride) {
+      driverNavPickupAddress.textContent = pickupLabel(ride) || "Pickup pending";
+      const etaMinutes =
+        ride?.driverEtaMinutes ??
+        ride?.pickupEtaMinutes ??
+        ride?.estimatedDurationMinutes ??
+        null;
+      driverNavPickupEta.textContent = etaMinutes
+        ? `Approx. ${Math.max(1, Math.round(etaMinutes))} min away`
+        : "";
+    }
 
-      const url = `${window.location.origin}/rider.html?checkin=dropoff&ride=${encodeURIComponent(
-        rideId
-      )}`;
+    function updatePickupCodeView() {
+      pickupCodeInput.value = "";
+      pickupCodeError.textContent = "";
+    }
 
-      dropoffQrCanvas.style.display = "block";
+    function updateNavDropoffView(ride) {
+      driverNavDropoffAddress.textContent = dropoffLabel(ride) || "Destination pending";
+      const etaMinutes =
+        ride?.remainingEtaMinutes ??
+        ride?.estimatedDurationMinutes ??
+        null;
+      driverDropoffEta.textContent = etaMinutes
+        ? `Arriving in about ${Math.max(1, Math.round(etaMinutes))} min`
+        : "";
+      activeDropoffLocation = extractDropoffLocation(ride);
+      geofenceOverride = false;
+      driverCompleteOverrideButton.style.display = activeDropoffLocation ? "none" : "inline-flex";
+      evaluateDropoffGeofence();
+    }
 
-      if (!dropoffQr) {
-        dropoffQr = new QRious({
-          element: dropoffQrCanvas,
-          size: 140,
-          value: url
-        });
+    function updateDropoffCodeView() {
+      dropoffCodeInput.value = "";
+      dropoffCodeError.textContent = "";
+    }
+
+    function updateCompleteState(ride) {
+      driverWaitingStatus.textContent =
+        ride?.rating || ride?.riderRating
+          ? "Rider feedback received."
+          : "Waiting for rider rating and tip…";
+
+      const ratingValue =
+        ride?.rating ??
+        ride?.riderRating ??
+        ride?.driverRating ??
+        null;
+      if (typeof ratingValue === "number") {
+        driverRatingResult.style.display = "block";
+        driverRatingResult.textContent = `Rider rating: ${ratingValue.toFixed(1)} ★`;
       } else {
-        dropoffQr.set({ value: url });
+        driverRatingResult.style.display = "none";
+      }
+
+      const tipValue =
+        ride?.tip ??
+        ride?.tipAmount ??
+        ride?.tip_value ??
+        ride?.riderTip ??
+        null;
+      if (typeof tipValue === "number" && !Number.isNaN(tipValue) && tipValue > 0) {
+        driverTipResult.style.display = "block";
+        driverTipResult.textContent = `Tip: $${Number(tipValue).toFixed(2)}`;
+      } else {
+        driverTipResult.style.display = "none";
+      }
+
+      if (driverRatingResult.style.display === "block" || driverTipResult.style.display === "block") {
+        driverCompleteDismissButton.style.display = "block";
+      } else {
+        driverCompleteDismissButton.style.display = "none";
       }
     }
 
-    async function updateActiveRideStatus(newStatus) {
+    function getPickupCodeFromRide(ride) {
+      return (
+        ride?.pickupCode ??
+        ride?.pickup_code ??
+        ride?.pickupPin ??
+        ride?.pickupPIN ??
+        ride?.boardingCode ??
+        null
+      );
+    }
+
+    function getDropoffCodeFromRide(ride) {
+      return (
+        ride?.dropoffCode ??
+        ride?.dropoff_code ??
+        ride?.dropoffPin ??
+        ride?.dropoffPIN ??
+        ride?.dropoffBoardingCode ??
+        null
+      );
+    }
+
+    function normalizeRideCode(value) {
+      if (value == null) return "";
+      return String(value).trim().toUpperCase();
+    }
+
+    async function handleDriverOfferAccept() {
+      if (!pendingRideOffer) return;
+      activeRideError.textContent = "";
+      driverOfferAcceptButton.disabled = true;
+      driverOfferRejectButton.disabled = true;
+      try {
+        const group = await acceptRide(pendingRideOffer);
+        pendingRideOffer = null;
+        if (group && group.length) {
+          beginDriverRideFlow(group);
+        } else {
+          setDriverOverlayState(DRIVER_STATES.HIDDEN);
+        }
+      } catch (err) {
+        activeRideError.textContent = err.message || "Error accepting ride.";
+      } finally {
+        driverOfferAcceptButton.disabled = false;
+        driverOfferRejectButton.disabled = false;
+      }
+    }
+
+    function handleDriverOfferReject() {
+      pendingRideOffer = null;
+      setDriverOverlayState(DRIVER_STATES.HIDDEN);
+    }
+
+    async function handleDriverArriveAtPickup() {
+      await updateActiveRideFields({
+        status: "arrived_at_pickup",
+        arrivedAtPickupAt: serverTimestamp()
+      });
+    }
+
+    function handlePickupBack() {
+      updateNavPickupView(getPrimaryRide());
+      setDriverOverlayState(DRIVER_STATES.NAV_PICKUP, { forceReveal: true });
+    }
+
+    async function handlePickupCodeConfirm() {
+      const code = pickupCodeInput.value.trim();
+      pickupCodeError.textContent = "";
+      if (!code) {
+        pickupCodeError.textContent = "Enter the pickup code.";
+        return;
+      }
+      const ride = getPrimaryRide();
+      const expected = getPickupCodeFromRide(ride);
+      if (expected && normalizeRideCode(code) !== normalizeRideCode(expected)) {
+        pickupCodeError.textContent = "Code does not match. Try again.";
+        return;
+      }
+      await updateActiveRideFields({
+        status: "pickup_code_verified",
+        pickupCodeVerified: true,
+        pickupCodeEntered: code,
+        pickupCodeVerifiedAt: serverTimestamp()
+      });
+    }
+
+    async function handleDriverArriveAtDropoff() {
+      await updateActiveRideFields({
+        status: "arrived_at_dropoff",
+        arrivedAtDropoffAt: serverTimestamp()
+      });
+    }
+
+    async function handleDropoffCodeConfirm() {
+      const code = dropoffCodeInput.value.trim();
+      dropoffCodeError.textContent = "";
+      if (!code) {
+        dropoffCodeError.textContent = "Enter the dropoff code.";
+        return;
+      }
+      const ride = getPrimaryRide();
+      const expected = getDropoffCodeFromRide(ride);
+      if (expected && normalizeRideCode(code) !== normalizeRideCode(expected)) {
+        dropoffCodeError.textContent = "Code does not match. Try again.";
+        return;
+      }
+      await updateActiveRideFields({
+        status: "completed",
+        dropoffCodeVerified: true,
+        dropoffCodeEntered: code,
+        dropoffCodeVerifiedAt: serverTimestamp(),
+        completedAt: serverTimestamp()
+      });
+    }
+
+    function handleRideCompleteDismiss() {
+      clearActiveRideFlow();
+    }
+
+    async function updateActiveRideFields(fields) {
       if (!activeRideGroup.length) return;
       activeRideError.textContent = "";
       try {
         const batch = writeBatch(db);
         activeRideGroup.forEach((r) => {
           const ref = doc(db, "rideRequests", r.id);
-          batch.update(ref, {
-            status: newStatus,
-            [`${newStatus}At`]: serverTimestamp()
-          });
+          batch.update(ref, fields);
         });
         await batch.commit();
       } catch (err) {
-        console.error("updateActiveRideStatus error", err);
-        activeRideError.textContent = err.message || "Error updating ride status.";
+        console.error("updateActiveRideFields error", err);
+        activeRideError.textContent = err.message || "Error updating ride.";
       }
     }
 
@@ -1254,64 +1629,172 @@
         });
         await batch.commit();
         driverMessage.textContent = "Ride canceled.";
-        activeRideOverlay.classList.remove("active");
-        hideDriverSupportPanel();
-        activeRideGroup = [];
-        renderDriverRiderCards([]);
+        clearActiveRideFlow();
       } catch (err) {
         console.error("cancelActiveRideAsDriver error", err);
         activeRideError.textContent = err.message || "Error canceling ride.";
       }
     }
 
-    markArrivedButton.addEventListener("click", () => {
-      updateActiveRideStatus("driver_arrived");
-    });
-
-    showBoardingQrButton.addEventListener("click", () => {
-      showBoardingQr();
-    });
-
-    showDropoffQrButton.addEventListener("click", () => {
-      showDropoffQr();
-    });
-
-    startTripButton.addEventListener("click", () => {
-      updateActiveRideStatus("in_progress");
-    });
-
-    completeTripButton.addEventListener("click", () => {
-      updateActiveRideStatus("completed");
-      activeRideOverlay.classList.remove("active");
-      hideDriverSupportPanel();
-      activeRideGroup = [];
-      renderDriverRiderCards([]);
-    });
-
-    driverCancelButton.addEventListener("click", () => {
-      cancelActiveRideAsDriver();
-    });
-
-    closeActiveRideButton.addEventListener("click", () => {
-      activeRideOverlay.classList.remove("active");
-      hideDriverSupportPanel();
-    });
-
-    if (driverSupportCallButton) {
-      driverSupportCallButton.href = SUPPORT_TEL_LINK;
+    function extractDropoffLocation(ride) {
+      const candidates = [
+        ride?.dropoffLocation,
+        ride?.toLocation,
+        ride?.destinationLocation,
+        ride?.destLocation,
+        ride?.dropoffGeo,
+        ride?.toCoordinates,
+        ride?.destCoordinates
+      ];
+      for (const candidate of candidates) {
+        const parsed = parseLatLngCandidate(candidate);
+        if (parsed) return parsed;
+      }
+      const pairCandidates = [
+        ["dropoffLat", "dropoffLng"],
+        ["destLat", "destLng"],
+        ["toLat", "toLng"],
+        ["destinationLat", "destinationLng"]
+      ];
+      for (const [latKey, lngKey] of pairCandidates) {
+        if (typeof ride?.[latKey] === "number" && typeof ride?.[lngKey] === "number") {
+          return { lat: ride[latKey], lng: ride[lngKey] };
+        }
+      }
+      return null;
     }
-    if (driverSupportTextButton) {
-      driverSupportTextButton.href = SUPPORT_SMS_LINK;
+
+    function parseLatLngCandidate(value) {
+      if (!value) return null;
+      if (typeof value.lat === "number" && typeof value.lng === "number") {
+        return { lat: value.lat, lng: value.lng };
+      }
+      if (typeof value.latitude === "number" && typeof value.longitude === "number") {
+        return { lat: value.latitude, lng: value.longitude };
+      }
+      return null;
     }
-    if (driverSupportButton) {
-      driverSupportButton.addEventListener("click", () => {
-        driverSupportPanel?.classList.add("active");
-        driverSupportPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    function evaluateDropoffGeofence() {
+      if (!driverCompleteButton) return;
+      const isDropoffState = driverOverlayState === DRIVER_STATES.NAV_DROPOFF;
+      if (!isDropoffState) {
+        driverCompleteButton.disabled = true;
+        return;
+      }
+
+      if (geofenceOverride) {
+        driverGeofenceStatusEl.textContent = "Geofence override enabled.";
+        driverGeofenceStatusEl.classList.add("armed");
+        driverCompleteButton.disabled = false;
+        return;
+      }
+
+      if (!activeDropoffLocation) {
+        driverGeofenceStatusEl.textContent = "Destination location unavailable. Override to complete.";
+        driverGeofenceStatusEl.classList.remove("armed");
+        driverCompleteButton.disabled = true;
+        driverCompleteOverrideButton.style.display = "inline-flex";
+        return;
+      }
+
+      if (!driverCurrentPosition) {
+        driverGeofenceStatusEl.textContent = "Waiting for your current location…";
+        driverGeofenceStatusEl.classList.remove("armed");
+        driverCompleteButton.disabled = true;
+        return;
+      }
+
+      const distanceMeters = haversineMeters(driverCurrentPosition, activeDropoffLocation);
+      const distanceFeet = distanceMeters * 3.28084;
+      if (distanceMeters <= DROPOFF_GEOFENCE_METERS) {
+        driverGeofenceStatusEl.textContent = `Within ${Math.round(distanceFeet)} ft of dropoff.`;
+        driverGeofenceStatusEl.classList.add("armed");
+        driverCompleteButton.disabled = false;
+        driverCompleteOverrideButton.style.display = "none";
+      } else {
+        driverGeofenceStatusEl.textContent = `Complete ride unlocks within 150 ft. Currently ${Math.round(distanceFeet)} ft away.`;
+        driverGeofenceStatusEl.classList.remove("armed");
+        driverCompleteButton.disabled = true;
+        driverCompleteOverrideButton.style.display = "none";
+      }
+    }
+
+    function startDriverLocationWatch() {
+      if (!navigator.geolocation || driverLocationWatcherId) return;
+      driverLocationWatcherId = navigator.geolocation.watchPosition(
+        (pos) => {
+          driverCurrentPosition = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          };
+          if (driverMarker) {
+            driverMarker.setPosition(driverCurrentPosition);
+          }
+          evaluateDropoffGeofence();
+        },
+        (err) => {
+          console.warn("watchPosition error", err);
+        },
+        { enableHighAccuracy: true }
+      );
+    }
+
+    function haversineMeters(a, b) {
+      const R = 6371000;
+      const toRad = (deg) => (deg * Math.PI) / 180;
+      const dLat = toRad(b.lat - a.lat);
+      const dLng = toRad(b.lng - a.lng);
+      const lat1 = toRad(a.lat);
+      const lat2 = toRad(b.lat);
+      const sinLat = Math.sin(dLat / 2);
+      const sinLng = Math.sin(dLng / 2);
+      const h =
+        sinLat * sinLat +
+        Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
+      const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+      return R * c;
+    }
+
+    if (driverOfferAcceptButton) {
+      driverOfferAcceptButton.addEventListener("click", handleDriverOfferAccept);
+    }
+    if (driverOfferRejectButton) {
+      driverOfferRejectButton.addEventListener("click", handleDriverOfferReject);
+    }
+    if (driverArriveButton) {
+      driverArriveButton.addEventListener("click", handleDriverArriveAtPickup);
+    }
+    if (driverPickupBackButton) {
+      driverPickupBackButton.addEventListener("click", handlePickupBack);
+    }
+    if (driverPickupConfirmButton) {
+      driverPickupConfirmButton.addEventListener("click", handlePickupCodeConfirm);
+    }
+    if (driverCompleteButton) {
+      driverCompleteButton.addEventListener("click", handleDriverArriveAtDropoff);
+    }
+    if (driverCompleteOverrideButton) {
+      driverCompleteOverrideButton.addEventListener("click", () => {
+        geofenceOverride = true;
+        driverCompleteOverrideButton.style.display = "none";
+        evaluateDropoffGeofence();
       });
     }
-    if (driverSupportBackButton) {
-      driverSupportBackButton.addEventListener("click", () => {
-        hideDriverSupportPanel();
+    if (driverDropoffConfirmButton) {
+      driverDropoffConfirmButton.addEventListener("click", handleDropoffCodeConfirm);
+    }
+    if (driverCompleteDismissButton) {
+      driverCompleteDismissButton.addEventListener("click", handleRideCompleteDismiss);
+    }
+    if (driverCancelRideLink) {
+      driverCancelRideLink.addEventListener("click", cancelActiveRideAsDriver);
+    }
+
+    if (closeActiveRideButton) {
+      closeActiveRideButton.addEventListener("click", () => {
+        driverOverlayDismissed = true;
+        activeRideOverlay?.classList.remove("active");
       });
     }
   </script>
