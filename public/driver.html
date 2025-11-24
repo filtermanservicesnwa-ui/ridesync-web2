@@ -1394,6 +1394,10 @@
           updateCompleteState(ride);
           setDriverOverlayState(DRIVER_STATES.COMPLETE, { forceReveal: true });
           break;
+        case "canceled_by_rider":
+          driverMessage.textContent = "Rider canceled the ride.";
+          clearActiveRideFlow();
+          break;
         default:
           updateNavPickupView(ride);
           setDriverOverlayState(DRIVER_STATES.NAV_PICKUP, { forceReveal: true });
