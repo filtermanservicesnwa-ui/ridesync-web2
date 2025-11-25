@@ -1,9 +1,21 @@
 // functions/index.js
 
-// IMPORTANT: use v1 compat entrypoint so functions.firestore.document(...) exists
-const functions = require("firebase-functions/v1");
+const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const Stripe = require("stripe");
+// === RIDE SYNC STRIPE: START config ===
+let stripe = null;
+let uofaPriceId = null;
+let nwaPriceId = null;
+try {
+  stripe = require("stripe")(functions.config().stripe.secret_key);
+  uofaPriceId = functions.config().stripe.uofa_price_id;
+  nwaPriceId = functions.config().stripe.nwa_price_id;
+} catch (err) {
+  console.warn(
+    "[RideSync][Stripe] Missing stripe.* runtime config. Membership billing will fail."
+  );
+}
+// === RIDE SYNC STRIPE: END config ===
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -58,31 +70,18 @@ const runtimeConfig = (() => {
   }
 })();
 
-const stripeSecretKey =
-  process.env.STRIPE_SECRET_KEY ||
-  runtimeConfig?.stripe?.secret ||
-  runtimeConfig?.stripe?.sk ||
-  null;
-
-let stripeClient = null;
-
 function normalizeMembershipPlan(value = "") {
   return String(value || "").toLowerCase().trim();
 }
 
 function getStripeClient() {
-  if (!stripeSecretKey) {
+  if (!stripe) {
     throw new functions.https.HttpsError(
       "failed-precondition",
       "Stripe secret key is not configured."
     );
   }
-  if (!stripeClient) {
-    stripeClient = new Stripe(stripeSecretKey, {
-      apiVersion: "2024-06-20",
-    });
-  }
-  return stripeClient;
+  return stripe;
 }
 
 function resolveMembershipPlan(planRaw = "") {
@@ -225,6 +224,73 @@ function sanitizeDestinationLabel(value) {
   return value.trim().slice(0, 140);
 }
 
+// === RIDE SYNC STRIPE: START ride payload helper ===
+function buildRidePayload(rideInput = {}, context = {}) {
+  const payload = cloneData(rideInput);
+  delete payload.createdAt;
+  delete payload.updatedAt;
+
+  payload.userId = context.uid;
+  payload.startedByUserId = context.uid;
+  payload.membershipType = context.membershipType;
+  payload.membershipStatus = context.membershipStatus || "none";
+  payload.pickupLocation =
+    context.pickupLocation ||
+    payload.pickupLocation ||
+    payload.fromLocation ||
+    null;
+  payload.dropoffLocation =
+    context.dropoffLocation ||
+    payload.dropoffLocation ||
+    payload.toLocation ||
+    null;
+  payload.fromLocation = payload.pickupLocation;
+  payload.toLocation = payload.dropoffLocation;
+  payload.toDestination = sanitizeDestinationLabel(
+    payload.toDestination || payload.destination || ""
+  );
+  payload.destination = payload.toDestination;
+  payload.isGroupRide = !!payload.isGroupRide;
+  payload.maxRiders = Math.max(1, Math.min(6, payload.maxRiders || 1));
+  payload.currentRiderCount = Math.min(
+    payload.maxRiders,
+    payload.currentRiderCount || 1
+  );
+  payload.poolType = payload.poolType === "uofa" ? "uofa" : null;
+  payload.status = normalizeRideStatus(payload.status, payload.poolType);
+  payload.paymentMethod = "stripe";
+  payload.paymentStatus =
+    context.amountCents > 0 ? "preauthorized" : "included";
+  payload.stripeAmountCents = context.amountCents || 0;
+  payload.stripeAmount = (context.amountCents || 0) / 100;
+  payload.stripeCurrency = "usd";
+  payload.totalCents = context.totalCents || payload.totalCents || 0;
+  payload.geofenceContext = context.chargeContext || null;
+  payload.inHomeZone =
+    typeof payload.inHomeZone === "boolean"
+      ? payload.inHomeZone
+      : !!(
+          context.chargeContext?.pickupInside &&
+          context.chargeContext?.dropoffInside
+        );
+  payload.estimatedDurationMinutes =
+    Number(payload.estimatedDurationMinutes) ||
+    Number(context.estimatedDurationMinutes) ||
+    null;
+
+  if (!payload.pickupCode && context.pickupCode) {
+    payload.pickupCode = context.pickupCode;
+    payload.pickupPin = context.pickupCode;
+  }
+  if (!payload.dropoffCode && context.dropoffCode) {
+    payload.dropoffCode = context.dropoffCode;
+    payload.dropoffPin = context.dropoffCode;
+  }
+
+  return payload;
+}
+// === RIDE SYNC STRIPE: END ride payload helper ===
+
 function requireAuth(context) {
   if (!context?.auth?.uid) {
     throw new functions.https.HttpsError(
@@ -296,6 +362,159 @@ function distanceKm(a, b) {
   const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   return R * c;
 }
+
+// === RIDE SYNC STRIPE: START geofence helpers ===
+const KM_TO_MILES = 0.621371;
+const DEFAULT_UOFA_GEOFENCE = {
+  center: { lat: 36.063, lng: -94.171 },
+  radiusMiles: 6,
+};
+const DEFAULT_NWA_GEOFENCE = {
+  center: {
+    lat: runtimeConfig?.geo?.nwaCenter?.lat ?? 36.334,
+    lng: runtimeConfig?.geo?.nwaCenter?.lng ?? -94.118,
+  },
+  radiusMiles: runtimeConfig?.geo?.nwaRadiusMiles ?? 30,
+};
+const SURCHARGE_BASE_CENTS = 500;
+const SURCHARGE_PER_MILE_CENTS = 175;
+
+function milesBetweenPoints(a, b) {
+  return distanceKm(a, b) * KM_TO_MILES;
+}
+
+function isInsideCircle(lat, lng, centerLat, centerLng, radiusMiles) {
+  if (
+    typeof lat !== "number" ||
+    typeof lng !== "number" ||
+    typeof centerLat !== "number" ||
+    typeof centerLng !== "number" ||
+    typeof radiusMiles !== "number" ||
+    radiusMiles <= 0
+  ) {
+    return false;
+  }
+  const distanceMiles = milesBetweenPoints(
+    { lat, lng },
+    { lat: centerLat, lng: centerLng }
+  );
+  return distanceMiles <= radiusMiles;
+}
+
+function resolveGeofenceForPlan(planKey) {
+  if (planKey === "uofa_unlimited") {
+    return DEFAULT_UOFA_GEOFENCE;
+  }
+  if (planKey === "nwa_unlimited") {
+    return DEFAULT_NWA_GEOFENCE;
+  }
+  return null;
+}
+
+function maxDistanceMilesFromCenter(locations = [], geofence) {
+  if (!geofence) return Infinity;
+  let maxMiles = 0;
+  locations.forEach((loc) => {
+    if (hasValidLocation(loc)) {
+      const miles = milesBetweenPoints(loc, geofence.center);
+      if (miles > maxMiles) {
+        maxMiles = miles;
+      }
+    }
+  });
+  return maxMiles;
+}
+
+function computeOutOfZoneSurchargeCents(totalCents, extraMiles) {
+  if (!Number.isFinite(extraMiles) || extraMiles <= 0) {
+    return Math.max(0, Math.round(totalCents));
+  }
+  const bonus = Math.round(extraMiles * SURCHARGE_PER_MILE_CENTS);
+  const calculated = SURCHARGE_BASE_CENTS + bonus;
+  const rideTotal = Math.max(0, Math.round(totalCents));
+  return Math.min(rideTotal, Math.max(SURCHARGE_BASE_CENTS, calculated));
+}
+
+function calculateRideChargeContext({
+  membershipType,
+  membershipStatus,
+  pickupLocation,
+  dropoffLocation,
+  totalCents,
+}) {
+  const normalizedPlan = normalizeMembershipPlan(membershipType || "basic");
+  const status = (membershipStatus || "none").toLowerCase();
+  const amountCents = Math.max(0, Math.round(Number(totalCents) || 0));
+
+  if (!amountCents) {
+    return {
+      amountCents: 0,
+      pickupInside: false,
+      dropoffInside: false,
+      geofenceName: null,
+      surchargeCents: 0,
+    };
+  }
+
+  const geofence = resolveGeofenceForPlan(normalizedPlan);
+  const pickupInside =
+    geofence && hasValidLocation(pickupLocation)
+      ? isInsideCircle(
+          pickupLocation.lat,
+          pickupLocation.lng,
+          geofence.center.lat,
+          geofence.center.lng,
+          geofence.radiusMiles
+        )
+      : false;
+  const dropoffInside =
+    geofence && hasValidLocation(dropoffLocation)
+      ? isInsideCircle(
+          dropoffLocation.lat,
+          dropoffLocation.lng,
+          geofence.center.lat,
+          geofence.center.lng,
+          geofence.radiusMiles
+        )
+      : false;
+
+  if (!geofence || status !== "active") {
+    return {
+      amountCents,
+      pickupInside,
+      dropoffInside,
+      geofenceName: null,
+      surchargeCents: 0,
+    };
+  }
+
+  if (pickupInside && dropoffInside) {
+    return {
+      amountCents: 0,
+      pickupInside: true,
+      dropoffInside: true,
+      geofenceName: normalizedPlan,
+      surchargeCents: 0,
+    };
+  }
+
+  const farthestMiles = maxDistanceMilesFromCenter(
+    [pickupLocation, dropoffLocation],
+    geofence
+  );
+  const overageMiles = Math.max(0, farthestMiles - geofence.radiusMiles);
+  const surchargeCents = computeOutOfZoneSurchargeCents(amountCents, overageMiles);
+
+  return {
+    amountCents: surchargeCents,
+    pickupInside,
+    dropoffInside,
+    geofenceName: normalizedPlan,
+    surchargeCents,
+    overageMiles,
+  };
+}
+// === RIDE SYNC STRIPE: END geofence helpers ===
 
 function generateRideCode(length = 4) {
   let code = "";
@@ -741,6 +960,21 @@ exports.applyMembershipPlan = functions.https.onCall(async (data, context) => {
   }
 
   const userRef = db.collection("users").doc(uid);
+
+  if (planKey === "basic") {
+    await userRef.set(
+      {
+        membershipType: "basic",
+        membershipStatus: "none",
+        stripeSubscriptionId: FieldValue.delete(),
+        pendingMembershipPlanId: FieldValue.delete(),
+        pendingSubscriptionId: FieldValue.delete(),
+      },
+      { merge: true }
+    );
+    return { status: "updated" };
+  }
+
   const userSnap = await userRef.get();
   const profileData = userSnap.exists ? userSnap.data() : {};
   const needsApproval =
@@ -820,6 +1054,166 @@ exports.applyMembershipPlan = functions.https.onCall(async (data, context) => {
   return { status: "updated" };
 });
 
+// === RIDE SYNC STRIPE: START createMembershipSubscriptionIntent ===
+exports.createMembershipSubscriptionIntent = functions.https.onCall(
+  async (data, context) => {
+    const uid = requireAuth(context);
+    const planId = normalizeMembershipPlan(data?.planId || data?.plan);
+    if (!["uofa_unlimited", "nwa_unlimited"].includes(planId)) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Unsupported membership plan."
+      );
+    }
+    const priceId = planId === "uofa_unlimited" ? uofaPriceId : nwaPriceId;
+    if (!priceId) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Stripe price ID is not configured for this plan."
+      );
+    }
+
+    const stripeClient = getStripeClient();
+    const { customerId, profileRef } = await getOrCreateStripeCustomer(uid);
+    const userRef = profileRef || db.collection("users").doc(uid);
+
+    const subscription = await stripeClient.subscriptions.create({
+      customer: customerId,
+      items: [{ price: priceId }],
+      payment_behavior: "default_incomplete",
+      payment_settings: { save_default_payment_method: "on_subscription" },
+      expand: ["latest_invoice.payment_intent"],
+      metadata: {
+        firebaseUid: uid,
+        planId,
+      },
+    });
+
+    const clientSecret =
+      subscription?.latest_invoice?.payment_intent?.client_secret;
+    if (!clientSecret) {
+      throw new functions.https.HttpsError(
+        "internal",
+        "Unable to start the Stripe subscription."
+      );
+    }
+
+    await userRef.set(
+      {
+        pendingMembershipPlanId: planId,
+        pendingSubscriptionId: subscription.id,
+        stripeCustomerId: customerId,
+        membershipUpgradeStartedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    return {
+      clientSecret,
+      subscriptionId: subscription.id,
+      planId,
+    };
+  }
+);
+// === RIDE SYNC STRIPE: END createMembershipSubscriptionIntent ===
+
+// === RIDE SYNC STRIPE: START finalizeMembershipSubscription ===
+exports.finalizeMembershipSubscription = functions.https.onCall(
+  async (data, context) => {
+    const uid = requireAuth(context);
+    const subscriptionId = data?.subscriptionId;
+    if (!subscriptionId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Stripe subscription ID is required."
+      );
+    }
+
+    const stripeClient = getStripeClient();
+    const subscription = await stripeClient.subscriptions.retrieve(
+      subscriptionId,
+      {
+        expand: ["latest_invoice.payment_intent", "items.data.price.product"],
+      }
+    );
+    if (!subscription) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Subscription not found."
+      );
+    }
+    if (
+      subscription.metadata?.firebaseUid &&
+      subscription.metadata.firebaseUid !== uid
+    ) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "This subscription belongs to another user."
+      );
+    }
+
+    const status = subscription.status;
+    if (status !== "active" && status !== "trialing") {
+      return { status };
+    }
+
+    const subscriptionPlan =
+      normalizeMembershipPlan(subscription.metadata?.planId) ||
+      normalizeMembershipPlan(
+        subscription.items?.data?.[0]?.price?.lookup_key ||
+          subscription.items?.data?.[0]?.price?.nickname
+      );
+    if (!["uofa_unlimited", "nwa_unlimited"].includes(subscriptionPlan)) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Subscription is missing a supported plan."
+      );
+    }
+
+    const membershipStatus =
+      subscriptionPlan === "uofa_unlimited"
+        ? "pending_verification"
+        : "active";
+    const customerId =
+      typeof subscription.customer === "string"
+        ? subscription.customer
+        : subscription.customer?.id;
+    const userRef = db.collection("users").doc(uid);
+    const membershipHistoryRef = userRef
+      .collection("membershipHistory")
+      .doc(subscription.id);
+
+    await Promise.all([
+      userRef.set(
+        {
+          membershipType: subscriptionPlan,
+          membershipStatus,
+          stripeSubscriptionId: subscription.id,
+          stripeCustomerId: customerId || FieldValue.delete(),
+          pendingMembershipPlanId: FieldValue.delete(),
+          pendingSubscriptionId: FieldValue.delete(),
+          membershipRenewedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      ),
+      membershipHistoryRef.set(
+        {
+          processedAt: FieldValue.serverTimestamp(),
+          planId: subscriptionPlan,
+          subscriptionId,
+          status,
+          invoiceId: subscription.latest_invoice?.id || null,
+        },
+        { merge: true }
+      ),
+    ]);
+
+    return { status: "active", membershipType: subscriptionPlan };
+  }
+);
+// === RIDE SYNC STRIPE: END finalizeMembershipSubscription ===
+
+// === RIDE SYNC STRIPE: START createRidePaymentIntent ===
 exports.createRidePaymentIntent = functions.https.onCall(
   async (data, context) => {
     const uid = requireAuth(context);
@@ -831,95 +1225,98 @@ exports.createRidePaymentIntent = functions.https.onCall(
       );
     }
 
-    const minutes = Number(rideInput.estimatedDurationMinutes);
-    if (!Number.isFinite(minutes) || minutes <= 0) {
+    const totalCents = Math.round(Number(rideInput.totalCents));
+    if (!Number.isFinite(totalCents) || totalCents <= 0) {
       throw new functions.https.HttpsError(
         "invalid-argument",
-        "Estimated minutes missing for ride payment."
+        "Estimated fare (totalCents) is required."
       );
     }
-    if (
-      !rideInput.toDestination ||
-      typeof rideInput.toDestination !== "string"
-    ) {
+
+    const pickupLocation =
+      rideInput.pickupLocation ||
+      rideInput.fromLocation ||
+      rideInput.currentLocation;
+    const dropoffLocation =
+      rideInput.dropoffLocation ||
+      rideInput.toLocation ||
+      rideInput.destinationLocation;
+    if (!hasValidLocation(pickupLocation) || !hasValidLocation(dropoffLocation)) {
       throw new functions.https.HttpsError(
         "invalid-argument",
-        "Destination is required."
+        "Pickup and dropoff coordinates are required."
       );
     }
 
-    const plan = normalizeMembershipPlan(
-      rideInput.membershipType ||
-        rideInput.membership ||
-        rideInput.plan ||
-        "basic"
-    );
-    const fare = computeFareForMembership(
-      plan,
-      minutes,
-      !!rideInput.inHomeZone
-    );
-    const amountCents = Math.round(fare.total * 100);
-    if (amountCents <= 0) {
+    const estimatedMinutes = Number(rideInput.estimatedDurationMinutes);
+    if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
       throw new functions.https.HttpsError(
-        "failed-precondition",
-        "This ride does not require a Stripe payment."
+        "invalid-argument",
+        "Estimated ride duration is required."
       );
     }
 
-    const ridePayloadRaw = { ...rideInput };
-    delete ridePayloadRaw.createdAt;
-    delete ridePayloadRaw.updatedAt;
+    const userRef = db.collection("users").doc(uid);
+    const userSnap = await userRef.get();
+    const profile = userSnap.exists ? userSnap.data() : {};
+    const membershipType = normalizeMembershipPlan(
+      profile?.membershipType || profile?.membership || "basic"
+    );
+    const membershipStatus = profile?.membershipStatus || "none";
 
-    const sanitizedPayload = cloneData(ridePayloadRaw);
-    sanitizedPayload.userId = uid;
-    sanitizedPayload.startedByUserId =
-      sanitizedPayload.startedByUserId || uid;
-    sanitizedPayload.membershipType = plan;
-    sanitizedPayload.membershipStatus =
-      sanitizedPayload.membershipStatus || "active";
-    sanitizedPayload.inHomeZone = !!rideInput.inHomeZone;
-    sanitizedPayload.isGroupRide = !!rideInput.isGroupRide;
-    sanitizedPayload.maxRiders = Math.max(
-      1,
-      Math.min(6, sanitizedPayload.maxRiders || 1)
-    );
-    sanitizedPayload.currentRiderCount = Math.min(
-      sanitizedPayload.maxRiders,
-      sanitizedPayload.currentRiderCount || 1
-    );
-    sanitizedPayload.poolType =
-      sanitizedPayload.poolType === "uofa" ? "uofa" : null;
-    sanitizedPayload.status = normalizeRideStatus(
-      sanitizedPayload.status,
-      sanitizedPayload.poolType
-    );
-    sanitizedPayload.fare = fare;
-    sanitizedPayload.estimatedDurationMinutes = minutes;
-    sanitizedPayload.stripeAmount = fare.total;
-    sanitizedPayload.stripeAmountCents = amountCents;
-    sanitizedPayload.stripeCurrency = "usd";
-    sanitizedPayload.paymentMethod = "stripe";
-    sanitizedPayload.paymentStatus = "paid";
-    sanitizedPayload.createdAt = null;
-    sanitizedPayload.updatedAt = null;
-    sanitizedPayload.toDestination = sanitizeDestinationLabel(
-      rideInput.toDestination
-    );
+    const chargeContext = calculateRideChargeContext({
+      membershipType,
+      membershipStatus,
+      pickupLocation,
+      dropoffLocation,
+      totalCents,
+    });
+
+    const sanitizedPayload = buildRidePayload(rideInput, {
+      uid,
+      membershipType,
+      membershipStatus,
+      pickupLocation,
+      dropoffLocation,
+      amountCents: chargeContext.amountCents,
+      totalCents,
+      chargeContext,
+      estimatedDurationMinutes: estimatedMinutes,
+    });
+
+    if (chargeContext.amountCents <= 0) {
+      const rideRef = db.collection("rideRequests").doc();
+      const rideData = {
+        ...sanitizedPayload,
+        paymentMethod: "included",
+        paymentStatus: "included",
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      if (rideData.isGroupRide && !rideData.groupId) {
+        rideData.groupId = rideRef.id;
+      }
+      await rideRef.set(rideData);
+      return {
+        skipPayment: true,
+        rideId: rideRef.id,
+        status: rideData.status,
+        geofenceContext: chargeContext,
+      };
+    }
 
     const pendingRef = db.collection("pendingRidePayments").doc();
 
-    const stripe = getStripeClient();
+    const stripeClient = getStripeClient();
     const { customerId } = await getOrCreateStripeCustomer(uid);
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountCents,
+    const paymentIntent = await stripeClient.paymentIntents.create({
+      amount: chargeContext.amountCents,
       currency: "usd",
       customer: customerId,
       metadata: {
         firebaseUid: uid,
         pendingRideId: pendingRef.id,
-        destination: sanitizedPayload.toDestination,
         purpose: "ride",
       },
       automatic_payment_methods: { enabled: true },
@@ -929,7 +1326,9 @@ exports.createRidePaymentIntent = functions.https.onCall(
       userId: uid,
       pendingId: pendingRef.id,
       ridePayload: sanitizedPayload,
-      amountCents,
+      amountCents: chargeContext.amountCents,
+      totalCents,
+      geofenceContext: chargeContext,
       currency: "usd",
       stripePaymentIntentId: paymentIntent.id,
       createdAt: FieldValue.serverTimestamp(),
@@ -939,11 +1338,13 @@ exports.createRidePaymentIntent = functions.https.onCall(
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
       pendingId: pendingRef.id,
-      amountCents,
+      amountCents: chargeContext.amountCents,
       currency: "usd",
+      geofenceContext: chargeContext,
     };
   }
 );
+// === RIDE SYNC STRIPE: END createRidePaymentIntent ===
 
 exports.finalizeRidePayment = functions.https.onCall(
   async (data, context) => {
@@ -1002,6 +1403,9 @@ exports.finalizeRidePayment = functions.https.onCall(
     rideData.stripeAmount = pending.amountCents / 100;
     rideData.stripeAmountCents = pending.amountCents;
     rideData.stripeCurrency = pending.currency || "usd";
+    rideData.totalCents = pending.totalCents ?? rideData.totalCents ?? null;
+    rideData.geofenceContext =
+      pending.geofenceContext ?? rideData.geofenceContext ?? null;
     rideData.updatedAt = FieldValue.serverTimestamp();
     rideData.currentRiderCount = Math.min(
       rideData.maxRiders || 1,

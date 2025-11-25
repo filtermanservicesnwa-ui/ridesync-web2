@@ -969,7 +969,23 @@
           </div>
           <span id="membershipStatusBadge" class="membership-status-badge">—</span>
         </div>
-        <div class="membership-plan-grid">
+        <!-- === RIDE SYNC STRIPE: START membership summary === -->
+        <div class="membership-card-summary">
+          <p id="membershipCurrentLabel" class="membership-subtitle">
+            Checking membership...
+          </p>
+          <div class="rider-info-actions" style="margin-top:8px;">
+            <button
+              id="membershipChangeButton"
+              type="button"
+              class="btn-secondary btn-small"
+            >
+              Change membership
+            </button>
+          </div>
+        </div>
+        <!-- === RIDE SYNC STRIPE: END membership summary === -->
+        <div class="membership-plan-grid" style="display:none;">
           <div class="membership-plan" data-plan="basic">
             <div class="membership-plan-title">Basic</div>
             <div class="membership-plan-price" data-plan-price="basic">
@@ -1384,6 +1400,137 @@
     </div>
   </div>
 
+  <!-- === RIDE SYNC STRIPE: START membership selection overlay === -->
+  <div
+    id="membershipSelectionOverlay"
+    class="overlay"
+    aria-hidden="true"
+  >
+    <div class="payment-panel">
+      <div class="payment-panel-header">
+        <h3>Select membership</h3>
+        <button
+          id="membershipSelectionClose"
+          type="button"
+          class="btn-secondary btn-small"
+        >
+          Close
+        </button>
+      </div>
+      <p class="membership-subtitle">
+        Choose the unlimited plan that matches your coverage zone.
+      </p>
+      <div class="membership-plan-grid" style="margin-top:12px;">
+        <div
+          class="membership-plan"
+          data-membership-option="uofa_unlimited"
+        >
+          <div class="membership-plan-title">U of A Unlimited</div>
+          <div class="membership-plan-price">$80 / month</div>
+          <p class="membership-plan-desc">
+            Unlimited Fayetteville rides. Out-of-zone trips bill a surcharge.
+          </p>
+        </div>
+        <div
+          class="membership-plan"
+          data-membership-option="nwa_unlimited"
+        >
+          <div class="membership-plan-title">NWA Unlimited</div>
+          <div class="membership-plan-price">$120 / month</div>
+          <p class="membership-plan-desc">
+            Unlimited rides inside the 30-mile NWA radius.
+          </p>
+        </div>
+      </div>
+      <div id="membershipSelectionError" class="error"></div>
+      <button
+        id="membershipSelectionContinue"
+        type="button"
+        class="btn-primary"
+        style="margin-top:12px;"
+      >
+        Continue
+      </button>
+      <button
+        id="membershipSelectionBasic"
+        type="button"
+        class="btn-secondary btn-small"
+        style="margin-top:8px;"
+      >
+        Switch to Basic
+      </button>
+    </div>
+  </div>
+  <!-- === RIDE SYNC STRIPE: END membership selection overlay === -->
+
+  <!-- === RIDE SYNC STRIPE: START membership terms overlay === -->
+  <div id="membershipTermsOverlay" class="overlay" aria-hidden="true">
+    <div class="payment-panel">
+      <div class="payment-panel-header">
+        <h3>Membership terms</h3>
+        <button
+          id="membershipTermsClose"
+          type="button"
+          class="btn-secondary btn-small"
+        >
+          Close
+        </button>
+      </div>
+      <div class="fare-box" style="max-height:40vh;overflow:auto;">
+        <p>
+          These membership terms describe unlimited ride coverage, billing
+          schedule, and cancellation policies. Review the full details before
+          accepting. (Placeholder copy – update anytime.)
+        </p>
+        <ul style="padding-left:18px;line-height:1.6;">
+          <li>Monthly dues bill immediately via Stripe.</li>
+          <li>Unlimited zone rides are included; surcharges apply outside.</li>
+          <li>Cancel anytime; billing stops at the next cycle.</li>
+        </ul>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+        <input id="membershipTermsCheckbox" type="checkbox" />
+        <span>I have read and agree to the Membership Terms.</span>
+      </label>
+      <div style="margin-top:12px;">
+        <div class="membership-subtitle" style="margin-bottom:6px;">
+          Signature
+        </div>
+        <canvas
+          id="membershipSignatureCanvas"
+          width="600"
+          height="180"
+          style="
+            width:100%;
+            height:180px;
+            border:1px dashed rgba(148,163,184,0.5);
+            border-radius:12px;
+            background:#0f172a;
+          "
+        ></canvas>
+        <button
+          id="membershipSignatureClear"
+          type="button"
+          class="btn-secondary btn-small"
+          style="margin-top:8px;"
+        >
+          Clear signature
+        </button>
+      </div>
+      <button
+        id="membershipTermsAccept"
+        type="button"
+        class="btn-primary"
+        style="margin-top:12px;"
+        disabled
+      >
+        Accept & continue to payment
+      </button>
+      <div id="membershipTermsError" class="error"></div>
+    </div>
+  </div>
+  <!-- === RIDE SYNC STRIPE: END membership terms overlay === -->
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
     import {
@@ -1546,13 +1693,17 @@
     const STRIPE_ENABLED = !!STRIPE_PUBLISHABLE_KEY;
     const STRIPE_JS_URL = "https://js.stripe.com/v3/";
 
-    const createMembershipPaymentIntentFn = httpsCallable(
-      functionsClient,
-      "createMembershipPaymentIntent"
-    );
     const applyMembershipPlanFn = httpsCallable(
       functionsClient,
       "applyMembershipPlan"
+    );
+    const createMembershipSubscriptionIntentFn = httpsCallable(
+      functionsClient,
+      "createMembershipSubscriptionIntent"
+    );
+    const finalizeMembershipSubscriptionFn = httpsCallable(
+      functionsClient,
+      "finalizeMembershipSubscription"
     );
     const createRidePaymentIntentFn = httpsCallable(
       functionsClient,
@@ -1656,8 +1807,28 @@
     const membershipStatusText = document.getElementById("membershipStatusText");
     const membershipStatusBadge = document.getElementById("membershipStatusBadge");
     const membershipCardMessage = document.getElementById("membershipCardMessage");
-    const membershipPlanButtons = document.querySelectorAll("[data-plan-action]");
+    const membershipCurrentLabel = document.getElementById("membershipCurrentLabel");
+    const membershipChangeButton = document.getElementById("membershipChangeButton");
     const membershipPriceEls = document.querySelectorAll("[data-plan-price]");
+    const membershipSelectionOverlay = document.getElementById("membershipSelectionOverlay");
+    const membershipSelectionClose = document.getElementById("membershipSelectionClose");
+    const membershipSelectionOptions = document.querySelectorAll(
+      "[data-membership-option]"
+    );
+    const membershipSelectionContinue = document.getElementById(
+      "membershipSelectionContinue"
+    );
+    const membershipSelectionBasic = document.getElementById("membershipSelectionBasic");
+    const membershipSelectionError = document.getElementById("membershipSelectionError");
+    const membershipTermsOverlay = document.getElementById("membershipTermsOverlay");
+    const membershipTermsClose = document.getElementById("membershipTermsClose");
+    const membershipTermsCheckbox = document.getElementById("membershipTermsCheckbox");
+    const membershipTermsAccept = document.getElementById("membershipTermsAccept");
+    const membershipTermsError = document.getElementById("membershipTermsError");
+    const membershipSignatureCanvas = document.getElementById(
+      "membershipSignatureCanvas"
+    );
+    const membershipSignatureClear = document.getElementById("membershipSignatureClear");
 
     const riderEmailDetailEl = document.getElementById("riderEmailDetail");
     const riderPhoneDetailEl = document.getElementById("riderPhoneDetail");
@@ -1821,6 +1992,11 @@
 
     let isSignupMode = false;
     let currentUserProfile = null;
+    let pendingMembershipPlanId = null;
+    let membershipSignatureCtx = null;
+    let membershipSignatureDrawing = false;
+    let membershipSignatureHasInk = false;
+    let membershipTermsProcessing = false;
 
     let map;
     let directionsService;
@@ -2459,10 +2635,43 @@
     function formatMembershipStatusLabel(status) {
       const normalized = (status || "active").toString().toLowerCase();
       if (normalized === "pending_verification") return "Pending approval";
+      if (normalized === "none") return "Not active";
       if (normalized === "inactive") return "Inactive";
       if (normalized === "canceled") return "Canceled";
       return "Active";
     }
+
+    // === RIDE SYNC STRIPE: START membership summary helper ===
+    function formatMembershipSummary(planKey, status) {
+      const plan = normalizePlanKey(planKey);
+      const normalizedStatus = (status || "none").toLowerCase();
+      if (plan === "uofa_unlimited") {
+        if (normalizedStatus === "pending_verification") {
+          return "U of A Unlimited (Pending verification)";
+        }
+        if (normalizedStatus === "active") {
+          return "U of A Unlimited (Active)";
+        }
+        return "U of A Unlimited";
+      }
+      if (plan === "nwa_unlimited") {
+        if (normalizedStatus === "pending_verification") {
+          return "NWA Unlimited (Pending verification)";
+        }
+        if (normalizedStatus === "active") {
+          return "NWA Unlimited (Active)";
+        }
+        return "NWA Unlimited";
+      }
+      return "Basic (pay per ride)";
+    }
+    function isUnlimitedMembershipActive(planKey, status) {
+      const plan = normalizePlanKey(planKey);
+      const normalizedStatus = (status || "none").toLowerCase();
+      if (normalizedStatus !== "active") return false;
+      return plan === "uofa_unlimited" || plan === "nwa_unlimited";
+    }
+    // === RIDE SYNC STRIPE: END membership summary helper ===
 
     function planRequiresApproval(planKey) {
       return normalizePlanKey(planKey) === "uofa_unlimited";
@@ -2472,15 +2681,20 @@
       if (!membershipCard) return;
       const plan = normalizePlanKey(profile?.membershipType || profile?.membership || "basic");
       const planCopy = MEMBERSHIP_PLAN_COPY[plan] || MEMBERSHIP_PLAN_COPY.basic;
+      const statusLabel = formatMembershipStatusLabel(profile?.membershipStatus);
+      const summaryLabel = formatMembershipSummary(plan, profile?.membershipStatus);
 
       if (membershipStatusText) {
         membershipStatusText.textContent = `Plan: ${planCopy.label}`;
       }
+      if (membershipCurrentLabel) {
+        membershipCurrentLabel.textContent = summaryLabel;
+      }
 
       if (membershipStatusBadge) {
-        const statusLabel = formatMembershipStatusLabel(profile?.membershipStatus);
-        const isActive = statusLabel === "Active";
-        const isPending = statusLabel === "Pending approval";
+        const normalizedStatus = (profile?.membershipStatus || "none").toLowerCase();
+        const isActive = normalizedStatus === "active";
+        const isPending = normalizedStatus === "pending_verification";
         membershipStatusBadge.textContent = statusLabel;
         membershipStatusBadge.classList.toggle("active", isActive);
         membershipStatusBadge.classList.toggle("pending", isPending);
@@ -2489,37 +2703,6 @@
           !isActive && !isPending
         );
       }
-
-      membershipPlanButtons?.forEach?.((btn) => {
-        const targetPlan = normalizePlanKey(btn?.dataset?.planAction);
-        if (!targetPlan) return;
-        const isCurrent = targetPlan === plan;
-        const card = btn.closest(".membership-plan");
-        if (card) {
-          card.classList.toggle("active", isCurrent);
-        }
-
-        if (isCurrent) {
-          btn.textContent = "Current plan";
-          btn.disabled = true;
-        } else if (targetPlan === "basic") {
-          btn.textContent = "Switch to Basic";
-          btn.disabled = false;
-        } else if (!STRIPE_ENABLED) {
-          const needsApproval = planRequiresApproval(targetPlan);
-          const label =
-            MEMBERSHIP_PLAN_COPY[targetPlan]?.label || "Upgrade";
-          btn.textContent = needsApproval
-            ? "Request approval"
-            : `Activate ${label}`;
-          btn.disabled = false;
-        } else {
-          const label =
-            MEMBERSHIP_PLAN_COPY[targetPlan]?.label || "Upgrade";
-          btn.textContent = `Activate ${label}`;
-          btn.disabled = false;
-        }
-      });
     }
 
     async function applyMembershipPlanLocally(plan) {
@@ -2527,13 +2710,18 @@
       if (!user) return;
       const normalizedPlan = normalizePlanKey(plan || "basic");
       const needsApproval = planRequiresApproval(normalizedPlan);
+      const isBasicPlan = normalizedPlan === "basic";
       const updates = {
         membershipType: normalizedPlan,
-        membershipStatus: needsApproval ? "pending_verification" : "active",
+        membershipStatus: isBasicPlan
+          ? "none"
+          : needsApproval
+          ? "pending_verification"
+          : "active",
         membershipRenewedAt: serverTimestamp(),
         membershipUpdatedAt: serverTimestamp()
       };
-      if (!needsApproval) {
+      if (!isBasicPlan && !needsApproval) {
         updates.membershipApprovedAt = serverTimestamp();
       }
       await setDoc(doc(db, "users", user.uid), updates, { merge: true });
@@ -2551,8 +2739,10 @@
         return;
       }
       const plan = currentUserProfile?.membershipType || currentUserProfile?.membership || "basic";
+      const membershipStatus = currentUserProfile?.membershipStatus || "none";
       const inHomeZone = !!(lastRideMetrics?.inHomeZone);
-      if (plan === "basic") {
+      const unlimitedActive = isUnlimitedMembershipActive(plan, membershipStatus);
+      if (!unlimitedActive) {
         syncButton.textContent = "Sync & Pay";
       } else if (plan === "uofa_unlimited" || plan === "nwa_unlimited") {
         syncButton.textContent = inHomeZone ? "Sync & Ride" : "Sync & Pay";
@@ -2686,7 +2876,7 @@
         zip,
         isStudent,
         membershipType,
-        membershipStatus: "active",
+        membershipStatus: membershipType === "basic" ? "none" : "active",
         profilePicUrl,
         licensePicUrl,
         studentIdPicUrl,
@@ -2707,7 +2897,7 @@
           uid,
           email,
           membershipType: "basic",
-          membershipStatus: "active"
+          membershipStatus: "none"
         };
         await setDoc(refDoc, currentUserProfile, { merge: true });
       }
@@ -2742,10 +2932,8 @@
       riderAddressDetailEl.textContent = addressParts.join(" • ") || "Not set";
 
       const planKey = normalizePlanKey(p.membershipType || p.membership || "basic");
-      const planLabel = formatMembershipPlanLabel(planKey);
-      const statusLabel = formatMembershipStatusLabel(p.membershipStatus);
-      riderMembershipDetailEl.textContent =
-        statusLabel === "Active" ? planLabel : `${planLabel} • ${statusLabel}`;
+      const membershipSummary = formatMembershipSummary(planKey, p.membershipStatus);
+      riderMembershipDetailEl.textContent = membershipSummary;
 
       editFullNameEl.value = p.fullName || "";
       editPhoneEl.value = phone || "";
@@ -3870,12 +4058,312 @@
       });
     }
 
-    membershipPlanButtons?.forEach?.((btn) => {
-      btn.addEventListener("click", () => {
-        const plan = btn.dataset.planAction;
-        handleMembershipPlanSelection(plan);
+    // === RIDE SYNC STRIPE: START membership overlay logic ===
+    function setMembershipMessage(text) {
+      if (membershipCardMessage) {
+        membershipCardMessage.textContent = text || "";
+      }
+    }
+
+    function toggleOverlay(el, show) {
+      if (!el) return;
+      if (show) {
+        el.classList.add("active");
+        el.setAttribute("aria-hidden", "false");
+      } else {
+        el.classList.remove("active");
+        el.setAttribute("aria-hidden", "true");
+      }
+    }
+
+    function resetMembershipSelectionState() {
+      membershipSelectionOptions?.forEach?.((node) => {
+        node.classList.remove("active");
+      });
+      if (membershipSelectionError) {
+        membershipSelectionError.textContent = "";
+      }
+      pendingMembershipPlanId = null;
+    }
+
+    function openMembershipSelectionOverlayUI() {
+      if (!auth.currentUser) {
+        setMembershipMessage("Log in to manage your membership.");
+        return;
+      }
+      resetMembershipSelectionState();
+      toggleOverlay(membershipSelectionOverlay, true);
+    }
+
+    function closeMembershipSelectionOverlayUI() {
+      toggleOverlay(membershipSelectionOverlay, false);
+      if (membershipSelectionError) {
+        membershipSelectionError.textContent = "";
+      }
+    }
+
+    function selectMembershipPlan(planId) {
+      pendingMembershipPlanId = planId;
+      membershipSelectionOptions?.forEach?.((node) => {
+        const isActive = node.dataset.membershipOption === planId;
+        node.classList.toggle("active", isActive);
+      });
+      if (membershipSelectionError) {
+        membershipSelectionError.textContent = "";
+      }
+    }
+
+    function resizeMembershipSignatureCanvas() {
+      if (!membershipSignatureCanvas) return;
+      const rect = membershipSignatureCanvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      membershipSignatureCanvas.width = rect.width * ratio;
+      membershipSignatureCanvas.height = rect.height * ratio;
+      membershipSignatureCtx = membershipSignatureCanvas.getContext("2d");
+      membershipSignatureCtx.setTransform(1, 0, 0, 1, 0, 0);
+      membershipSignatureCtx.scale(ratio, ratio);
+      membershipSignatureCtx.lineWidth = 2.4;
+      membershipSignatureCtx.strokeStyle = "#f97316";
+      membershipSignatureCtx.lineCap = "round";
+      membershipSignatureCtx.lineJoin = "round";
+      membershipSignatureCtx.clearRect(0, 0, rect.width, rect.height);
+      membershipSignatureHasInk = false;
+      updateMembershipTermsAcceptState();
+    }
+
+    function updateMembershipTermsAcceptState() {
+      if (!membershipTermsAccept) return;
+      const canAccept =
+        membershipTermsCheckbox?.checked && membershipSignatureHasInk && !membershipTermsProcessing;
+      membershipTermsAccept.disabled = !canAccept;
+    }
+
+    function clearMembershipSignatureCanvas() {
+      if (!membershipSignatureCanvas || !membershipSignatureCtx) return;
+      membershipSignatureCtx.clearRect(
+        0,
+        0,
+        membershipSignatureCanvas.width,
+        membershipSignatureCanvas.height
+      );
+      membershipSignatureHasInk = false;
+      updateMembershipTermsAcceptState();
+    }
+
+    function attachSignatureListeners() {
+      if (!membershipSignatureCanvas) return;
+      const getPoint = (evt) => {
+        const rect = membershipSignatureCanvas.getBoundingClientRect();
+        const clientX =
+          evt.touches && evt.touches.length ? evt.touches[0].clientX : evt.clientX;
+        const clientY =
+          evt.touches && evt.touches.length ? evt.touches[0].clientY : evt.clientY;
+        return { x: clientX - rect.left, y: clientY - rect.top };
+      };
+      const start = (evt) => {
+        if (!membershipSignatureCtx) return;
+        evt.preventDefault();
+        membershipSignatureDrawing = true;
+        const point = getPoint(evt);
+        membershipSignatureCtx.beginPath();
+        membershipSignatureCtx.moveTo(point.x, point.y);
+      };
+      const move = (evt) => {
+        if (!membershipSignatureDrawing || !membershipSignatureCtx) return;
+        evt.preventDefault();
+        const point = getPoint(evt);
+        membershipSignatureCtx.lineTo(point.x, point.y);
+        membershipSignatureCtx.stroke();
+        membershipSignatureHasInk = true;
+        updateMembershipTermsAcceptState();
+      };
+      const end = () => {
+        if (!membershipSignatureDrawing || !membershipSignatureCtx) return;
+        membershipSignatureDrawing = false;
+        membershipSignatureCtx.closePath();
+      };
+      ["mousedown", "touchstart"].forEach((eventName) => {
+        membershipSignatureCanvas.addEventListener(eventName, start, { passive: false });
+      });
+      ["mousemove", "touchmove"].forEach((eventName) => {
+        membershipSignatureCanvas.addEventListener(eventName, move, { passive: false });
+      });
+      ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach((eventName) => {
+        membershipSignatureCanvas.addEventListener(eventName, end, { passive: false });
+      });
+    }
+
+    function openMembershipTermsOverlayUI() {
+      if (!pendingMembershipPlanId) return;
+      if (membershipTermsCheckbox) {
+        membershipTermsCheckbox.checked = false;
+      }
+      if (membershipTermsError) {
+        membershipTermsError.textContent = "";
+      }
+      resizeMembershipSignatureCanvas();
+      toggleOverlay(membershipTermsOverlay, true);
+      updateMembershipTermsAcceptState();
+    }
+
+    function closeMembershipTermsOverlayUI() {
+      toggleOverlay(membershipTermsOverlay, false);
+      membershipTermsProcessing = false;
+      updateMembershipTermsAcceptState();
+    }
+
+    async function persistMembershipTermsSignature() {
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error("Log in to continue.");
+      }
+      if (!membershipSignatureCanvas || !membershipSignatureHasInk) {
+        throw new Error("Sign the terms to continue.");
+      }
+      const blob = await new Promise((resolve, reject) => {
+        membershipSignatureCanvas.toBlob((generatedBlob) => {
+          if (generatedBlob) {
+            resolve(generatedBlob);
+          } else {
+            reject(new Error("Unable to capture signature."));
+          }
+        }, "image/png");
+      });
+      const storagePath = `membershipSignatures/${user.uid}/${Date.now()}.png`;
+      const signatureRef = ref(storage, storagePath);
+      await uploadBytes(signatureRef, blob, { contentType: "image/png" });
+      const downloadUrl = await getDownloadURL(signatureRef);
+      await setDoc(
+        doc(db, "users", user.uid),
+        {
+          membershipTermsAccepted: true,
+          membershipTermsAcceptedAt: serverTimestamp(),
+          membershipTermsVersion: "v1",
+          membershipSignatureImageUrl: downloadUrl,
+        },
+        { merge: true }
+      );
+      return downloadUrl;
+    }
+
+    async function startMembershipSubscriptionFlow(planId) {
+      if (!STRIPE_ENABLED) {
+        throw new Error("Stripe payments are not available right now.");
+      }
+      const response = await createMembershipSubscriptionIntentFn({ planId });
+      const data = response?.data || {};
+      if (!data.clientSecret || !data.subscriptionId) {
+        throw new Error("Unable to start Stripe subscription.");
+      }
+      const planLabel =
+        MEMBERSHIP_PLAN_COPY[planId]?.label || formatMembershipPlanLabel(planId);
+      await openPaymentOverlay({
+        title: `Activate ${planLabel}`,
+        subtitle: "Enter payment details to start your subscription.",
+        confirmLabel: "Start subscription",
+        clientSecret: data.clientSecret,
+        context: {
+          type: "membershipSubscription",
+          subscriptionId: data.subscriptionId,
+          planId,
+        },
+      });
+      setMembershipMessage("Complete the payment to finish upgrading.");
+    }
+
+    async function handleMembershipTermsAccept() {
+      if (!pendingMembershipPlanId) {
+        if (membershipTermsError) {
+          membershipTermsError.textContent = "Choose a membership first.";
+        }
+        return;
+      }
+      if (membershipTermsProcessing) return;
+      membershipTermsProcessing = true;
+      updateMembershipTermsAcceptState();
+      if (membershipTermsError) {
+        membershipTermsError.textContent = "";
+      }
+      try {
+        await persistMembershipTermsSignature();
+        closeMembershipTermsOverlayUI();
+        await startMembershipSubscriptionFlow(pendingMembershipPlanId);
+      } catch (err) {
+        console.error("Membership terms accept", err);
+        if (membershipTermsError) {
+          membershipTermsError.textContent =
+            err.message || "Could not continue to payment.";
+        }
+        membershipTermsProcessing = false;
+        updateMembershipTermsAcceptState();
+      }
+    }
+
+    async function handleMembershipSwitchToBasic() {
+      const user = auth.currentUser;
+      if (!user) {
+        setMembershipMessage("Log in to manage your membership.");
+        return;
+      }
+      setMembershipMessage("");
+      try {
+        await applyMembershipPlanFn({ plan: "basic" });
+        setMembershipMessage("You're back on the Basic plan.");
+        await loadUserProfile(user.uid, user.email);
+        closeMembershipSelectionOverlayUI();
+        closeMembershipTermsOverlayUI();
+      } catch (err) {
+        console.error("Switch to basic", err);
+        setMembershipMessage(err.message || "Could not switch to Basic.");
+      }
+    }
+
+    membershipChangeButton?.addEventListener("click", () => {
+      openMembershipSelectionOverlayUI();
+    });
+    membershipSelectionClose?.addEventListener("click", closeMembershipSelectionOverlayUI);
+    membershipSelectionOverlay?.addEventListener("click", (evt) => {
+      if (evt.target === membershipSelectionOverlay) {
+        closeMembershipSelectionOverlayUI();
+      }
+    });
+    membershipSelectionOptions?.forEach?.((node) => {
+      node.addEventListener("click", () => {
+        selectMembershipPlan(node.dataset.membershipOption);
       });
     });
+    membershipSelectionContinue?.addEventListener("click", () => {
+      if (!pendingMembershipPlanId) {
+        if (membershipSelectionError) {
+          membershipSelectionError.textContent = "Choose a plan to continue.";
+        }
+        return;
+      }
+      closeMembershipSelectionOverlayUI();
+      openMembershipTermsOverlayUI();
+    });
+    membershipSelectionBasic?.addEventListener("click", handleMembershipSwitchToBasic);
+    membershipTermsClose?.addEventListener("click", closeMembershipTermsOverlayUI);
+    membershipTermsOverlay?.addEventListener("click", (evt) => {
+      if (evt.target === membershipTermsOverlay) {
+        closeMembershipTermsOverlayUI();
+      }
+    });
+    membershipTermsCheckbox?.addEventListener("change", updateMembershipTermsAcceptState);
+    membershipSignatureClear?.addEventListener("click", () => {
+      clearMembershipSignatureCanvas();
+      if (membershipTermsError) {
+        membershipTermsError.textContent = "";
+      }
+    });
+    membershipTermsAccept?.addEventListener("click", handleMembershipTermsAccept);
+    attachSignatureListeners();
+    window.addEventListener("resize", () => {
+      if (membershipTermsOverlay?.classList.contains("active")) {
+        resizeMembershipSignatureCanvas();
+      }
+    });
+    // === RIDE SYNC STRIPE: END membership overlay logic ===
 
     if (paymentOverlayClose) {
       paymentOverlayClose.addEventListener("click", () => {
@@ -3905,85 +4393,6 @@
           }
         }
       });
-    }
-
-    async function handleMembershipPlanSelection(plan) {
-      if (!plan) return;
-      const user = auth.currentUser;
-      if (!user || !currentUserProfile) {
-        if (membershipCardMessage) {
-          membershipCardMessage.textContent = "Log in to manage your membership.";
-        }
-        return;
-      }
-
-      const normalizedPlan = plan.toLowerCase();
-      const currentPlan =
-        (currentUserProfile?.membershipType ||
-          currentUserProfile?.membership ||
-          "basic").toLowerCase();
-
-      if (membershipCardMessage) {
-        membershipCardMessage.textContent = "";
-      }
-
-      if (normalizedPlan === currentPlan) {
-        return;
-      }
-
-      if (normalizedPlan === "basic") {
-        try {
-          await applyMembershipPlanFn({ plan: "basic" });
-          if (membershipCardMessage) {
-            membershipCardMessage.textContent = "You're back on the Basic plan.";
-          }
-          await loadUserProfile(user.uid, user.email);
-        } catch (err) {
-          console.error("applyMembershipPlan", err);
-          if (membershipCardMessage) {
-            membershipCardMessage.textContent =
-              err.message || "Could not switch to Basic.";
-          }
-        }
-        return;
-      }
-
-      if (!STRIPE_ENABLED) {
-        await applyMembershipPlanLocally(normalizedPlan);
-        return;
-      }
-
-      try {
-        const response = await createMembershipPaymentIntentFn({
-          plan: normalizedPlan,
-        });
-        const data = response?.data || {};
-        const formattedTotal = formatCurrencyFromCents(
-          data.amountCents,
-          data.currency
-        );
-        await openPaymentOverlay({
-          title: `Activate ${MEMBERSHIP_PLAN_COPY[normalizedPlan]?.label || "membership"}`,
-          subtitle: `Pay ${formattedTotal} to enable this membership.`,
-          confirmLabel: `Pay ${formattedTotal}`,
-          clientSecret: data.clientSecret,
-          context: {
-            type: "membership",
-            plan: normalizedPlan,
-            paymentIntentId: data.paymentIntentId,
-          },
-        });
-        if (membershipCardMessage) {
-          membershipCardMessage.textContent =
-            "Enter your payment details to finish upgrading.";
-        }
-      } catch (err) {
-        console.error("Membership payment error", err);
-        if (membershipCardMessage) {
-          membershipCardMessage.textContent =
-            err.message || "Could not start membership payment.";
-        }
-      }
     }
 
     async function ensureStripeInstance() {
@@ -4086,15 +4495,47 @@
       }
     }
 
+    async function activateRideAfterCreation(rideId, ridePayload) {
+      currentRideId = rideId;
+      startRideStatusWatcher(rideId);
+      updateCancelButtonVisibility();
+      if (ridePayload?.isGroupRide) {
+        showGroupQr(rideId);
+      } else {
+        hideGroupQr();
+      }
+      if (ridePayload?.poolType === "uofa") {
+        startPoolGroupWatcher(rideId);
+      }
+      profileMessage.textContent = "Syncing your ride.";
+      profileError.textContent = "";
+      showLoadingView();
+    }
+
     async function handlePaymentSuccess(paymentIntent, context) {
+      if (context?.type === "membershipSubscription") {
+        const finalizeResponse = await finalizeMembershipSubscriptionFn({
+          subscriptionId: context.subscriptionId,
+        });
+        const status = finalizeResponse?.data?.status || "active";
+        if (status === "active") {
+          setMembershipMessage("Membership updated!");
+        } else {
+          setMembershipMessage(`Subscription status: ${status}`);
+        }
+        const user = auth.currentUser;
+        if (user) {
+          await loadUserProfile(user.uid, user.email);
+        }
+        return;
+      }
+
       if (context?.type === "membership") {
         await applyMembershipPlanFn({
           plan: context.plan,
           paymentIntentId: paymentIntent.id,
         });
-        if (membershipCardMessage) {
-          membershipCardMessage.textContent = "Membership updated!";
-        }
+        setMembershipMessage("Membership updated!");
         const user = auth.currentUser;
         if (user) {
           await loadUserProfile(user.uid, user.email);
@@ -4111,29 +4552,20 @@
         if (!rideId) {
           throw new Error("Ride could not be created after payment.");
         }
-        currentRideId = rideId;
-        startRideStatusWatcher(rideId);
-        updateCancelButtonVisibility();
-        if (context.ridePayload?.isGroupRide) {
-          showGroupQr(rideId);
-        } else {
-          hideGroupQr();
-        }
-        if (context.ridePayload?.poolType === "uofa") {
-          startPoolGroupWatcher(rideId);
-        }
-        profileMessage.textContent = "Payment received. Syncing your ride.";
-        profileError.textContent = "";
-        showLoadingView();
+        await activateRideAfterCreation(rideId, context.ridePayload);
       }
     }
 
     async function startRidePaymentFlow(ridePayload) {
+      const response = await createRidePaymentIntentFn({ ride: ridePayload });
+      const data = response?.data || {};
+      if (data.skipPayment && data.rideId) {
+        await activateRideAfterCreation(data.rideId, ridePayload);
+        return;
+      }
       if (!STRIPE_ENABLED) {
         throw new Error("Stripe payments are not available right now.");
       }
-      const response = await createRidePaymentIntentFn({ ride: ridePayload });
-      const data = response?.data || {};
       if (!data.clientSecret || !data.pendingId) {
         throw new Error("Unable to start Stripe payment for this ride.");
       }
@@ -4141,9 +4573,16 @@
         data.amountCents,
         data.currency
       );
+      let subtitle = `Pay ${formattedTotal} to request this ride.`;
+      if (data.geofenceContext?.geofenceName) {
+        subtitle =
+          data.geofenceContext.amountCents > 0
+            ? `Membership covers the base fare. Pay ${formattedTotal} for the out-of-zone surcharge.`
+            : subtitle;
+      }
       await openPaymentOverlay({
         title: "Confirm ride payment",
-        subtitle: `Pay ${formattedTotal} to request this ride.`,
+        subtitle,
         confirmLabel: `Pay ${formattedTotal}`,
         clientSecret: data.clientSecret,
         context: {
@@ -4190,6 +4629,11 @@
 
       const fare = lastRideMetrics.fareBreakdown;
       const total = fare.total || 0;
+      const totalCents = Math.round(total * 100);
+      if (!Number.isFinite(totalCents) || totalCents <= 0) {
+        profileError.textContent = "Ride estimate unavailable. Recalculate and try again.";
+        return;
+      }
 
       const cd = await checkCooldown(user.uid, plan);
       if (cd.allowed === false) {
@@ -4226,13 +4670,21 @@
       const isGroupRide = maxRiders > 1;
       const pickupCode = generateRidePin();
       const dropoffCode = generateRidePin();
+      const pickupLocationLiteral = currentLocation
+        ? { lat: currentLocation.lat, lng: currentLocation.lng }
+        : null;
+      const dropoffLocationLiteral = latLngToLiteral(destinationLatLng);
+      if (!pickupLocationLiteral || !dropoffLocationLiteral) {
+        profileError.textContent = "Missing pickup or dropoff location.";
+        return;
+      }
 
       const rideBase = {
         userId: user.uid,
         startedByUserId: user.uid,
         createdAt: serverTimestamp(),
         membershipType: plan,
-        membershipStatus: currentUserProfile?.membershipStatus || "active",
+        membershipStatus,
         isStudent,
         uofaVerified,
         gender,
@@ -4249,6 +4701,8 @@
         groupId: null,
         poolType,
         fromLocation: currentLocation || null,
+        pickupLocation: pickupLocationLiteral,
+        dropoffLocation: dropoffLocationLiteral,
         toDestination: destAddress || null,
         inHomeZone,
         estimatedDurationMinutes: lastRideMetrics.durationMinutes
@@ -4256,6 +4710,7 @@
           : null,
         distanceMeters: lastRideMetrics.distanceMeters || null,
         fare,
+        totalCents,
         pickupCode,
         pickupPin: pickupCode,
         dropoffCode,
@@ -4263,43 +4718,9 @@
       };
 
       try {
-        let docRef;
-
-        const paymentIsIncluded = plan !== "basic" && inHomeZone;
-
-        if (paymentIsIncluded) {
-          docRef = await addDoc(collection(db, "rideRequests"), {
-            ...rideBase,
-            status,
-            paymentMethod: poolType === "uofa" ? "included_pool" : "included",
-            paymentStatus: "included"
-          });
-        } else {
-          const ridePaymentPayload = { ...rideBase, status };
-          delete ridePaymentPayload.createdAt;
-          await startRidePaymentFlow(ridePaymentPayload);
-          return;
-        }
-
-        if (rideBase.isGroupRide) {
-          await updateDoc(doc(db, "rideRequests", docRef.id), {
-            groupId: docRef.id
-          });
-        }
-
-        currentRideId = docRef.id;
-        startRideStatusWatcher(docRef.id);
-        updateCancelButtonVisibility();
-
-        if (rideBase.isGroupRide) {
-          showGroupQr(docRef.id);
-        }
-
-        if (poolType === "uofa") {
-          startPoolGroupWatcher(docRef.id);
-        }
-
-        showLoadingView();
+        const ridePaymentPayload = { ...rideBase, status };
+        delete ridePaymentPayload.createdAt;
+        await startRidePaymentFlow(ridePaymentPayload);
       } catch (err) {
         console.error("New ride error", err);
         profileError.textContent = err.message || "Could not sync ride / payment.";
@@ -4411,7 +4832,7 @@
             startedByUserId: host.startedByUserId || host.userId || user.uid,
             createdAt: serverTimestamp(),
             membershipType: plan,
-            membershipStatus: currentUserProfile?.membershipStatus || "active",
+            membershipStatus: currentUserProfile?.membershipStatus || "none",
             isStudent,
             uofaVerified,
             gender,
