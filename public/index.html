@@ -4647,6 +4647,7 @@
       }
 
       const plan = currentUserProfile?.membershipType || currentUserProfile?.membership || "basic";
+      const membershipStatus = currentUserProfile?.membershipStatus || "none";
       const isStudent = !!currentUserProfile?.isStudent;
       const uofaVerified = !!currentUserProfile?.uofaVerified;
       const gender = (currentUserProfile?.gender || "").toLowerCase();
