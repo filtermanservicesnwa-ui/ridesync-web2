@@ -16,8 +16,11 @@
     "phoneNumber": "+14794221508"
   },
   "stripe": {
-    "publishableKey": "",
+    "publishableKey": "pk_test_51N9eIpExample0000000000000000",
     "membershipPlans": {
+      "basic": {
+        "priceDisplay": "Pay per ride • No monthly fee"
+      },
       "uofa_unlimited": {
         "priceDisplay": "$80 / month"
       },
