@@ -3667,8 +3667,9 @@
     function computeFareForMembership(plan, minutes, inHomeZone) {
       const BASIC_RATE_PER_MIN = 0.60;
       const BASIC_PLATFORM_FEE = 0.50;
+      const BASIC_PROCESSING_FEE_RATE = 0.03;
       const UNLIMITED_OUT_RATE = 0.35;
-      const PROCESSING_FEE_RATE = 0.04;
+      const UNLIMITED_PROCESSING_FEE_RATE = 0.04;
 
       let membershipLabel = "";
       let rideSubtotal = 0;
@@ -3677,7 +3678,7 @@
 
       if (plan === "basic") {
         rideSubtotal = minutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
-        processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+        processingFee = rideSubtotal * BASIC_PROCESSING_FEE_RATE;
         total = rideSubtotal + processingFee;
         membershipLabel = "Basic (pay per ride)";
       } else if (plan === "uofa_unlimited") {
@@ -3688,7 +3689,7 @@
           membershipLabel = "U of A Unlimited – in Fayetteville (included)";
         } else {
           rideSubtotal = minutes * UNLIMITED_OUT_RATE;
-          processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+          processingFee = rideSubtotal * UNLIMITED_PROCESSING_FEE_RATE;
           total = rideSubtotal + processingFee;
           membershipLabel = "U of A Unlimited – out of Fayetteville (extra per-minute)";
         }
@@ -3700,13 +3701,13 @@
           membershipLabel = "NWA Unlimited – in zone (included)";
         } else {
           rideSubtotal = minutes * UNLIMITED_OUT_RATE;
-          processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+          processingFee = rideSubtotal * UNLIMITED_PROCESSING_FEE_RATE;
           total = rideSubtotal + processingFee;
           membershipLabel = "NWA Unlimited – out of zone (extra per-minute)";
         }
       } else {
         rideSubtotal = minutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
-        processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+        processingFee = rideSubtotal * BASIC_PROCESSING_FEE_RATE;
         total = rideSubtotal + processingFee;
         membershipLabel = "Basic (default)";
       }
