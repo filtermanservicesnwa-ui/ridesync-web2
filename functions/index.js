@@ -431,7 +431,8 @@ function computeOutOfZoneSurchargeCents(totalCents, extraMiles) {
   }
   const bonus = Math.round(extraMiles * SURCHARGE_PER_MILE_CENTS);
   const calculated = SURCHARGE_BASE_CENTS + bonus;
-  return Math.max(SURCHARGE_BASE_CENTS, Math.min(Math.round(totalCents), calculated));
+  const rideTotal = Math.max(0, Math.round(totalCents));
+  return Math.min(rideTotal, Math.max(SURCHARGE_BASE_CENTS, calculated));
 }
 
 function calculateRideChargeContext({
