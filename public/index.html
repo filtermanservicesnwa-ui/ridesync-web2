@@ -1855,6 +1855,9 @@
         description: "Unlimited rides inside the 30-mile NWA radius.",
       },
     };
+    const MEMBERSHIP_PLAN_KEY_ALIASES = {
+      basic: new Set(["basic", "basic (pay per ride)", "basic plan", "plan: basic"]),
+    };
 
     const urlParams = new URLSearchParams(window.location.search);
     const joinRideIdFromUrl = urlParams.get("join");
@@ -2706,7 +2709,7 @@
     }
 
     function setMembershipBadge(profile) {
-      const plan = profile?.membershipType || profile?.membership || "basic";
+      const plan = normalizePlanKey(profile?.membershipType || profile?.membership);
       const isStudent = !!profile?.isStudent;
       const uofaVerified = !!profile?.uofaVerified;
 
@@ -2746,7 +2749,7 @@
     }
 
     function formatPlanPriceLabel(planKey) {
-      const key = (planKey || "basic").toLowerCase();
+      const key = normalizePlanKey(planKey);
       return (
         stripeMembershipConfig?.[key]?.priceDisplay ||
         MEMBERSHIP_PLAN_COPY[key]?.price ||
@@ -2768,7 +2771,16 @@
     updateMembershipPrices();
 
     function normalizePlanKey(plan) {
-      return (plan || "basic").toString().toLowerCase();
+      const raw = (plan ?? "").toString().trim().toLowerCase();
+      if (!raw) {
+        return "basic";
+      }
+      for (const [planKey, aliases] of Object.entries(MEMBERSHIP_PLAN_KEY_ALIASES)) {
+        if (aliases.has(raw) || raw === planKey) {
+          return planKey;
+        }
+      }
+      return raw;
     }
 
     function formatMembershipPlanLabel(planKey) {
@@ -2927,7 +2939,9 @@
         syncButton.textContent = "Join Ride";
         return;
       }
-      const plan = currentUserProfile?.membershipType || currentUserProfile?.membership || "basic";
+      const plan = normalizePlanKey(
+        currentUserProfile?.membershipType || currentUserProfile?.membership || "basic"
+      );
       const membershipStatus = currentUserProfile?.membershipStatus || "none";
       const inHomeZone = !!(lastRideMetrics?.inHomeZone);
       const unlimitedActive = isUnlimitedMembershipActive(plan, membershipStatus);
@@ -3038,7 +3052,7 @@
       const state = stateEl.value.trim();
       const zip = zipEl.value.trim();
       const isStudent = isStudentEl.value === "true";
-      const membershipType = membershipEl.value || "basic";
+      const membershipType = normalizePlanKey(membershipEl.value || "basic");
 
       let profilePicUrl = null;
       let licensePicUrl = null;
@@ -3502,7 +3516,9 @@
         const totalDistanceMeters = leg.distance.value;
 
         const minutes = totalDurationSec / 60;
-        const plan = currentUserProfile?.membershipType || currentUserProfile?.membership || "basic";
+        const plan = normalizePlanKey(
+          currentUserProfile?.membershipType || currentUserProfile?.membership || "basic"
+        );
 
         let inHomeZone = false;
 
@@ -3719,43 +3735,46 @@
       const BASIC_PROCESSING_FEE_RATE = 0.03;
       const UNLIMITED_OUT_RATE = 0.35;
       const UNLIMITED_PROCESSING_FEE_RATE = 0.04;
+      const normalizedPlan = normalizePlanKey(plan);
+      const minutesValue = Number(minutes);
+      const safeMinutes = Number.isFinite(minutesValue) ? Math.max(0, minutesValue) : 0;
 
       let membershipLabel = "";
       let rideSubtotal = 0;
       let processingFee = 0;
       let total = 0;
 
-      if (plan === "basic") {
-        rideSubtotal = minutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
+      if (normalizedPlan === "basic") {
+        rideSubtotal = safeMinutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
         processingFee = rideSubtotal * BASIC_PROCESSING_FEE_RATE;
         total = rideSubtotal + processingFee;
         membershipLabel = "Basic (pay per ride)";
-      } else if (plan === "uofa_unlimited") {
+      } else if (normalizedPlan === "uofa_unlimited") {
         if (inHomeZone) {
           rideSubtotal = 0;
           processingFee = 0;
           total = 0;
           membershipLabel = "U of A Unlimited – in Fayetteville (included)";
         } else {
-          rideSubtotal = minutes * UNLIMITED_OUT_RATE;
+          rideSubtotal = safeMinutes * UNLIMITED_OUT_RATE;
           processingFee = rideSubtotal * UNLIMITED_PROCESSING_FEE_RATE;
           total = rideSubtotal + processingFee;
           membershipLabel = "U of A Unlimited – out of Fayetteville (extra per-minute)";
         }
-      } else if (plan === "nwa_unlimited") {
+      } else if (normalizedPlan === "nwa_unlimited") {
         if (inHomeZone) {
           rideSubtotal = 0;
           processingFee = 0;
           total = 0;
           membershipLabel = "NWA Unlimited – in zone (included)";
         } else {
-          rideSubtotal = minutes * UNLIMITED_OUT_RATE;
+          rideSubtotal = safeMinutes * UNLIMITED_OUT_RATE;
           processingFee = rideSubtotal * UNLIMITED_PROCESSING_FEE_RATE;
           total = rideSubtotal + processingFee;
           membershipLabel = "NWA Unlimited – out of zone (extra per-minute)";
         }
       } else {
-        rideSubtotal = minutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
+        rideSubtotal = safeMinutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
         processingFee = rideSubtotal * BASIC_PROCESSING_FEE_RATE;
         total = rideSubtotal + processingFee;
         membershipLabel = "Basic (default)";
@@ -3770,7 +3789,8 @@
     }
 
     async function checkCooldown(userId, plan) {
-      if (plan !== "uofa_unlimited" && plan !== "nwa_unlimited") {
+      const normalizedPlan = normalizePlanKey(plan);
+      if (normalizedPlan !== "uofa_unlimited" && normalizedPlan !== "nwa_unlimited") {
         return { allowed: true };
       }
 
@@ -3793,7 +3813,7 @@
         const data = docSnap.data();
         if (
           data.status === "completed" &&
-          data.membershipType === plan &&
+          normalizePlanKey(data.membershipType) === normalizedPlan &&
           data.completedAt &&
           typeof data.completedAt.toDate === "function"
         ) {
@@ -4833,7 +4853,9 @@
         return;
       }
 
-      const plan = currentUserProfile?.membershipType || currentUserProfile?.membership || "basic";
+      const plan = normalizePlanKey(
+        currentUserProfile?.membershipType || currentUserProfile?.membership || "basic"
+      );
       const membershipStatus = currentUserProfile?.membershipStatus || "none";
       const isStudent = !!currentUserProfile?.isStudent;
       const uofaVerified = !!currentUserProfile?.uofaVerified;
@@ -4851,12 +4873,8 @@
         inHomeZone;
 
       const fare = lastRideMetrics.fareBreakdown;
-      const total = fare.total || 0;
-      const totalCents = Math.round(total * 100);
-      if (!Number.isFinite(totalCents) || totalCents <= 0) {
-        profileError.textContent = "Ride estimate unavailable. Recalculate and try again.";
-        return;
-      }
+      const totalValue = Number.isFinite(fare.total) ? fare.total : 0;
+      const totalCents = Math.max(0, Math.round(totalValue * 100));
 
       const cd = await checkCooldown(user.uid, plan);
       if (cd.allowed === false) {
@@ -4961,10 +4979,11 @@
       cancelError.textContent = "";
 
       try {
-        const plan =
+        const plan = normalizePlanKey(
           currentUserProfile?.membershipType ||
-          currentUserProfile?.membership ||
-          "basic";
+            currentUserProfile?.membership ||
+            "basic"
+        );
 
         const cooldown = await checkCooldown(user.uid, plan);
         if (cooldown.allowed === false) {
@@ -5011,7 +5030,7 @@
           const inHomeZone = !!host.inHomeZone;
           const minutes = host.estimatedDurationMinutes || 0;
           const fare = computeFareForMembership(plan, minutes, inHomeZone);
-          const total = fare.total || 0;
+          const total = Number.isFinite(fare.total) ? fare.total : 0;
           const paymentIsIncluded = plan !== "basic" && inHomeZone;
 
           const riderName =
