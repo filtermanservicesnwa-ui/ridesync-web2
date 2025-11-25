@@ -1169,15 +1169,18 @@ exports.finalizeMembershipSubscription = functions.https.onCall(
       );
     }
 
-    const membershipStatus =
-      subscriptionPlan === "uofa_unlimited"
-        ? "pending_verification"
-        : "active";
+    const userRef = db.collection("users").doc(uid);
+    const userSnap = await userRef.get();
+    const profileData = userSnap.exists ? userSnap.data() : {};
+    const needsVerification =
+      subscriptionPlan === "uofa_unlimited" && !profileData?.uofaVerified;
+    const membershipStatus = needsVerification
+      ? "pending_verification"
+      : "active";
     const customerId =
       typeof subscription.customer === "string"
         ? subscription.customer
         : subscription.customer?.id;
-    const userRef = db.collection("users").doc(uid);
     const membershipHistoryRef = userRef
       .collection("membershipHistory")
       .doc(subscription.id);
@@ -1192,6 +1195,7 @@ exports.finalizeMembershipSubscription = functions.https.onCall(
           pendingMembershipPlanId: FieldValue.delete(),
           pendingSubscriptionId: FieldValue.delete(),
           membershipRenewedAt: FieldValue.serverTimestamp(),
+          membershipApprovalRequired: needsVerification || FieldValue.delete(),
         },
         { merge: true }
       ),
