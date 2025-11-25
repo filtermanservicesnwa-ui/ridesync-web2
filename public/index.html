@@ -1791,6 +1791,7 @@
     const functionsClient = getFunctions(app);
 
     const stripeConfig = APP_CONFIG.stripe || {};
+    const fareConfig = APP_CONFIG.fares || {};
     const functionsConfig = APP_CONFIG.functions || {};
     const STRIPE_PUBLISHABLE_KEY = stripeConfig.publishableKey || "";
     const stripeMembershipConfig = stripeConfig.membershipPlans || {};
@@ -1857,6 +1858,42 @@
     };
     const MEMBERSHIP_PLAN_KEY_ALIASES = {
       basic: new Set(["basic", "basic (pay per ride)", "basic plan", "plan: basic"]),
+    };
+
+    const DEFAULT_FARE_SETTINGS = {
+      BASIC_RATE_PER_MIN: 0.6,
+      BASIC_PLATFORM_FEE: 0.5,
+      BASIC_PROCESSING_FEE_RATE: 0.03,
+      UNLIMITED_OUT_RATE: 0.35,
+      UNLIMITED_PROCESSING_FEE_RATE: 0.04
+    };
+
+    function coerceFareNumber(value, fallback) {
+      const num = Number(value);
+      return Number.isFinite(num) && num >= 0 ? num : fallback;
+    }
+
+    const FARE_SETTINGS = {
+      BASIC_RATE_PER_MIN: coerceFareNumber(
+        fareConfig.basicRatePerMin,
+        DEFAULT_FARE_SETTINGS.BASIC_RATE_PER_MIN
+      ),
+      BASIC_PLATFORM_FEE: coerceFareNumber(
+        fareConfig.basicPlatformFee,
+        DEFAULT_FARE_SETTINGS.BASIC_PLATFORM_FEE
+      ),
+      BASIC_PROCESSING_FEE_RATE: coerceFareNumber(
+        fareConfig.basicProcessingFeeRate,
+        DEFAULT_FARE_SETTINGS.BASIC_PROCESSING_FEE_RATE
+      ),
+      UNLIMITED_OUT_RATE: coerceFareNumber(
+        fareConfig.unlimitedOutRate,
+        DEFAULT_FARE_SETTINGS.UNLIMITED_OUT_RATE
+      ),
+      UNLIMITED_PROCESSING_FEE_RATE: coerceFareNumber(
+        fareConfig.unlimitedProcessingFeeRate,
+        DEFAULT_FARE_SETTINGS.UNLIMITED_PROCESSING_FEE_RATE
+      )
     };
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -3730,11 +3767,13 @@
     }
 
     function computeFareForMembership(plan, minutes, inHomeZone) {
-      const BASIC_RATE_PER_MIN = 0.60;
-      const BASIC_PLATFORM_FEE = 0.50;
-      const BASIC_PROCESSING_FEE_RATE = 0.03;
-      const UNLIMITED_OUT_RATE = 0.35;
-      const UNLIMITED_PROCESSING_FEE_RATE = 0.04;
+      const {
+        BASIC_RATE_PER_MIN,
+        BASIC_PLATFORM_FEE,
+        BASIC_PROCESSING_FEE_RATE,
+        UNLIMITED_OUT_RATE,
+        UNLIMITED_PROCESSING_FEE_RATE
+      } = FARE_SETTINGS;
       const normalizedPlan = normalizePlanKey(plan);
       const minutesValue = Number(minutes);
       const safeMinutes = Number.isFinite(minutesValue) ? Math.max(0, minutesValue) : 0;
