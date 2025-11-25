@@ -949,11 +949,11 @@
         <button
           type="button"
           id="rideViewTabInfo"
-          class="ride-view-tab active"
+          class="ride-view-tab"
           data-view-tab="info"
           aria-controls="rideViewPanelInfo"
-          aria-selected="true"
-          tabindex="0"
+          aria-selected="false"
+          tabindex="-1"
         >
           Rider info
         </button>
@@ -971,11 +971,11 @@
         <button
           type="button"
           id="rideViewTabDestination"
-          class="ride-view-tab"
+          class="ride-view-tab active"
           data-view-tab="destination"
           aria-controls="rideViewPanelDestination"
-          aria-selected="false"
-          tabindex="-1"
+          aria-selected="true"
+          tabindex="0"
         >
           Destination
         </button>
@@ -985,12 +985,12 @@
       <div id="profileError" class="error"></div>
 
       <div
-        class="ride-view-panel active"
+        class="ride-view-panel"
         id="rideViewPanelInfo"
         data-view-panel="info"
         role="tabpanel"
         aria-labelledby="rideViewTabInfo"
-        aria-hidden="false"
+        aria-hidden="true"
       >
       <div id="riderInfoCard" class="rider-info-card">
         <div class="rider-info-main">
@@ -1193,12 +1193,12 @@
       </div>
 
       <div
-        class="ride-view-panel"
+        class="ride-view-panel active"
         id="rideViewPanelDestination"
         data-view-panel="destination"
         role="tabpanel"
         aria-labelledby="rideViewTabDestination"
-        aria-hidden="true"
+        aria-hidden="false"
       >
       <!-- Join banner for QR joiners -->
       <div id="joinBanner" class="fare-box" style="display:none;">
@@ -1206,6 +1206,9 @@
       </div>
 
       <div class="section-title">Trip setup</div>
+      <div class="small" style="margin: -4px 0 12px; color: #94a3b8;">
+        Check out our memberships to save on frequent rides.
+      </div>
       <div class="fare-box trip-builder-card">
         <div class="trip-builder-fields">
           <div class="trip-field">
@@ -2117,7 +2120,7 @@
     let destinationLatLng = null;
     let destAutocomplete = null;
     let lastRideMetrics = null;
-    let activeRideViewSection = "info";
+    let activeRideViewSection = "destination";
 
     let activeRideUnsub = null;
     let activeGroupUnsub = null;
