@@ -948,14 +948,14 @@
       <div class="ride-view-tabs" role="tablist" aria-label="Rider sections">
         <button
           type="button"
-          id="rideViewTabInfo"
-          class="ride-view-tab"
-          data-view-tab="info"
-          aria-controls="rideViewPanelInfo"
-          aria-selected="false"
-          tabindex="-1"
+          id="rideViewTabDestination"
+          class="ride-view-tab active"
+          data-view-tab="destination"
+          aria-controls="rideViewPanelDestination"
+          aria-selected="true"
+          tabindex="0"
         >
-          Rider info
+          Destination
         </button>
         <button
           type="button"
@@ -970,19 +970,206 @@
         </button>
         <button
           type="button"
-          id="rideViewTabDestination"
-          class="ride-view-tab active"
-          data-view-tab="destination"
-          aria-controls="rideViewPanelDestination"
-          aria-selected="true"
-          tabindex="0"
+          id="rideViewTabInfo"
+          class="ride-view-tab"
+          data-view-tab="info"
+          aria-controls="rideViewPanelInfo"
+          aria-selected="false"
+          tabindex="-1"
         >
-          Destination
+          Rider info
         </button>
       </div>
 
       <div id="profileMessage" class="success"></div>
       <div id="profileError" class="error"></div>
+
+      <div
+        class="ride-view-panel active"
+        id="rideViewPanelDestination"
+        data-view-panel="destination"
+        role="tabpanel"
+        aria-labelledby="rideViewTabDestination"
+        aria-hidden="false"
+      >
+      <!-- Join banner for QR joiners -->
+      <div id="joinBanner" class="fare-box" style="display:none;">
+        <div class="small" id="joinBannerText"></div>
+      </div>
+
+      <div class="section-title">Trip setup</div>
+      <div class="small" style="margin: -4px 0 12px; color: #94a3b8;">
+        Check out our memberships to save on frequent rides.
+      </div>
+      <div class="fare-box trip-builder-card">
+        <div class="trip-builder-fields">
+          <div class="trip-field">
+            <label for="destination">Where are you going?</label>
+            <input id="destination" type="text" placeholder="Enter destination address" />
+          </div>
+          <div id="ridersSection" class="trip-field">
+            <label for="numRiders">Number of riders</label>
+            <select id="numRiders">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+            <div class="small">
+              For U of A pooling, choose 1 rider. For private group rides with friends, choose 2–4 and use the QR.
+            </div>
+          </div>
+        </div>
+        <div id="tripMapPreview" class="trip-map-preview" aria-hidden="true">
+          <div id="destinationPreviewMap" class="trip-map-canvas"></div>
+          <div id="destinationPreviewEmpty" class="map-empty-state">
+            Add a destination to preview your pickup &amp; dropoff pins.
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title" id="poolGroupTitle" style="display:none;">
+        U of A pool group
+      </div>
+      <div id="poolGroupBox" class="fare-box" style="display:none;">
+        <div class="small" id="poolGroupStatus">
+          Searching for other U of A riders…
+        </div>
+        <div id="poolGroupList"></div>
+      </div>
+
+      <div class="section-title">Estimated fare</div>
+      <div class="fare-box">
+        <div id="fareNotReady" class="small">
+          Set a destination to see estimated time, distance, and total.
+        </div>
+        <div id="fareReady" style="display:none;">
+          <div class="fare-row">
+            <div class="fare-label">Time</div>
+            <div class="fare-value" id="fareTime"></div>
+          </div>
+          <div class="fare-row">
+            <div class="fare-label">Distance</div>
+            <div class="fare-value" id="fareDistance"></div>
+          </div>
+          <div class="fare-row">
+            <div class="fare-label">Plan</div>
+            <div class="fare-value" id="fareMembership"></div>
+          </div>
+          <div class="fare-row">
+            <div class="fare-label">Total (incl. fees)</div>
+            <div class="fare-total" id="fareTotal"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fare-box rider-action-box">
+        <div class="rider-action-header">Account &amp; ride actions</div>
+        <div class="rider-action-buttons">
+          <button id="syncButton" class="btn-primary">Sync &amp; Pay</button>
+          <button id="logoutButton" class="btn-secondary">Log out</button>
+        </div>
+      </div>
+      </div>
+
+      <div
+        class="ride-view-panel"
+        id="rideViewPanelMembership"
+        data-view-panel="membership"
+        role="tabpanel"
+        aria-labelledby="rideViewTabMembership"
+        aria-hidden="true"
+      >
+        <div id="membershipCard" class="membership-card">
+          <div class="membership-card-header">
+            <div>
+              <div
+                class="section-title"
+                style="margin-top:0;border-top:none;padding-top:0;"
+              >
+                Membership
+              </div>
+              <p id="membershipStatusText" class="membership-subtitle">
+                Loading membership…
+              </p>
+            </div>
+            <span id="membershipStatusBadge" class="membership-status-badge">—</span>
+          </div>
+          <!-- === RIDE SYNC STRIPE: START membership summary === -->
+          <div class="membership-card-summary">
+            <p id="membershipCurrentLabel" class="membership-subtitle">
+              Checking membership...
+            </p>
+            <div class="rider-info-actions" style="margin-top:8px;">
+              <button
+                id="membershipChangeButton"
+                type="button"
+                class="btn-secondary btn-small"
+              >
+                Change membership
+              </button>
+            </div>
+          </div>
+          <!-- === RIDE SYNC STRIPE: END membership summary === -->
+          <div class="membership-plan-grid" style="display:none;">
+            <div class="membership-plan" data-plan="basic">
+              <div class="membership-plan-title">Basic</div>
+              <div class="membership-plan-price" data-plan-price="basic">
+                $0 / ride
+              </div>
+              <p class="membership-plan-desc">
+                Pay per ride with Stripe. Best if you only ride occasionally.
+              </p>
+              <button
+                class="btn-secondary btn-small"
+                type="button"
+                data-plan-action="basic"
+              >
+                Stay on Basic
+              </button>
+            </div>
+            <div class="membership-plan" data-plan="uofa_unlimited">
+              <div class="membership-plan-title">U of A Unlimited</div>
+              <div
+                class="membership-plan-price"
+                data-plan-price="uofa_unlimited"
+              >
+                $80 / month
+              </div>
+              <p class="membership-plan-desc">
+                Unlimited Fayetteville rides. Out-of-zone trips bill per minute.
+              </p>
+              <button
+                class="btn-primary btn-small"
+                type="button"
+                data-plan-action="uofa_unlimited"
+              >
+                Upgrade to U of A Unlimited
+              </button>
+            </div>
+            <div class="membership-plan" data-plan="nwa_unlimited">
+              <div class="membership-plan-title">NWA Unlimited</div>
+              <div
+                class="membership-plan-price"
+                data-plan-price="nwa_unlimited"
+              >
+                $120 / month
+              </div>
+              <p class="membership-plan-desc">
+                Unlimited rides inside the 30-mile NWA radius.
+              </p>
+              <button
+                class="btn-primary btn-small"
+                type="button"
+                data-plan-action="nwa_unlimited"
+              >
+                Upgrade to NWA Unlimited
+              </button>
+            </div>
+          </div>
+          <div id="membershipCardMessage" class="small"></div>
+        </div>
+      </div>
 
       <div
         class="ride-view-panel"
@@ -1091,193 +1278,6 @@
         </button>
       </div>
 
-      </div>
-
-      <div
-        class="ride-view-panel"
-        id="rideViewPanelMembership"
-        data-view-panel="membership"
-        role="tabpanel"
-        aria-labelledby="rideViewTabMembership"
-        aria-hidden="true"
-      >
-        <div id="membershipCard" class="membership-card">
-          <div class="membership-card-header">
-            <div>
-              <div
-                class="section-title"
-                style="margin-top:0;border-top:none;padding-top:0;"
-              >
-                Membership
-              </div>
-              <p id="membershipStatusText" class="membership-subtitle">
-                Loading membership…
-              </p>
-            </div>
-            <span id="membershipStatusBadge" class="membership-status-badge">—</span>
-          </div>
-          <!-- === RIDE SYNC STRIPE: START membership summary === -->
-          <div class="membership-card-summary">
-            <p id="membershipCurrentLabel" class="membership-subtitle">
-              Checking membership...
-            </p>
-            <div class="rider-info-actions" style="margin-top:8px;">
-              <button
-                id="membershipChangeButton"
-                type="button"
-                class="btn-secondary btn-small"
-              >
-                Change membership
-              </button>
-            </div>
-          </div>
-          <!-- === RIDE SYNC STRIPE: END membership summary === -->
-          <div class="membership-plan-grid" style="display:none;">
-            <div class="membership-plan" data-plan="basic">
-              <div class="membership-plan-title">Basic</div>
-              <div class="membership-plan-price" data-plan-price="basic">
-                $0 / ride
-              </div>
-              <p class="membership-plan-desc">
-                Pay per ride with Stripe. Best if you only ride occasionally.
-              </p>
-              <button
-                class="btn-secondary btn-small"
-                type="button"
-                data-plan-action="basic"
-              >
-                Stay on Basic
-              </button>
-            </div>
-            <div class="membership-plan" data-plan="uofa_unlimited">
-              <div class="membership-plan-title">U of A Unlimited</div>
-              <div
-                class="membership-plan-price"
-                data-plan-price="uofa_unlimited"
-              >
-                $80 / month
-              </div>
-              <p class="membership-plan-desc">
-                Unlimited Fayetteville rides. Out-of-zone trips bill per minute.
-              </p>
-              <button
-                class="btn-primary btn-small"
-                type="button"
-                data-plan-action="uofa_unlimited"
-              >
-                Upgrade to U of A Unlimited
-              </button>
-            </div>
-            <div class="membership-plan" data-plan="nwa_unlimited">
-              <div class="membership-plan-title">NWA Unlimited</div>
-              <div
-                class="membership-plan-price"
-                data-plan-price="nwa_unlimited"
-              >
-                $120 / month
-              </div>
-              <p class="membership-plan-desc">
-                Unlimited rides inside the 30-mile NWA radius.
-              </p>
-              <button
-                class="btn-primary btn-small"
-                type="button"
-                data-plan-action="nwa_unlimited"
-              >
-                Upgrade to NWA Unlimited
-              </button>
-            </div>
-          </div>
-          <div id="membershipCardMessage" class="small"></div>
-        </div>
-      </div>
-
-      <div
-        class="ride-view-panel active"
-        id="rideViewPanelDestination"
-        data-view-panel="destination"
-        role="tabpanel"
-        aria-labelledby="rideViewTabDestination"
-        aria-hidden="false"
-      >
-      <!-- Join banner for QR joiners -->
-      <div id="joinBanner" class="fare-box" style="display:none;">
-        <div class="small" id="joinBannerText"></div>
-      </div>
-
-      <div class="section-title">Trip setup</div>
-      <div class="small" style="margin: -4px 0 12px; color: #94a3b8;">
-        Check out our memberships to save on frequent rides.
-      </div>
-      <div class="fare-box trip-builder-card">
-        <div class="trip-builder-fields">
-          <div class="trip-field">
-            <label for="destination">Where are you going?</label>
-            <input id="destination" type="text" placeholder="Enter destination address" />
-          </div>
-          <div id="ridersSection" class="trip-field">
-            <label for="numRiders">Number of riders</label>
-            <select id="numRiders">
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-            </select>
-            <div class="small">
-              For U of A pooling, choose 1 rider. For private group rides with friends, choose 2–4 and use the QR.
-            </div>
-          </div>
-        </div>
-        <div id="tripMapPreview" class="trip-map-preview" aria-hidden="true">
-          <div id="destinationPreviewMap" class="trip-map-canvas"></div>
-          <div id="destinationPreviewEmpty" class="map-empty-state">
-            Add a destination to preview your pickup &amp; dropoff pins.
-          </div>
-        </div>
-      </div>
-
-      <div class="section-title" id="poolGroupTitle" style="display:none;">
-        U of A pool group
-      </div>
-      <div id="poolGroupBox" class="fare-box" style="display:none;">
-        <div class="small" id="poolGroupStatus">
-          Searching for other U of A riders…
-        </div>
-        <div id="poolGroupList"></div>
-      </div>
-
-      <div class="section-title">Estimated fare</div>
-      <div class="fare-box">
-        <div id="fareNotReady" class="small">
-          Set a destination to see estimated time, distance, and total.
-        </div>
-        <div id="fareReady" style="display:none;">
-          <div class="fare-row">
-            <div class="fare-label">Time</div>
-            <div class="fare-value" id="fareTime"></div>
-          </div>
-          <div class="fare-row">
-            <div class="fare-label">Distance</div>
-            <div class="fare-value" id="fareDistance"></div>
-          </div>
-          <div class="fare-row">
-            <div class="fare-label">Plan</div>
-            <div class="fare-value" id="fareMembership"></div>
-          </div>
-          <div class="fare-row">
-            <div class="fare-label">Total (incl. fees)</div>
-            <div class="fare-total" id="fareTotal"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="fare-box rider-action-box">
-        <div class="rider-action-header">Account &amp; ride actions</div>
-        <div class="rider-action-buttons">
-          <button id="syncButton" class="btn-primary">Sync &amp; Pay</button>
-          <button id="logoutButton" class="btn-secondary">Log out</button>
-        </div>
-      </div>
       </div>
     </div>
 
