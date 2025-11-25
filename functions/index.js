@@ -948,8 +948,7 @@ exports.createMembershipPaymentIntent = functions.https.onCall(
   }
 );
 
-exports.applyMembershipPlan = functions.https.onCall(async (data, context) => {
-  const uid = requireAuth(context);
+async function applyMembershipPlanHandler(data = {}, uid) {
   const planKey = normalizeMembershipPlan(data?.plan);
   const planConfig = resolveMembershipPlan(planKey);
   if (!planConfig) {
@@ -1052,7 +1051,99 @@ exports.applyMembershipPlan = functions.https.onCall(async (data, context) => {
   await pendingRef.delete();
 
   return { status: "updated" };
+}
+
+exports.applyMembershipPlan = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  return applyMembershipPlanHandler(data, uid);
 });
+
+const APPLY_MEMBERSHIP_ALLOWED_ORIGINS = new Set([
+  "https://ride-sync-nwa.web.app",
+  "https://ride-sync-nwa.firebaseapp.com",
+  "http://localhost:5000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5000",
+]);
+
+function setApplyMembershipCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+  if (origin && APPLY_MEMBERSHIP_ALLOWED_ORIGINS.has(origin)) {
+    res.set("Access-Control-Allow-Origin", origin);
+    res.set("Vary", "Origin");
+    res.set("Access-Control-Allow-Credentials", "true");
+  }
+  res.set(
+    "Access-Control-Allow-Headers",
+    "Authorization, Content-Type, X-Requested-With"
+  );
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+}
+
+async function extractUidFromRequest(req) {
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Authentication token missing."
+    );
+  }
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Authentication token missing."
+    );
+  }
+  const decoded = await admin.auth().verifyIdToken(token);
+  if (!decoded?.uid) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Invalid authentication token."
+    );
+  }
+  return decoded.uid;
+}
+
+exports.applyMembershipPlanHttp = functions.https.onRequest(
+  async (req, res) => {
+    setApplyMembershipCorsHeaders(req, res);
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "POST") {
+      res.status(405).json({
+        error: {
+          code: "method-not-allowed",
+          message: "Use POST for this endpoint.",
+        },
+      });
+      return;
+    }
+
+    try {
+      const uid = await extractUidFromRequest(req);
+      const payload = typeof req.body === "object" && req.body !== null ? req.body : {};
+      const result = await applyMembershipPlanHandler(payload, uid);
+      res.status(200).json(result);
+    } catch (err) {
+      console.error("[applyMembershipPlanHttp] Error:", err);
+      if (err instanceof functions.https.HttpsError) {
+        res.status(err.httpErrorCode.status).json({
+          error: { code: err.code, message: err.message },
+        });
+        return;
+      }
+      res.status(500).json({
+        error: {
+          code: "internal",
+          message: "Failed to update membership. Try again shortly.",
+        },
+      });
+    }
+  }
+);
 
 // === RIDE SYNC STRIPE: START createMembershipSubscriptionIntent ===
 exports.createMembershipSubscriptionIntent = functions.https.onCall(
