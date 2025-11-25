@@ -4201,8 +4201,10 @@
       if (membershipTermsError) {
         membershipTermsError.textContent = "";
       }
-      resizeMembershipSignatureCanvas();
       toggleOverlay(membershipTermsOverlay, true);
+      requestAnimationFrame(() => {
+        resizeMembershipSignatureCanvas();
+      });
       updateMembershipTermsAcceptState();
     }
 
