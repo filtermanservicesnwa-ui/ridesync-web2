@@ -1405,6 +1405,7 @@
     id="membershipSelectionOverlay"
     class="overlay"
     aria-hidden="true"
+    inert
   >
     <div class="payment-panel">
       <div class="payment-panel-header">
@@ -1413,6 +1414,7 @@
           id="membershipSelectionClose"
           type="button"
           class="btn-secondary btn-small"
+          data-default-focus="true"
         >
           Close
         </button>
@@ -1464,7 +1466,7 @@
   <!-- === RIDE SYNC STRIPE: END membership selection overlay === -->
 
   <!-- === RIDE SYNC STRIPE: START membership terms overlay === -->
-  <div id="membershipTermsOverlay" class="overlay" aria-hidden="true">
+  <div id="membershipTermsOverlay" class="overlay" aria-hidden="true" inert>
     <div class="payment-panel">
       <div class="payment-panel-header">
         <h3>Membership terms</h3>
@@ -1472,6 +1474,7 @@
           id="membershipTermsClose"
           type="button"
           class="btn-secondary btn-small"
+          data-default-focus="true"
         >
           Close
         </button>
@@ -4059,20 +4062,50 @@
     }
 
     // === RIDE SYNC STRIPE: START membership overlay logic ===
+    const overlayFocusMemory = new WeakMap();
+    const focusableOverlaySelector =
+      "[data-default-focus], button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
+
     function setMembershipMessage(text) {
       if (membershipCardMessage) {
         membershipCardMessage.textContent = text || "";
       }
     }
 
-    function toggleOverlay(el, show) {
+    function toggleOverlay(el, show, focusTarget) {
       if (!el) return;
       if (show) {
+        if (document.activeElement instanceof HTMLElement) {
+          overlayFocusMemory.set(el, document.activeElement);
+        } else {
+          overlayFocusMemory.delete(el);
+        }
         el.classList.add("active");
         el.setAttribute("aria-hidden", "false");
+        el.removeAttribute("inert");
+        const preferredTarget =
+          (focusTarget && typeof focusTarget.focus === "function" && focusTarget) ||
+          el.querySelector("[data-default-focus]") ||
+          el.querySelector(focusableOverlaySelector);
+        if (preferredTarget && typeof preferredTarget.focus === "function") {
+          requestAnimationFrame(() => preferredTarget.focus());
+        }
       } else {
         el.classList.remove("active");
         el.setAttribute("aria-hidden", "true");
+        el.setAttribute("inert", "");
+        if (
+          el.contains(document.activeElement) &&
+          document.activeElement instanceof HTMLElement &&
+          typeof document.activeElement.blur === "function"
+        ) {
+          document.activeElement.blur();
+        }
+        const previousFocus = overlayFocusMemory.get(el);
+        overlayFocusMemory.delete(el);
+        if (previousFocus && typeof previousFocus.focus === "function") {
+          previousFocus.focus();
+        }
       }
     }
 
@@ -4092,7 +4125,7 @@
         return;
       }
       resetMembershipSelectionState();
-      toggleOverlay(membershipSelectionOverlay, true);
+      toggleOverlay(membershipSelectionOverlay, true, membershipSelectionClose);
     }
 
     function closeMembershipSelectionOverlayUI() {
@@ -4201,7 +4234,7 @@
       if (membershipTermsError) {
         membershipTermsError.textContent = "";
       }
-      toggleOverlay(membershipTermsOverlay, true);
+      toggleOverlay(membershipTermsOverlay, true, membershipTermsClose);
       requestAnimationFrame(() => {
         resizeMembershipSignatureCanvas();
       });
