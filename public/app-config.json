@@ -8,6 +8,9 @@
     "appId": "1:221636626778:web:fe1afd1f95a16747898b63",
     "measurementId": "G-K3ZD4YWSZZ"
   },
+  "functions": {
+    "applyMembershipPlanUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/applyMembershipPlanHttp"
+  },
   "maps": {
     "apiKey": "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0",
     "libraries": ["places"]

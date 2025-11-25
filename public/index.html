@@ -1791,10 +1791,14 @@
     const functionsClient = getFunctions(app);
 
     const stripeConfig = APP_CONFIG.stripe || {};
+    const functionsConfig = APP_CONFIG.functions || {};
     const STRIPE_PUBLISHABLE_KEY = stripeConfig.publishableKey || "";
     const stripeMembershipConfig = stripeConfig.membershipPlans || {};
     const STRIPE_ENABLED = !!STRIPE_PUBLISHABLE_KEY;
     const STRIPE_JS_URL = "https://js.stripe.com/v3/";
+    const APPLY_MEMBERSHIP_PLAN_URL =
+      functionsConfig.applyMembershipPlanUrl ||
+      "https://us-central1-ride-sync-nwa.cloudfunctions.net/applyMembershipPlanHttp";
 
     const applyMembershipPlanFn = httpsCallable(
       functionsClient,
@@ -2874,6 +2878,48 @@
           ? "U of A membership requested. We'll verify your student ID shortly."
           : `${formatMembershipPlanLabel(normalizedPlan)} activated.`;
       }
+    }
+
+    async function callApplyMembershipPlan(payload = {}) {
+      if (!APPLY_MEMBERSHIP_PLAN_URL) {
+        throw new Error("Membership endpoint is not configured.");
+      }
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error("Log in to manage your membership.");
+      }
+      const idToken = await user.getIdToken();
+      let response;
+      try {
+        response = await fetch(APPLY_MEMBERSHIP_PLAN_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify(payload || {}),
+        });
+      } catch (networkErr) {
+        console.error("callApplyMembershipPlan network", networkErr);
+        throw new Error("Unable to reach membership services. Try again.");
+      }
+
+      let body = null;
+      try {
+        body = await response.json();
+      } catch (parseErr) {
+        body = null;
+      }
+
+      if (!response.ok) {
+        const message =
+          body?.error?.message ||
+          body?.message ||
+          "Unable to update membership right now.";
+        throw new Error(message);
+      }
+
+      return body || { status: "updated" };
     }
 
     function updateSyncButtonLabel() {
@@ -4483,7 +4529,7 @@
       }
       setMembershipMessage("");
       try {
-        await applyMembershipPlanFn({ plan: "basic" });
+        await callApplyMembershipPlan({ plan: "basic" });
         setMembershipMessage("You're back on the Basic plan.");
         await loadUserProfile(user.uid, user.email);
         closeMembershipSelectionOverlayUI();
@@ -4707,7 +4753,7 @@
       }
 
       if (context?.type === "membership") {
-        await applyMembershipPlanFn({
+        await callApplyMembershipPlan({
           plan: context.plan,
           paymentIntentId: paymentIntent.id,
         });
