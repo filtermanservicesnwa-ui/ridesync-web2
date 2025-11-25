@@ -48,11 +48,16 @@ const MEMBERSHIP_PLAN_DEFAULTS = {
   },
 };
 
+const MEMBERSHIP_PLAN_ALIASES = {
+  basic: new Set(["basic", "basic (pay per ride)", "basic plan", "plan: basic"]),
+};
+
 const FARE_CONSTANTS = {
   BASIC_RATE_PER_MIN: 0.6,
   BASIC_PLATFORM_FEE: 0.5,
+  BASIC_PROCESSING_FEE_RATE: 0.03,
   UNLIMITED_OUT_RATE: 0.35,
-  PROCESSING_FEE_RATE: 0.04,
+  UNLIMITED_PROCESSING_FEE_RATE: 0.04,
 };
 
 const RIDE_STATUS_ALLOWLIST = new Set([
@@ -71,7 +76,16 @@ const runtimeConfig = (() => {
 })();
 
 function normalizeMembershipPlan(value = "") {
-  return String(value || "").toLowerCase().trim();
+  const normalized = String(value ?? "").toLowerCase().trim();
+  if (!normalized) {
+    return "basic";
+  }
+  for (const [planKey, aliases] of Object.entries(MEMBERSHIP_PLAN_ALIASES)) {
+    if (aliases.has(normalized) || normalized === planKey) {
+      return planKey;
+    }
+  }
+  return normalized;
 }
 
 function getStripeClient() {
@@ -107,7 +121,7 @@ function resolveMembershipPlan(planRaw = "") {
 }
 
 function computeFareForMembership(planRaw, minutesRaw, inHomeZone) {
-  const plan = String(planRaw || "basic").toLowerCase();
+  const plan = normalizeMembershipPlan(planRaw || "basic");
   const minutes = Number(minutesRaw);
   if (!Number.isFinite(minutes) || minutes <= 0) {
     throw new functions.https.HttpsError(
@@ -121,8 +135,9 @@ function computeFareForMembership(planRaw, minutesRaw, inHomeZone) {
   const {
     BASIC_RATE_PER_MIN,
     BASIC_PLATFORM_FEE,
+    BASIC_PROCESSING_FEE_RATE,
     UNLIMITED_OUT_RATE,
-    PROCESSING_FEE_RATE,
+    UNLIMITED_PROCESSING_FEE_RATE,
   } = FARE_CONSTANTS;
 
   let rideSubtotal = 0;
@@ -144,7 +159,7 @@ function computeFareForMembership(planRaw, minutesRaw, inHomeZone) {
       };
     }
     rideSubtotal = clampedMinutes * UNLIMITED_OUT_RATE;
-    processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+    processingFee = rideSubtotal * UNLIMITED_PROCESSING_FEE_RATE;
     total = rideSubtotal + processingFee;
     membershipLabel =
       plan === "uofa_unlimited"
@@ -152,7 +167,7 @@ function computeFareForMembership(planRaw, minutesRaw, inHomeZone) {
         : "NWA Unlimited – out of zone (extra per-minute)";
   } else {
     rideSubtotal = clampedMinutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
-    processingFee = rideSubtotal * PROCESSING_FEE_RATE;
+    processingFee = rideSubtotal * BASIC_PROCESSING_FEE_RATE;
     total = rideSubtotal + processingFee;
     membershipLabel = "Basic (pay per ride)";
   }
@@ -1316,13 +1331,14 @@ exports.createRidePaymentIntent = functions.https.onCall(
       );
     }
 
-    const totalCents = Math.round(Number(rideInput.totalCents));
-    if (!Number.isFinite(totalCents) || totalCents <= 0) {
+    const totalCentsInput = Number(rideInput.totalCents);
+    if (!Number.isFinite(totalCentsInput)) {
       throw new functions.https.HttpsError(
         "invalid-argument",
         "Estimated fare (totalCents) is required."
       );
     }
+    const totalCents = Math.max(0, Math.round(totalCentsInput));
 
     const pickupLocation =
       rideInput.pickupLocation ||
