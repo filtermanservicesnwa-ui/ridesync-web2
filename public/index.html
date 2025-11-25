@@ -811,6 +811,41 @@
     .hidden {
       display: none !important;
     }
+    .ride-view-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .ride-view-tab {
+      flex: 1 1 120px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.5);
+      background: rgba(15,23,42,0.85);
+      color: #e2e8f0;
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+    .ride-view-tab:hover:not(.active) {
+      border-color: rgba(248,250,252,0.6);
+      color: #f8fafc;
+    }
+    .ride-view-tab.active {
+      background: #f97316;
+      border-color: #f97316;
+      color: #0f172a;
+      font-weight: 600;
+      box-shadow: 0 4px 16px rgba(249,115,22,0.35);
+    }
+    .ride-view-panel {
+      display: none;
+    }
+    .ride-view-panel.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -910,8 +945,53 @@
 
     <!-- RIDE VIEW -->
     <div id="rideView">
-      <h2>Rider information</h2>
+      <div class="ride-view-tabs" role="tablist" aria-label="Rider sections">
+        <button
+          type="button"
+          id="rideViewTabInfo"
+          class="ride-view-tab active"
+          data-view-tab="info"
+          aria-controls="rideViewPanelInfo"
+          aria-selected="true"
+          tabindex="0"
+        >
+          Rider info
+        </button>
+        <button
+          type="button"
+          id="rideViewTabMembership"
+          class="ride-view-tab"
+          data-view-tab="membership"
+          aria-controls="rideViewPanelMembership"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          Membership
+        </button>
+        <button
+          type="button"
+          id="rideViewTabDestination"
+          class="ride-view-tab"
+          data-view-tab="destination"
+          aria-controls="rideViewPanelDestination"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          Destination
+        </button>
+      </div>
 
+      <div id="profileMessage" class="success"></div>
+      <div id="profileError" class="error"></div>
+
+      <div
+        class="ride-view-panel active"
+        id="rideViewPanelInfo"
+        data-view-panel="info"
+        role="tabpanel"
+        aria-labelledby="rideViewTabInfo"
+        aria-hidden="false"
+      >
       <div id="riderInfoCard" class="rider-info-card">
         <div class="rider-info-main">
           <div id="avatar" class="rider-avatar">RS</div>
@@ -952,96 +1032,6 @@
             Edit profile
           </button>
         </div>
-      </div>
-
-      <div id="membershipCard" class="membership-card">
-        <div class="membership-card-header">
-          <div>
-            <div
-              class="section-title"
-              style="margin-top:0;border-top:none;padding-top:0;"
-            >
-              Membership
-            </div>
-            <p id="membershipStatusText" class="membership-subtitle">
-              Loading membership…
-            </p>
-          </div>
-          <span id="membershipStatusBadge" class="membership-status-badge">—</span>
-        </div>
-        <!-- === RIDE SYNC STRIPE: START membership summary === -->
-        <div class="membership-card-summary">
-          <p id="membershipCurrentLabel" class="membership-subtitle">
-            Checking membership...
-          </p>
-          <div class="rider-info-actions" style="margin-top:8px;">
-            <button
-              id="membershipChangeButton"
-              type="button"
-              class="btn-secondary btn-small"
-            >
-              Change membership
-            </button>
-          </div>
-        </div>
-        <!-- === RIDE SYNC STRIPE: END membership summary === -->
-        <div class="membership-plan-grid" style="display:none;">
-          <div class="membership-plan" data-plan="basic">
-            <div class="membership-plan-title">Basic</div>
-            <div class="membership-plan-price" data-plan-price="basic">
-              $0 / ride
-            </div>
-            <p class="membership-plan-desc">
-              Pay per ride with Stripe. Best if you only ride occasionally.
-            </p>
-            <button
-              class="btn-secondary btn-small"
-              type="button"
-              data-plan-action="basic"
-            >
-              Stay on Basic
-            </button>
-          </div>
-          <div class="membership-plan" data-plan="uofa_unlimited">
-            <div class="membership-plan-title">U of A Unlimited</div>
-            <div
-              class="membership-plan-price"
-              data-plan-price="uofa_unlimited"
-            >
-              $80 / month
-            </div>
-            <p class="membership-plan-desc">
-              Unlimited Fayetteville rides. Out-of-zone trips bill per minute.
-            </p>
-            <button
-              class="btn-primary btn-small"
-              type="button"
-              data-plan-action="uofa_unlimited"
-            >
-              Upgrade to U of A Unlimited
-            </button>
-          </div>
-          <div class="membership-plan" data-plan="nwa_unlimited">
-            <div class="membership-plan-title">NWA Unlimited</div>
-            <div
-              class="membership-plan-price"
-              data-plan-price="nwa_unlimited"
-            >
-              $120 / month
-            </div>
-            <p class="membership-plan-desc">
-              Unlimited rides inside the 30-mile NWA radius.
-            </p>
-            <button
-              class="btn-primary btn-small"
-              type="button"
-              data-plan-action="nwa_unlimited"
-            >
-              Upgrade to NWA Unlimited
-            </button>
-          </div>
-        </div>
-        <div id="membershipCardMessage" class="small"></div>
       </div>
 
       <!-- Inline edit form -->
@@ -1101,9 +1091,115 @@
         </button>
       </div>
 
-      <div id="profileMessage" class="success"></div>
-      <div id="profileError" class="error"></div>
+      </div>
 
+      <div
+        class="ride-view-panel"
+        id="rideViewPanelMembership"
+        data-view-panel="membership"
+        role="tabpanel"
+        aria-labelledby="rideViewTabMembership"
+        aria-hidden="true"
+      >
+        <div id="membershipCard" class="membership-card">
+          <div class="membership-card-header">
+            <div>
+              <div
+                class="section-title"
+                style="margin-top:0;border-top:none;padding-top:0;"
+              >
+                Membership
+              </div>
+              <p id="membershipStatusText" class="membership-subtitle">
+                Loading membership…
+              </p>
+            </div>
+            <span id="membershipStatusBadge" class="membership-status-badge">—</span>
+          </div>
+          <!-- === RIDE SYNC STRIPE: START membership summary === -->
+          <div class="membership-card-summary">
+            <p id="membershipCurrentLabel" class="membership-subtitle">
+              Checking membership...
+            </p>
+            <div class="rider-info-actions" style="margin-top:8px;">
+              <button
+                id="membershipChangeButton"
+                type="button"
+                class="btn-secondary btn-small"
+              >
+                Change membership
+              </button>
+            </div>
+          </div>
+          <!-- === RIDE SYNC STRIPE: END membership summary === -->
+          <div class="membership-plan-grid" style="display:none;">
+            <div class="membership-plan" data-plan="basic">
+              <div class="membership-plan-title">Basic</div>
+              <div class="membership-plan-price" data-plan-price="basic">
+                $0 / ride
+              </div>
+              <p class="membership-plan-desc">
+                Pay per ride with Stripe. Best if you only ride occasionally.
+              </p>
+              <button
+                class="btn-secondary btn-small"
+                type="button"
+                data-plan-action="basic"
+              >
+                Stay on Basic
+              </button>
+            </div>
+            <div class="membership-plan" data-plan="uofa_unlimited">
+              <div class="membership-plan-title">U of A Unlimited</div>
+              <div
+                class="membership-plan-price"
+                data-plan-price="uofa_unlimited"
+              >
+                $80 / month
+              </div>
+              <p class="membership-plan-desc">
+                Unlimited Fayetteville rides. Out-of-zone trips bill per minute.
+              </p>
+              <button
+                class="btn-primary btn-small"
+                type="button"
+                data-plan-action="uofa_unlimited"
+              >
+                Upgrade to U of A Unlimited
+              </button>
+            </div>
+            <div class="membership-plan" data-plan="nwa_unlimited">
+              <div class="membership-plan-title">NWA Unlimited</div>
+              <div
+                class="membership-plan-price"
+                data-plan-price="nwa_unlimited"
+              >
+                $120 / month
+              </div>
+              <p class="membership-plan-desc">
+                Unlimited rides inside the 30-mile NWA radius.
+              </p>
+              <button
+                class="btn-primary btn-small"
+                type="button"
+                data-plan-action="nwa_unlimited"
+              >
+                Upgrade to NWA Unlimited
+              </button>
+            </div>
+          </div>
+          <div id="membershipCardMessage" class="small"></div>
+        </div>
+      </div>
+
+      <div
+        class="ride-view-panel"
+        id="rideViewPanelDestination"
+        data-view-panel="destination"
+        role="tabpanel"
+        aria-labelledby="rideViewTabDestination"
+        aria-hidden="true"
+      >
       <!-- Join banner for QR joiners -->
       <div id="joinBanner" class="fare-box" style="display:none;">
         <div class="small" id="joinBannerText"></div>
@@ -1178,6 +1274,7 @@
           <button id="syncButton" class="btn-primary">Sync &amp; Pay</button>
           <button id="logoutButton" class="btn-secondary">Log out</button>
         </div>
+      </div>
       </div>
     </div>
 
@@ -1960,6 +2057,8 @@
     const rideSummaryText = document.getElementById("rideSummaryText");
 
     const contactDriverBtn = document.getElementById("contactDriverBtn");
+    const rideViewTabs = document.querySelectorAll("[data-view-tab]");
+    const rideViewPanels = document.querySelectorAll("[data-view-panel]");
 
     const paymentOverlay = document.getElementById("paymentOverlay");
     const paymentOverlayTitle = document.getElementById("paymentOverlayTitle");
@@ -2018,6 +2117,7 @@
     let destinationLatLng = null;
     let destAutocomplete = null;
     let lastRideMetrics = null;
+    let activeRideViewSection = "info";
 
     let activeRideUnsub = null;
     let activeGroupUnsub = null;
@@ -2046,6 +2146,43 @@
       if (!shouldShow && cancelError) {
         cancelError.textContent = "";
       }
+    }
+
+    function setRideViewPanel(targetKey) {
+      if (!targetKey || !rideViewPanels.length) return;
+      activeRideViewSection = targetKey;
+      rideViewTabs.forEach((tab) => {
+        if (!tab?.dataset?.viewTab) return;
+        const isActive = tab.dataset.viewTab === targetKey;
+        tab.classList.toggle("active", isActive);
+        tab.setAttribute("aria-selected", isActive ? "true" : "false");
+        tab.setAttribute("tabindex", isActive ? "0" : "-1");
+      });
+      rideViewPanels.forEach((panel) => {
+        if (!panel?.dataset?.viewPanel) return;
+        const isActive = panel.dataset.viewPanel === targetKey;
+        panel.classList.toggle("active", isActive);
+        panel.setAttribute("aria-hidden", isActive ? "false" : "true");
+      });
+      if (targetKey === "destination") {
+        setTimeout(() => {
+          if (destinationPreviewMap && window.google?.maps) {
+            google.maps.event.trigger(destinationPreviewMap, "resize");
+          }
+          updateTripPreviewMap();
+        }, 80);
+      }
+    }
+
+    if (rideViewTabs.length && rideViewPanels.length) {
+      rideViewTabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const key = tab.dataset?.viewTab;
+          if (key && key !== activeRideViewSection) {
+            setRideViewPanel(key);
+          }
+        });
+      });
     }
 
     updateCancelButtonVisibility();
