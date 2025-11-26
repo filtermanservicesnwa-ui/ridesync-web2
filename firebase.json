@@ -26,6 +26,12 @@
     {
       "source": "functions",
       "codebase": "default",
+      "runtime": "nodejs20",
+      "secrets": [
+        "STRIPE_SECRET_KEY",
+        "STRIPE_UOFA_PRICE_ID",
+        "STRIPE_NWA_PRICE_ID"
+      ],
       "disallowLegacyRuntimeConfig": true,
       "ignore": [
         "node_modules",
