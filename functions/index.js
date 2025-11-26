@@ -163,6 +163,25 @@ const RIDE_STATUS_ALLOWLIST = new Set([
   "pending",
 ]);
 
+const POOL_GENDER_ALLOWLIST = new Set(["male", "female"]);
+
+function normalizePoolGender(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  return POOL_GENDER_ALLOWLIST.has(normalized) ? normalized : null;
+}
+
+function gendersCompatible(genderA, genderB) {
+  const normalizedA = normalizePoolGender(genderA);
+  const normalizedB = normalizePoolGender(genderB);
+  if (!normalizedA || !normalizedB) {
+    return false;
+  }
+  return normalizedA === normalizedB;
+}
+
 function normalizeMembershipPlan(value = "") {
   const normalized = String(value ?? "").toLowerCase().trim();
   if (!normalized) {
@@ -416,6 +435,12 @@ function extractUofaRideDetails(ride = {}) {
         : 1,
     pickupCity: (ride.pickupCity || ride.city || "").toLowerCase(),
     fromLocation: ride.fromLocation || ride.pickupLocation,
+    gender: normalizePoolGender(
+      ride.gender ||
+        ride.riderGender ||
+        ride.profileGender ||
+        null
+    ),
   };
 }
 
@@ -428,7 +453,8 @@ function isUofaEligibleRide(details) {
     details.membershipType === "uofa_unlimited" &&
     details.isVerified &&
     details.riderCount === 1 &&
-    hasValidLocation(details.fromLocation)
+    hasValidLocation(details.fromLocation) &&
+    !!details.gender
   );
 }
 
@@ -839,6 +865,7 @@ exports.uofaAutoPool = functions.firestore
       }
 
       const fromLoc = newDetails.fromLocation;
+      const newGender = newDetails.gender;
 
       // 3) Query other U of A rides with pending-like status
       const cutoffTimestamp = Timestamp.fromMillis(
@@ -869,6 +896,7 @@ exports.uofaAutoPool = functions.firestore
 
         const candidateDetails = extractUofaRideDetails(data);
         if (!isUofaEligibleRide(candidateDetails)) return;
+        if (!gendersCompatible(candidateDetails.gender, newGender)) return;
         if (
           !pickupCitiesMatch(
             candidateDetails.pickupCity,
@@ -942,6 +970,15 @@ exports.uofaAutoPool = functions.firestore
           !isUofaEligibleRide(freshMatchDetails)
         ) {
           throw new Error("Ride no longer eligible for U of A pooling.");
+        }
+
+        if (
+          !gendersCompatible(
+            freshNewDetails.gender,
+            freshMatchDetails.gender
+          )
+        ) {
+          throw new Error("Ride gender mismatch discovered during transaction.");
         }
 
         if (
