@@ -2379,7 +2379,6 @@
     }
 
     updateCancelButtonVisibility();
-    subscribeToDriverAvailability();
 
     function clearCurrentRideState() {
         currentRideId = null;
@@ -3150,7 +3149,7 @@
       hasOnlineDrivers = !!hasDriversOnline;
       if (driverAvailabilityNotice) {
         driverAvailabilityNotice.textContent = hasOnlineDrivers
-          ? ""
+          ? "Drivers are online. Tap Sync to request a ride."
           : "No drivers are online right now. We'll refresh automatically.";
       }
       updateSyncButtonLabel();
@@ -3509,6 +3508,7 @@
       loginStatusEl.textContent = "Logged in";
       await loadUserProfile(user.uid, user.email);
       showRideView();
+      subscribeToDriverAvailability();
       initMapOnce();
       startDriverAvailabilityWatchers();
 
@@ -4325,6 +4325,11 @@
     }
 
     function stopDriverAvailabilityWatchers() {
+      if (driverAvailabilityUnsub) {
+        driverAvailabilityUnsub();
+        driverAvailabilityUnsub = null;
+      }
+      setDriverAvailabilityState(false);
       if (driverOnlineUnsub) {
         driverOnlineUnsub();
         driverOnlineUnsub = null;
