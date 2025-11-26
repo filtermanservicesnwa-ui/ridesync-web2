@@ -2,17 +2,58 @@
 
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
-// === RIDE SYNC STRIPE: START config ===
+const Stripe = require("stripe");
+
+const runtimeConfig = (() => {
+  try {
+    return functions.config() || {};
+  } catch (err) {
+    return {};
+  }
+})();
+
+function resolveStripeSettings() {
+  const stripeConfig = runtimeConfig?.stripe || {};
+  const env = process.env || {};
+  return {
+    secretKey:
+      env.STRIPE_SECRET_KEY ||
+      stripeConfig.secret_key ||
+      stripeConfig.secretKey ||
+      null,
+    uofaPriceId:
+      env.STRIPE_UOFA_PRICE_ID ||
+      stripeConfig.uofa_price_id ||
+      stripeConfig.uofaPriceId ||
+      null,
+    nwaPriceId:
+      env.STRIPE_NWA_PRICE_ID ||
+      stripeConfig.nwa_price_id ||
+      stripeConfig.nwaPriceId ||
+      null,
+  };
+}
+
+const stripeSettings = resolveStripeSettings();
 let stripe = null;
-let uofaPriceId = null;
-let nwaPriceId = null;
-try {
-  stripe = require("stripe")(functions.config().stripe.secret_key);
-  uofaPriceId = functions.config().stripe.uofa_price_id;
-  nwaPriceId = functions.config().stripe.nwa_price_id;
-} catch (err) {
+let uofaPriceId = stripeSettings.uofaPriceId || null;
+let nwaPriceId = stripeSettings.nwaPriceId || null;
+
+if (stripeSettings.secretKey) {
+  stripe = Stripe(stripeSettings.secretKey);
+} else {
   console.warn(
-    "[RideSync][Stripe] Missing stripe.* runtime config. Membership billing will fail."
+    "[RideSync][Stripe] Missing Stripe secret key. Set stripe.secret_key runtime config or STRIPE_SECRET_KEY env to enable billing."
+  );
+}
+if (!uofaPriceId) {
+  console.warn(
+    "[RideSync][Stripe] Missing U of A Stripe price ID. Set stripe.uofa_price_id or STRIPE_UOFA_PRICE_ID."
+  );
+}
+if (!nwaPriceId) {
+  console.warn(
+    "[RideSync][Stripe] Missing NWA Stripe price ID. Set stripe.nwa_price_id or STRIPE_NWA_PRICE_ID."
   );
 }
 // === RIDE SYNC STRIPE: END config ===
@@ -50,7 +91,7 @@ const MEMBERSHIP_PLAN_ALIASES = {
   basic: new Set(["basic", "basic (pay per ride)", "basic plan", "plan: basic"]),
 };
 
-const FARE_CONSTANTS = {
+const DEFAULT_FARE_CONSTANTS = {
   BASIC_RATE_PER_MIN: 0.6,
   BASIC_PLATFORM_FEE: 0.5,
   BASIC_PROCESSING_FEE_RATE: 0.03,
@@ -58,20 +99,69 @@ const FARE_CONSTANTS = {
   UNLIMITED_PROCESSING_FEE_RATE: 0.04,
 };
 
+function coercePositiveNumber(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "string" && value.trim() === "") {
+    return null;
+  }
+  const num = Number(value);
+  return Number.isFinite(num) && num >= 0 ? num : null;
+}
+
+function resolveFareConstants() {
+  const faresConfig = runtimeConfig?.fares || {};
+  const env = process.env || {};
+  const read = (envKey, configKey, fallback) => {
+    const envValue = coercePositiveNumber(env[envKey]);
+    if (envValue !== null) {
+      return envValue;
+    }
+    const configValue = coercePositiveNumber(faresConfig[configKey]);
+    if (configValue !== null) {
+      return configValue;
+    }
+    return fallback;
+  };
+
+  return {
+    BASIC_RATE_PER_MIN: read(
+      "FARE_BASIC_RATE_PER_MIN",
+      "basic_rate_per_min",
+      DEFAULT_FARE_CONSTANTS.BASIC_RATE_PER_MIN
+    ),
+    BASIC_PLATFORM_FEE: read(
+      "FARE_BASIC_PLATFORM_FEE",
+      "basic_platform_fee",
+      DEFAULT_FARE_CONSTANTS.BASIC_PLATFORM_FEE
+    ),
+    BASIC_PROCESSING_FEE_RATE: read(
+      "FARE_BASIC_PROCESSING_FEE_RATE",
+      "basic_processing_fee_rate",
+      DEFAULT_FARE_CONSTANTS.BASIC_PROCESSING_FEE_RATE
+    ),
+    UNLIMITED_OUT_RATE: read(
+      "FARE_UNLIMITED_OUT_RATE",
+      "unlimited_out_rate",
+      DEFAULT_FARE_CONSTANTS.UNLIMITED_OUT_RATE
+    ),
+    UNLIMITED_PROCESSING_FEE_RATE: read(
+      "FARE_UNLIMITED_PROCESSING_FEE_RATE",
+      "unlimited_processing_fee_rate",
+      DEFAULT_FARE_CONSTANTS.UNLIMITED_PROCESSING_FEE_RATE
+    ),
+  };
+}
+
+const FARE_CONSTANTS = resolveFareConstants();
+
 const RIDE_STATUS_ALLOWLIST = new Set([
   "pending_driver",
   "pool_searching",
   "pooled_pending_driver",
   "pending",
 ]);
-
-const runtimeConfig = (() => {
-  try {
-    return functions.config() || {};
-  } catch (err) {
-    return {};
-  }
-})();
 
 function normalizeMembershipPlan(value = "") {
   const normalized = String(value ?? "").toLowerCase().trim();

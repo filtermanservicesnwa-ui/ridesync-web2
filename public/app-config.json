@@ -42,6 +42,13 @@
     "surgeMode": false,
     "surgeCooldownMinutes": 60
   },
+  "fares": {
+    "basicRatePerMin": 0.6,
+    "basicPlatformFee": 0.5,
+    "basicProcessingFeeRate": 0.03,
+    "unlimitedOutRate": 0.35,
+    "unlimitedProcessingFeeRate": 0.04
+  },
   "placeholders": {
     "driverAvatar": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI5NiIgaGVpZ2h0PSI5NiIgdmlld0JveD0iMCAwIDk2IDk2Ij4KICA8cmVjdCB3aWR0aD0iOTYiIGhlaWdodD0iOTYiIHJ4PSI0OCIgZmlsbD0iIzAyMDYxNyIvPgogIDxwYXRoIGQ9Ik00OCA1MGMtOS4xIDAtMTYuNS03LjQtMTYuNS0xNi41UzM4LjkgMTcgNDggMTdzMTYuNSA3LjQgMTYuNSAxNi41UzU3LjEgNTAgNDggNTBabTAgNmMxMi4yIDAgMjQuNSA0LjUgMjQuNSAxMS41djQuNUgyMy41di00LjVDMjMuNSA2MC41IDM1LjggNTYgNDggNTZaIiBmaWxsPSIjMzM0MTU1Ii8+Cjwvc3ZnPg==",
     "vehicleImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTEwIiB2aWV3Qm94PSIwIDAgMTYwIDExMCI+CiAgPHJlY3Qgd2lkdGg9IjE2MCIgaGVpZ2h0PSIxMTAiIHJ4PSIxOCIgZmlsbD0iIzAyMDYxNyIvPgogIDxyZWN0IHg9IjE4IiB5PSIzOCIgd2lkdGg9IjEyNCIgaGVpZ2h0PSI0MCIgcng9IjEyIiBmaWxsPSIjMWUyOTNiIi8+CiAgPGNpcmNsZSBjeD0iNDUiIGN5PSI5MCIgcj0iMTIiIGZpbGw9IiMwZjE3MmEiIHN0cm9rZT0iIzQ3NTU2OSIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPGNpcmNsZSBjeD0iMTE1IiBjeT0iOTAiIHI9IjEyIiBmaWxsPSIjMGYxNzJhIiBzdHJva2U9IiM0NzU1NjkiIHN0cm9rZS13aWR0aD0iNCIvPgo8L3N2Zz4=",
