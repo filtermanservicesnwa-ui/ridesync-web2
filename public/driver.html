@@ -1341,8 +1341,8 @@
         driverAvatar.textContent = "DR";
         driverNameEl.textContent = "Driver";
         driverDetailEl.textContent = "";
-        clearActiveRideFlow();
         queuedRideGroups = [];
+        clearActiveRideFlow({ skipQueuedRideStart: true });
         updateQueuedRideNotice();
         if (ridesUnsub) {
           ridesUnsub();
@@ -2273,7 +2273,8 @@
       });
     }
 
-    function clearActiveRideFlow() {
+    function clearActiveRideFlow(options = {}) {
+      const { skipQueuedRideStart = false } = options;
       clearActiveRideWatchers();
       activeRideGroup = [];
       activePickupLocation = null;
@@ -2288,7 +2289,9 @@
       earlyAssignmentRideId = null;
       earlyAssignmentTriggered = false;
       setDriverOverlayState(DRIVER_STATES.HIDDEN);
-      startQueuedRideIfAvailable();
+      if (!skipQueuedRideStart) {
+        startQueuedRideIfAvailable();
+      }
     }
 
     function normalizedRideStatus(ride) {
