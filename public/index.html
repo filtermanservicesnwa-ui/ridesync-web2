@@ -4573,16 +4573,19 @@
       }
       try {
         await persistMembershipTermsSignature();
-        closeMembershipTermsOverlayUI();
         await startMembershipSubscriptionFlow(pendingMembershipPlanId);
+        closeMembershipTermsOverlayUI();
       } catch (err) {
         console.error("Membership terms accept", err);
         if (membershipTermsError) {
           membershipTermsError.textContent =
             err.message || "Could not continue to payment.";
         }
-        membershipTermsProcessing = false;
-        updateMembershipTermsAcceptState();
+      } finally {
+        if (membershipTermsOverlay?.classList.contains("active")) {
+          membershipTermsProcessing = false;
+          updateMembershipTermsAcceptState();
+        }
       }
     }
 
