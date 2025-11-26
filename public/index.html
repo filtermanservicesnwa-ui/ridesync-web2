@@ -1908,6 +1908,16 @@
     let joinTargetRide = null;
 
     const PIN_CHARSET = "0123456789";
+    const POOL_GENDER_ALLOWLIST = new Set(["male", "female"]);
+
+    function normalizePoolGender(value) {
+      if (typeof value !== "string") {
+        return null;
+      }
+      const normalized = value.trim().toLowerCase();
+      return POOL_GENDER_ALLOWLIST.has(normalized) ? normalized : null;
+    }
+
     function generateRidePin(length = 4) {
       let code = "";
       for (let i = 0; i < length; i += 1) {
@@ -3088,7 +3098,7 @@
 
     async function saveUserProfile(uid, email) {
       const fullName = fullNameEl.value.trim();
-      const gender = (genderEl.value || "").toLowerCase();
+      const gender = (genderEl.value || "").trim().toLowerCase();
       const phone = phoneEl.value.trim();
       const street = streetEl.value.trim();
       const city = cityEl.value.trim();
@@ -3239,7 +3249,7 @@
         city: editCityEl.value.trim(),
         state: editStateEl.value.trim(),
         zip: editZipEl.value.trim(),
-        gender: (editGenderEl.value || "").toLowerCase(),
+        gender: (editGenderEl.value || "").trim().toLowerCase(),
         updatedAt: serverTimestamp()
       };
       const userDocRef = doc(db, "users", user.uid);
@@ -3746,7 +3756,7 @@
       const searchStartedAt = Date.now();
       const maxSearchMs = 5000;
 
-      const myGender = (currentUserProfile?.gender || "").toLowerCase();
+      const myGender = normalizePoolGender(currentUserProfile?.gender);
 
       activeGroupUnsub = onSnapshot(qRef, (qsnap) => {
         const now = Date.now();
@@ -3755,7 +3765,8 @@
         qsnap.forEach((docSnap) => {
           if (docSnap.id === myRideId) return;
           const data = docSnap.data();
-          if (myGender && data.gender && data.gender.toLowerCase() !== myGender) {
+          const otherGender = normalizePoolGender(data.gender);
+          if (!myGender || !otherGender || otherGender !== myGender) {
             return;
           }
           otherRiders.push(data);
@@ -4907,8 +4918,8 @@
       const membershipStatus = currentUserProfile?.membershipStatus || "none";
       const isStudent = !!currentUserProfile?.isStudent;
       const uofaVerified = !!currentUserProfile?.uofaVerified;
-      const gender = (currentUserProfile?.gender || "").toLowerCase();
-      const genderPoolEligible = gender === "male" || gender === "female";
+      const poolGender = normalizePoolGender(currentUserProfile?.gender);
+      const genderPoolEligible = !!poolGender;
       const numRiders = parseInt(numRidersEl.value || "1", 10);
       const inHomeZone = !!lastRideMetrics.inHomeZone;
 
@@ -4976,7 +4987,7 @@
         membershipStatus,
         isStudent,
         uofaVerified,
-        gender,
+        gender: poolGender,
         uofaPoolEligible,
         riderName,
         riderPhone,
@@ -5032,6 +5043,18 @@
             currentUserProfile?.membership ||
             "basic"
         );
+        const riderGender = normalizePoolGender(currentUserProfile?.gender);
+        if (!riderGender) {
+          profileError.textContent =
+            "Set your profile gender to Male or Female to join pooling rides.";
+          return;
+        }
+        const targetGender = normalizePoolGender(joinTargetRide?.gender);
+        if (targetGender && targetGender !== riderGender) {
+          profileError.textContent =
+            "You can only join riders who share your gender.";
+          return;
+        }
 
         const cooldown = await checkCooldown(user.uid, plan);
         if (cooldown.allowed === false) {
@@ -5074,7 +5097,12 @@
 
           const isStudent = !!currentUserProfile?.isStudent;
           const uofaVerified = !!currentUserProfile?.uofaVerified;
-          const gender = currentUserProfile?.gender || null;
+          const hostGender = normalizePoolGender(host.gender);
+          if (!hostGender || hostGender !== riderGender) {
+            throw new Error(
+              "This group ride can only include riders with the same gender."
+            );
+          }
           const inHomeZone = !!host.inHomeZone;
           const minutes = host.estimatedDurationMinutes || 0;
           const fare = computeFareForMembership(plan, minutes, inHomeZone);
@@ -5125,7 +5153,7 @@
             membershipStatus: currentUserProfile?.membershipStatus || "none",
             isStudent,
             uofaVerified,
-            gender,
+            gender: riderGender,
             riderName,
             riderPhone,
             riderProfilePicUrl: riderPhotoUrl,
