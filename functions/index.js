@@ -17,9 +17,7 @@ try {
 }
 // === RIDE SYNC STRIPE: END config ===
 
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
+admin.initializeApp();
 
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
@@ -588,25 +586,26 @@ function ensurePinUpdates(ride = {}, overrides = {}) {
   return updates;
 }
 
-exports.ensureRidePins = functions.firestore
-  .document("rideRequests/{rideId}")
-  .onCreate(async (snap, context) => {
-    try {
-      const ride = snap.data() || {};
-      const updates = ensurePinUpdates(ride);
-      if (!updates) {
-        return null;
-      }
-      await snap.ref.update(updates);
-      console.log(
-        `[ensureRidePins] Added ride codes for ${context.params.rideId}.`
-      );
-      return null;
-    } catch (err) {
-      console.error("[ensureRidePins] Error:", err);
-      return null;
-    }
-  });
+/* exports.ensureRidePins = functions.firestore
+ *   .document("rideRequests/{rideId}")
+ *   .onCreate(async (snap, context) => {
+ *     try {
+ *       const ride = snap.data() || {};
+ *       const updates = ensurePinUpdates(ride);
+ *       if (!updates) {
+ *         return null;
+ *       }
+ *       await snap.ref.update(updates);
+ *       console.log(
+ *         `[ensureRidePins] Added ride codes for ${context.params.rideId}.`
+ *       );
+ *       return null;
+ *     } catch (err) {
+ *       console.error("[ensureRidePins] Error:", err);
+ *       return null;
+ *     }
+ *   });
+ */
 
 exports.notifyDriverOnNewRide = functions.firestore
   .document("rideRequests/{rideId}")
