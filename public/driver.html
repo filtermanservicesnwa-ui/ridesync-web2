@@ -1196,6 +1196,58 @@
     const NAV_ROUTE_REFRESH_MS = 15000;
     let lastPickupRouteAt = 0;
     let lastDropoffRouteAt = 0;
+    // Web Audio tone to alert drivers when a new ride offer arrives.
+    const rideAlertUnlockEvents = ["pointerdown", "touchstart", "keydown"];
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext || null;
+    const rideAlertAudioContext =
+      typeof AudioContextClass === "function" ? new AudioContextClass() : null;
+    let rideAlertAudioUnlocked = !rideAlertAudioContext;
+
+    function handleRideAlertUnlockEvent() {
+      if (!rideAlertAudioContext || rideAlertAudioUnlocked) return;
+      rideAlertAudioContext
+        .resume()
+        .then(() => {
+          rideAlertAudioUnlocked = true;
+          rideAlertUnlockEvents.forEach((evt) =>
+            document.removeEventListener(evt, handleRideAlertUnlockEvent, true)
+          );
+        })
+        .catch(() => {});
+    }
+
+    function registerRideAlertUnlockListeners() {
+      if (!rideAlertAudioContext || rideAlertAudioUnlocked) return;
+      rideAlertUnlockEvents.forEach((evt) => {
+        document.addEventListener(evt, handleRideAlertUnlockEvent, {
+          passive: true,
+          capture: true
+        });
+      });
+    }
+
+    registerRideAlertUnlockListeners();
+
+    function playRideAlertSound() {
+      if (!rideAlertAudioContext || !rideAlertAudioUnlocked) return;
+      if (rideAlertAudioContext.state === "suspended") {
+        rideAlertAudioContext.resume().catch(() => {});
+      }
+      const ctx = rideAlertAudioContext;
+      const now = ctx.currentTime;
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = "triangle";
+      oscillator.frequency.setValueAtTime(880, now);
+      oscillator.frequency.setValueAtTime(1320, now + 0.35);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.3, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 1.2);
+    }
     const EARLY_ASSIGNMENT_MINUTES = 6;
     let queuedRideGroups = [];
     let latestVisiblePendingRides = [];
@@ -1866,6 +1918,7 @@
       const riderCount = ride?.numRiders || ride?.riderCount || ride?.currentRiderCount || 1;
       driverOfferRiderCount.textContent = `${riderCount} rider${riderCount === 1 ? "" : "s"}`;
       setDriverOverlayState(DRIVER_STATES.OFFER, { forceReveal: true });
+      playRideAlertSound();
     }
 
     function renderRides(allRides) {
