@@ -393,6 +393,13 @@
     .driver-geofence-status.armed {
       color: #bbf7d0;
     }
+    .next-ride-box {
+      margin-top: 10px;
+      border-color: rgba(34,197,94,0.4);
+      background: rgba(34,197,94,0.08);
+      color: #bbf7d0;
+      font-size: 0.85rem;
+    }
     .driver-spinner {
       width: 36px;
       height: 36px;
@@ -864,6 +871,12 @@
             <div id="driverDropoffMapStatus" class="driver-nav-map-status">Loading map…</div>
           </div>
           <div id="driverGeofenceStatus" class="driver-geofence-status"></div>
+          <div
+            id="driverNextRideSummary"
+            class="info-box next-ride-box"
+            style="display:none;"
+            aria-live="polite"
+          ></div>
           <div class="button-row">
             <button id="driverDropoffNavigateButton" class="btn-secondary" type="button">
               Open in Google Maps
@@ -1127,6 +1140,7 @@
     const driverDropoffMapEl = document.getElementById("driverDropoffMap");
     const driverDropoffMapStatus = document.getElementById("driverDropoffMapStatus");
     const driverDropoffNavigateButton = document.getElementById("driverDropoffNavigateButton");
+    const driverNextRideSummary = document.getElementById("driverNextRideSummary");
 
     let currentUser = null;
     let currentDriverProfile = null;
@@ -1182,6 +1196,13 @@
     const NAV_ROUTE_REFRESH_MS = 15000;
     let lastPickupRouteAt = 0;
     let lastDropoffRouteAt = 0;
+    const EARLY_ASSIGNMENT_MINUTES = 6;
+    let queuedRideGroups = [];
+    let latestVisiblePendingRides = [];
+    let latestDropoffEtaMinutes = null;
+    let rideAutoReservePromise = null;
+    let earlyAssignmentRideId = null;
+    let earlyAssignmentTriggered = false;
 
     function showAuth() {
       authView.classList.add("active");
@@ -1321,6 +1342,8 @@
         driverNameEl.textContent = "Driver";
         driverDetailEl.textContent = "";
         clearActiveRideFlow();
+        queuedRideGroups = [];
+        updateQueuedRideNotice();
         if (ridesUnsub) {
           ridesUnsub();
           ridesUnsub = null;
@@ -1855,8 +1878,10 @@
         return allowedStatuses.includes(st);
       });
 
+      latestVisiblePendingRides = visible;
       syncRideOfferQueue(visible);
       updateRidesListMessage(visible);
+      maybeTriggerEarlyNextRide();
       maybeShowNextRideOffer();
     }
 
@@ -1919,6 +1944,65 @@
       seenRideOfferIds.clear();
     }
 
+    function updateQueuedRideNotice() {
+      if (!driverNextRideSummary) return;
+      if (!queuedRideGroups.length) {
+        driverNextRideSummary.style.display = "none";
+        driverNextRideSummary.textContent = "";
+        return;
+      }
+      const nextGroup = queuedRideGroups[0];
+      if (!Array.isArray(nextGroup) || !nextGroup.length) {
+        driverNextRideSummary.style.display = "none";
+        driverNextRideSummary.textContent = "";
+        return;
+      }
+      const names = nextGroup
+        .map((ride, idx) => ride?.riderName || `Rider ${idx + 1}`)
+        .join(", ");
+      const pickup = pickupLabel(nextGroup[0]) || "Pickup pending";
+      driverNextRideSummary.textContent = `Next rider queued: ${names} — pickup ${pickup}`;
+      driverNextRideSummary.style.display = "block";
+    }
+
+    function queueRideGroup(group) {
+      if (!Array.isArray(group) || !group.length) return;
+      queuedRideGroups.push(group);
+      updateQueuedRideNotice();
+    }
+
+    function startQueuedRideIfAvailable() {
+      if (activeRideGroup.length) {
+        updateQueuedRideNotice();
+        return;
+      }
+      if (!queuedRideGroups.length) {
+        updateQueuedRideNotice();
+        maybeShowNextRideOffer();
+        return;
+      }
+      const nextGroup = queuedRideGroups.shift();
+      updateQueuedRideNotice();
+      if (Array.isArray(nextGroup) && nextGroup.length) {
+        beginDriverRideFlow(nextGroup);
+      } else {
+        startQueuedRideIfAvailable();
+      }
+    }
+
+    function handleRideAssignment(group) {
+      if (!Array.isArray(group) || !group.length) {
+        maybeShowNextRideOffer();
+        return;
+      }
+      if (activeRideGroup.length) {
+        queueRideGroup(group);
+        driverMessage.textContent = "Next rider reserved. Finish current trip first.";
+        return;
+      }
+      beginDriverRideFlow(group);
+    }
+
     function maybeShowNextRideOffer() {
       if (pendingRideOffer) return;
       if (activeRideGroup.length) return;
@@ -1927,6 +2011,63 @@
       if (nextRide) {
         openRideOfferOverlay(nextRide);
       }
+    }
+
+    function setLatestDropoffEta(minutes) {
+      if (Number.isFinite(minutes)) {
+        latestDropoffEtaMinutes = Math.max(0, minutes);
+      } else {
+        latestDropoffEtaMinutes = null;
+      }
+      maybeTriggerEarlyNextRide();
+    }
+
+    function maybeTriggerEarlyNextRide() {
+      if (!activeRideGroup.length) return;
+      if (queuedRideGroups.length) return;
+      if (!rideOfferQueue.length) return;
+      if (
+        driverOverlayState !== DRIVER_STATES.NAV_DROPOFF &&
+        driverOverlayState !== DRIVER_STATES.ENTER_DROPOFF
+      ) {
+        return;
+      }
+      if (!Number.isFinite(latestDropoffEtaMinutes)) return;
+      if (latestDropoffEtaMinutes > EARLY_ASSIGNMENT_MINUTES) return;
+      const rideId = getPrimaryRideId();
+      if (!rideId) return;
+      if (earlyAssignmentRideId !== rideId) {
+        earlyAssignmentRideId = rideId;
+        earlyAssignmentTriggered = false;
+      }
+      if (earlyAssignmentTriggered) return;
+      reserveNextRideFromQueue({ reason: "auto" });
+    }
+
+    function reserveNextRideFromQueue({ reason = "manual" } = {}) {
+      if (!rideOfferQueue.length) return;
+      if (rideAutoReservePromise) return;
+      const ride = rideOfferQueue.shift();
+      rideAutoReservePromise = (async () => {
+        try {
+          const group = await acceptRide(ride);
+          if (Array.isArray(group) && group.length) {
+            queueRideGroup(group);
+            if (reason === "auto") {
+              earlyAssignmentTriggered = true;
+              driverMessage.textContent =
+                "Reserved the next rider while you finish this trip.";
+            }
+          }
+        } catch (err) {
+          console.error("reserveNextRideFromQueue error", err);
+          rideOfferQueue.unshift(ride);
+        } finally {
+          rideAutoReservePromise = null;
+          updateRidesListMessage(latestVisiblePendingRides);
+          maybeTriggerEarlyNextRide();
+        }
+      })();
     }
 
     async function getUnassignedGroupRides(ride) {
@@ -2102,6 +2243,9 @@
     function beginDriverRideFlow(groupRides) {
       if (!Array.isArray(groupRides) || !groupRides.length) return;
       driverOverlayDismissed = false;
+      earlyAssignmentRideId = groupRides[0]?.id || null;
+      earlyAssignmentTriggered = false;
+      latestDropoffEtaMinutes = null;
       subscribeToActiveRideGroup(groupRides);
       setDriverOverlayState(DRIVER_STATES.NAV_PICKUP, { forceReveal: true });
     }
@@ -2140,8 +2284,11 @@
       pendingRideOffer = null;
       driverOverlayDismissed = false;
       activeRideError.textContent = "";
+      latestDropoffEtaMinutes = null;
+      earlyAssignmentRideId = null;
+      earlyAssignmentTriggered = false;
       setDriverOverlayState(DRIVER_STATES.HIDDEN);
-      maybeShowNextRideOffer();
+      startQueuedRideIfAvailable();
     }
 
     function normalizedRideStatus(ride) {
@@ -2227,9 +2374,15 @@
         ride?.remainingEtaMinutes ??
         ride?.estimatedDurationMinutes ??
         null;
-      driverDropoffEta.textContent = etaMinutes
-        ? `Arriving in about ${Math.max(1, Math.round(etaMinutes))} min`
-        : "";
+      if (Number.isFinite(etaMinutes)) {
+        driverDropoffEta.textContent = `Arriving in about ${Math.max(
+          1,
+          Math.round(etaMinutes)
+        )} min`;
+      } else {
+        driverDropoffEta.textContent = "";
+      }
+      setLatestDropoffEta(etaMinutes);
       activeDropoffLocation = extractDropoffLocation(ride);
       geofenceOverride = false;
       driverCompleteOverrideButton.style.display = activeDropoffLocation ? "none" : "inline-flex";
@@ -2316,12 +2469,7 @@
       try {
         const group = await acceptRide(ride);
         pendingRideOffer = null;
-        if (group && group.length) {
-          beginDriverRideFlow(group);
-        } else {
-          setDriverOverlayState(DRIVER_STATES.HIDDEN);
-          maybeShowNextRideOffer();
-        }
+        handleRideAssignment(group);
       } catch (err) {
         activeRideError.textContent = err.message || "Error accepting ride.";
       } finally {
@@ -2733,6 +2881,11 @@
           travelMode: google.maps.TravelMode.DRIVING
         });
         dropoffDirectionsRenderer.setDirections(directions);
+        const durationSeconds =
+          directions?.routes?.[0]?.legs?.[0]?.duration?.value;
+        if (Number.isFinite(durationSeconds)) {
+          setLatestDropoffEta(durationSeconds / 60);
+        }
         fitInsetMapToRoute(dropoffNavMap, directions);
         resizeInsetMap(dropoffNavMap);
         updateNavMapStatus(driverDropoffMapStatus, "");
