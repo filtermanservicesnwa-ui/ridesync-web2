@@ -1069,6 +1069,7 @@
           <button id="syncButton" class="btn-primary">Sync &amp; Pay</button>
           <button id="logoutButton" class="btn-secondary">Log out</button>
         </div>
+        <div id="driverAvailabilityNotice" class="small"></div>
       </div>
       </div>
 
@@ -2011,6 +2012,7 @@
 
     const profileMessage = document.getElementById("profileMessage");
     const profileError = document.getElementById("profileError");
+    const driverAvailabilityNotice = document.getElementById("driverAvailabilityNotice");
 
     const mapEl = document.getElementById("map");
     const destinationEl = document.getElementById("destination");
@@ -2171,6 +2173,8 @@
     let destAutocomplete = null;
     let lastRideMetrics = null;
     let activeRideViewSection = "destination";
+    let hasOnlineDrivers = false;
+    let driverAvailabilityUnsub = null;
 
     let activeRideUnsub = null;
     let activeGroupUnsub = null;
@@ -2239,6 +2243,7 @@
     }
 
     updateCancelButtonVisibility();
+    subscribeToDriverAvailability();
 
     function clearCurrentRideState() {
         currentRideId = null;
@@ -2978,6 +2983,13 @@
     }
 
     function updateSyncButtonLabel() {
+      if (!syncButton) return;
+      if (!hasOnlineDrivers) {
+        syncButton.textContent = "Drivers offline";
+        syncButton.disabled = true;
+        return;
+      }
+      syncButton.disabled = false;
       if (joinMode) {
         syncButton.textContent = "Join Ride";
         return;
@@ -2994,6 +3006,47 @@
         syncButton.textContent = inHomeZone ? "Sync & Ride" : "Sync & Pay";
       } else {
         syncButton.textContent = "Sync & Pay";
+      }
+    }
+
+    function setDriverAvailabilityState(hasDriversOnline) {
+      hasOnlineDrivers = !!hasDriversOnline;
+      if (driverAvailabilityNotice) {
+        driverAvailabilityNotice.textContent = hasOnlineDrivers
+          ? ""
+          : "No drivers are online right now. We'll refresh automatically.";
+      }
+      updateSyncButtonLabel();
+    }
+
+    function subscribeToDriverAvailability() {
+      if (driverAvailabilityUnsub) {
+        driverAvailabilityUnsub();
+        driverAvailabilityUnsub = null;
+      }
+      try {
+        const availabilityQuery = query(
+          collection(db, "drivers"),
+          where("isOnline", "==", true),
+          limit(1)
+        );
+        driverAvailabilityUnsub = onSnapshot(
+          availabilityQuery,
+          (snap) => {
+            setDriverAvailabilityState(!snap.empty);
+          },
+          (err) => {
+            console.error("driver availability watcher error", err);
+            setDriverAvailabilityState(false);
+            if (driverAvailabilityNotice) {
+              driverAvailabilityNotice.textContent =
+                "Can't confirm driver availability right now.";
+            }
+          }
+        );
+      } catch (err) {
+        console.error("driver availability subscribe error", err);
+        setDriverAvailabilityState(false);
       }
     }
 
@@ -4006,11 +4059,12 @@
       const destinationLabel =
         data.toDestination || data.toAddress || data.destAddress || "Destination";
 
-      if (status === "canceled_by_driver") {
-        returnToHomeAfterRide(
-          "Driver canceled your ride. You're back on the home screen.",
-          true
-        );
+      if (status === "canceled_by_driver" || status === "driver_declined") {
+        const declineCopy =
+          status === "driver_declined"
+            ? "Driver declined your ride. Choose a destination to try again."
+            : "Driver canceled your ride. You're back on the home screen.";
+        returnToHomeAfterRide(declineCopy, true);
         return;
       }
 
@@ -4890,6 +4944,10 @@
     async function handleNewRide() {
       const user = auth.currentUser;
       if (!user) return;
+      if (!hasOnlineDrivers) {
+        profileError.textContent = "Drivers are offline right now. Please try again soon.";
+        return;
+      }
 
       profileError.textContent = "";
       clearPoolGroupUI();
@@ -5020,6 +5078,10 @@
       const user = auth.currentUser;
       if (!user || !joinTargetRide) {
         profileError.textContent = "Unable to join this ride.";
+        return;
+      }
+      if (!hasOnlineDrivers) {
+        profileError.textContent = "Drivers are offline right now. Please try again soon.";
         return;
       }
 
@@ -5230,6 +5292,13 @@
         }
         setupDestinationAutocomplete();
       }
+
+    window.addEventListener("beforeunload", () => {
+      if (driverAvailabilityUnsub) {
+        driverAvailabilityUnsub();
+        driverAvailabilityUnsub = null;
+      }
+    });
 
       ensureBackgroundMapReady();
       trySetupAutocompleteEarly();
