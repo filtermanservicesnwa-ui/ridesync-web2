@@ -1869,6 +1869,12 @@
     };
 
     function coerceFareNumber(value, fallback) {
+      if (value === null || value === undefined) {
+        return fallback;
+      }
+      if (typeof value === "string" && value.trim() === "") {
+        return fallback;
+      }
       const num = Number(value);
       return Number.isFinite(num) && num >= 0 ? num : fallback;
     }
