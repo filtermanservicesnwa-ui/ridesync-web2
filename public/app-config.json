@@ -22,13 +22,16 @@
     "publishableKey": "pk_test_51N9eIpExample0000000000000000",
     "membershipPlans": {
       "basic": {
-        "priceDisplay": "Pay per ride • No monthly fee"
+        "priceDisplay": "Pay per ride • No monthly fee",
+        "mode": "none"
       },
       "uofa_unlimited": {
-        "priceDisplay": "$80 / month"
+        "priceDisplay": "$80 / month",
+        "mode": "subscription"
       },
       "nwa_unlimited": {
-        "priceDisplay": "$120 / month"
+        "priceDisplay": "$120 / month",
+        "mode": "subscription"
       }
     }
   },
