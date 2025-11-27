@@ -3190,12 +3190,13 @@
 
     function updateSyncButtonLabel() {
       if (!syncButton) return;
+      syncButton.disabled = false;
       if (!hasOnlineDrivers) {
-        syncButton.textContent = "Drivers offline";
-        syncButton.disabled = true;
+        syncButton.textContent = joinMode
+          ? "Join Ride (notify drivers)"
+          : "Sync & Notify Drivers";
         return;
       }
-      syncButton.disabled = false;
       if (joinMode) {
         syncButton.textContent = "Join Ride";
         return;
@@ -3220,7 +3221,7 @@
       if (driverAvailabilityNotice) {
         driverAvailabilityNotice.textContent = hasOnlineDrivers
           ? "Drivers are online. Tap Sync to request a ride."
-          : "No drivers are online right now. We'll refresh automatically.";
+          : "No drivers are online right now. Tap Sync to notify them and we'll queue your ride.";
       }
       updateSyncButtonLabel();
     }
@@ -5341,10 +5342,11 @@
       const user = auth.currentUser;
       if (!user) return;
       if (!hasOnlineDrivers) {
-        profileError.textContent = "Drivers are offline right now. Please try again soon.";
-        return;
+        profileMessage.textContent =
+          "Drivers look offline right now. We'll notify them as soon as you sync.";
+      } else {
+        profileMessage.textContent = "";
       }
-
       profileError.textContent = "";
       clearPoolGroupUI();
       hideGroupQr();
@@ -5477,10 +5479,11 @@
         return;
       }
       if (!hasOnlineDrivers) {
-        profileError.textContent = "Drivers are offline right now. Please try again soon.";
-        return;
+        profileMessage.textContent =
+          "Drivers look offline right now. We'll notify them as soon as you join.";
+      } else {
+        profileMessage.textContent = "";
       }
-
       profileError.textContent = "";
       cancelError.textContent = "";
 
