@@ -12,7 +12,8 @@ service cloud.firestore {
     }
 
     match /drivers/{driverId} {
-      allow read, write: if isSignedIn() && request.auth.uid == driverId;
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == driverId;
     }
 
     match /rideRequests/{rideId} {
