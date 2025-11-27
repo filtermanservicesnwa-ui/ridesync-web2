@@ -483,6 +483,23 @@
       flex-direction: column;
       gap: 16px;
       box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+      max-height: min(90vh, 640px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    @supports (height: 100dvh) {
+      .payment-panel {
+        max-height: min(90dvh, 640px);
+      }
+    }
+    @media (max-width: 520px) {
+      .overlay {
+        align-items: flex-start;
+      }
+      .payment-panel {
+        width: 100%;
+        border-radius: 16px;
+      }
     }
     .payment-panel-header {
       display: flex;
@@ -536,8 +553,9 @@
       display: none;
       align-items: center;
       justify-content: center;
-      padding: 18px;
+      padding: clamp(12px, 4vw, 24px);
       z-index: 50;
+      overflow-y: auto;
     }
     .overlay.active { display: flex; }
     .rider-overlay-shell {
