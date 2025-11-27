@@ -1251,6 +1251,7 @@
     const EARLY_ASSIGNMENT_MINUTES = 6;
     let queuedRideGroups = [];
     let latestVisiblePendingRides = [];
+    let latestRideSnapshot = [];
     let latestDropoffEtaMinutes = null;
     let rideAutoReservePromise = null;
     let earlyAssignmentRideId = null;
@@ -1717,7 +1718,11 @@
           }
         }
       }
-      updateRidesListMessage([]);
+      refreshDriverRideVisibility();
+    }
+
+    function refreshDriverRideVisibility() {
+      renderRides(latestRideSnapshot);
     }
 
     toggleOnlineButton.addEventListener("click", async () => {
@@ -1922,9 +1927,10 @@
     }
 
     function renderRides(allRides) {
+      const sourceRides = Array.isArray(allRides) ? allRides : [];
+      latestRideSnapshot = sourceRides.slice();
       const allowedStatuses = ["pending_driver", "pool_searching", "pooled_pending_driver", "pending"];
-
-      const visible = allRides.filter((r) => {
+      const visible = sourceRides.filter((r) => {
         if (!isOnline) return false;
         if (r.driverId) return false;
         const st = r.status || "pending";
