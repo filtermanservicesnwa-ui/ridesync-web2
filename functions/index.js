@@ -175,6 +175,13 @@ const RIDE_STATUS_ALLOWLIST = new Set([
   "pending",
 ]);
 
+const DRIVER_BUSY_STATUSES = [
+  "driver_assigned",
+  "arrived_at_pickup",
+  "pickup_code_verified",
+  "arrived_at_dropoff",
+];
+
 const POOL_GENDER_ALLOWLIST = new Set(["male", "female"]);
 
 function normalizePoolGender(value) {
@@ -1721,3 +1728,70 @@ exports.finalizeRidePayment = functions
 
     return { rideId: rideRef.id };
   });
+
+exports.getDriverAvailabilityStats = functions.https.onCall(async (_data, context) => {
+  requireAuth(context);
+
+  try {
+    const driversSnap = await db
+      .collection("drivers")
+      .where("isOnline", "==", true)
+      .select("isOnline")
+      .get();
+
+    const onlineDriverIds = [];
+    driversSnap.forEach((docSnap) => {
+      onlineDriverIds.push(docSnap.id);
+    });
+
+    if (!onlineDriverIds.length) {
+      return {
+        onlineDriverIds: [],
+        busyDriverIds: [],
+        onlineCount: 0,
+        busyCount: 0,
+        availableCount: 0,
+        hasOnlineDrivers: false,
+        hasAvailableDrivers: false,
+        generatedAt: Date.now(),
+      };
+    }
+
+    const busyDriverSnap = await db
+      .collection("rideRequests")
+      .where("status", "in", DRIVER_BUSY_STATUSES)
+      .select("driverId", "assignedDriverId")
+      .get();
+
+    const onlineDriverIdSet = new Set(onlineDriverIds);
+    const busyDriverIds = [];
+    busyDriverSnap.forEach((docSnap) => {
+      const payload = docSnap.data() || {};
+      const driverId = payload.driverId || payload.assignedDriverId || null;
+      if (driverId && onlineDriverIdSet.has(driverId)) {
+        busyDriverIds.push(driverId);
+      }
+    });
+
+    const onlineCount = onlineDriverIds.length;
+    const busyCount = busyDriverIds.length;
+    const availableCount = Math.max(0, onlineCount - busyCount);
+
+    return {
+      onlineDriverIds,
+      busyDriverIds,
+      onlineCount,
+      busyCount,
+      availableCount,
+      hasOnlineDrivers: onlineCount > 0,
+      hasAvailableDrivers: availableCount > 0,
+      generatedAt: Date.now(),
+    };
+  } catch (err) {
+    console.error("[getDriverAvailabilityStats] Error:", err);
+    throw new functions.https.HttpsError(
+      "internal",
+      "Unable to load driver availability right now."
+    );
+  }
+});
