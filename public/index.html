@@ -2027,6 +2027,10 @@
       functionsClient,
       "finalizeRidePayment"
     );
+    const getDriverAvailabilityStatsFn = httpsCallable(
+      functionsClient,
+      "getDriverAvailabilityStats"
+    );
 
     const NWA_CENTER = geoConfig.nwaCenter || { lat: 36.334, lng: -94.118 };
     const NWA_RADIUS_MILES = geoConfig.nwaRadiusMiles ?? 30;
@@ -2400,6 +2404,8 @@
     let activeRideViewSection = "destination";
     let hasOnlineDrivers = false;
     let driverAvailabilityUnsub = null;
+    let driverAvailabilityPollTimer = null;
+    const DRIVER_AVAILABILITY_POLL_INTERVAL_MS = 20000;
 
     let activeRideUnsub = null;
     let activeGroupUnsub = null;
@@ -3262,6 +3268,83 @@
       updateSyncButtonLabel();
     }
 
+    function isPermissionDeniedError(err) {
+      if (!err) return false;
+      if (err.code === "permission-denied") {
+        return true;
+      }
+      const message = (err.message || "").toLowerCase();
+      return (
+        message.includes("missing or insufficient permissions") ||
+        message.includes("permission-denied")
+      );
+    }
+
+    function applyDriverAvailabilityPayload(payload = {}) {
+      const onlineIds = Array.isArray(payload.onlineDriverIds)
+        ? payload.onlineDriverIds
+        : [];
+      const busyIds = Array.isArray(payload.busyDriverIds)
+        ? payload.busyDriverIds
+        : [];
+      driverAvailability.onlineIds = new Set(onlineIds);
+      driverAvailability.busyDriverIds = new Set(busyIds);
+      const onlineCount =
+        typeof payload.onlineCount === "number"
+          ? payload.onlineCount
+          : onlineIds.length;
+      driverAvailability.onlineCount = onlineCount;
+      const hasDrivers =
+        typeof payload.hasOnlineDrivers === "boolean"
+          ? payload.hasOnlineDrivers
+          : onlineCount > 0;
+      setDriverAvailabilityState(hasDrivers);
+      updateWaitlistCopy();
+      maybeToggleWaitlistPanel();
+    }
+
+    async function fetchDriverAvailabilityStatsOnce() {
+      if (!getDriverAvailabilityStatsFn) {
+        return;
+      }
+      try {
+        const result = await getDriverAvailabilityStatsFn();
+        const payload = result?.data || {};
+        applyDriverAvailabilityPayload(payload);
+      } catch (err) {
+        console.warn("driver availability stats fetch error", err);
+      }
+    }
+
+    function startDriverAvailabilityPolling(immediate = false) {
+      if (driverAvailabilityPollTimer) {
+        return;
+      }
+      if (immediate) {
+        fetchDriverAvailabilityStatsOnce();
+      }
+      driverAvailabilityPollTimer = window.setInterval(
+        fetchDriverAvailabilityStatsOnce,
+        DRIVER_AVAILABILITY_POLL_INTERVAL_MS
+      );
+    }
+
+    function stopDriverAvailabilityPolling() {
+      if (!driverAvailabilityPollTimer) {
+        return;
+      }
+      clearInterval(driverAvailabilityPollTimer);
+      driverAvailabilityPollTimer = null;
+    }
+
+    function handleDriverAvailabilityPermissionError(err) {
+      if (!isPermissionDeniedError(err)) {
+        return false;
+      }
+      startDriverAvailabilityPolling(true);
+      return true;
+    }
+
     function subscribeToDriverAvailability() {
       if (driverAvailabilityUnsub) {
         driverAvailabilityUnsub();
@@ -3276,12 +3359,15 @@
         driverAvailabilityUnsub = onSnapshot(
           availabilityQuery,
           (snap) => {
+            stopDriverAvailabilityPolling();
             setDriverAvailabilityState(!snap.empty);
           },
           (err) => {
             console.error("driver availability watcher error", err);
+            driverAvailabilityUnsub = null;
             setDriverAvailabilityState(false);
-            if (driverAvailabilityNotice) {
+            const handled = handleDriverAvailabilityPermissionError(err);
+            if (!handled && driverAvailabilityNotice) {
               driverAvailabilityNotice.textContent =
                 "Can't confirm driver availability right now.";
             }
@@ -3290,6 +3376,7 @@
       } catch (err) {
         console.error("driver availability subscribe error", err);
         setDriverAvailabilityState(false);
+        handleDriverAvailabilityPermissionError(err);
       }
     }
 
@@ -4387,6 +4474,7 @@
         driverOnlineUnsub = onSnapshot(
           onlineQuery,
           (snap) => {
+            stopDriverAvailabilityPolling();
             const ids = new Set();
             snap.forEach((docSnap) => ids.add(docSnap.id));
             driverAvailability.onlineIds = ids;
@@ -4396,10 +4484,13 @@
           },
           (err) => {
             console.warn("driver availability watcher error", err);
+            driverOnlineUnsub = null;
+            handleDriverAvailabilityPermissionError(err);
           }
         );
       } catch (err) {
         console.warn("driver availability query error", err);
+        handleDriverAvailabilityPermissionError(err);
       }
 
       try {
@@ -4410,6 +4501,7 @@
         driverBusyUnsub = onSnapshot(
           busyQuery,
           (snap) => {
+            stopDriverAvailabilityPolling();
             const ids = new Set();
             snap.forEach((docSnap) => {
               const data = docSnap.data();
@@ -4424,10 +4516,13 @@
           },
           (err) => {
             console.warn("driver busy watcher error", err);
+            driverBusyUnsub = null;
+            handleDriverAvailabilityPermissionError(err);
           }
         );
       } catch (err) {
         console.warn("driver busy query error", err);
+        handleDriverAvailabilityPermissionError(err);
       }
     }
 
@@ -4449,6 +4544,7 @@
       driverAvailability.onlineIds = new Set();
       driverAvailability.busyDriverIds = new Set();
       deactivateWaitlistPanel();
+      stopDriverAvailabilityPolling();
     }
 
     function updateDriverModules(data) {
