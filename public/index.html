@@ -2062,6 +2062,9 @@
       console.error(`${source} failed`, err);
       return err instanceof Error ? err : new Error(fallbackMessage);
     }
+    function resolveClientSecret(payload = {}) {
+      return payload?.clientSecret || payload?.client_secret || null;
+    }
     const createMembershipPaymentIntentFn = httpsCallable(
       functionsClient,
       "createMembershipPaymentIntent"
@@ -5346,7 +5349,8 @@
       } catch (err) {
         throw handleCallableError("createMembershipPaymentIntent", err);
       }
-      if (!data.clientSecret || !data.paymentIntentId) {
+      const clientSecret = resolveClientSecret(data);
+      if (!clientSecret || !data.paymentIntentId) {
         throw new Error("Unable to start Stripe payment.");
       }
       const planLabel = formatMembershipPlanLabel(planId);
@@ -5358,7 +5362,7 @@
         title: `Activate ${planLabel}`,
         subtitle: `Pay ${amountLabel} to activate this membership.`,
         confirmLabel: `Pay ${amountLabel}`,
-        clientSecret: data.clientSecret,
+        clientSecret,
         context: {
           type: "membership",
           plan: planId,
@@ -5379,7 +5383,8 @@
       } catch (err) {
         throw handleCallableError("createMembershipSubscriptionIntent", err);
       }
-      if (!data.clientSecret || !data.subscriptionId) {
+      const clientSecret = resolveClientSecret(data);
+      if (!clientSecret || !data.subscriptionId) {
         throw new Error("Unable to start Stripe subscription.");
       }
       const planLabel =
@@ -5388,7 +5393,7 @@
         title: `Activate ${planLabel}`,
         subtitle: "Enter payment details to start your subscription.",
         confirmLabel: "Start subscription",
-        clientSecret: data.clientSecret,
+        clientSecret,
         context: {
           type: "membershipSubscription",
           subscriptionId: data.subscriptionId,
@@ -5762,19 +5767,27 @@
       } catch (err) {
         throw handleCallableError("createRidePaymentIntent", err);
       }
-      if (data.skipPayment && data.rideId) {
-        await activateRideAfterCreation(data.rideId, sanitizedRidePayload);
+      const rideId = data.rideId || data.ride_id || null;
+      if (data.skipPayment && rideId) {
+        await activateRideAfterCreation(rideId, sanitizedRidePayload);
         return;
       }
       if (!STRIPE_ENABLED) {
         throw new Error("Stripe payments are not available right now.");
       }
-      if (!data.clientSecret || !data.pendingId) {
+      const clientSecret = resolveClientSecret(data);
+      const pendingId = data.pendingId || data.pending_id || null;
+      const paymentIntentId = data.paymentIntentId || data.payment_intent_id || null;
+      if (!clientSecret || !pendingId) {
         throw new Error("Unable to start Stripe payment for this ride.");
       }
       const formattedTotal = formatCurrencyFromCents(
-        data.amountCents,
-        data.currency
+        Number.isFinite(Number(data.amountCents))
+          ? Number(data.amountCents)
+          : Number.isFinite(Number(data.amount_cents))
+          ? Number(data.amount_cents)
+          : 0,
+        data.currency || data.currencyCode || "usd"
       );
       let subtitle = `Pay ${formattedTotal} to request this ride.`;
       if (data.geofenceContext?.geofenceName) {
@@ -5787,11 +5800,11 @@
         title: "Confirm ride payment",
         subtitle,
         confirmLabel: `Pay ${formattedTotal}`,
-        clientSecret: data.clientSecret,
+        clientSecret,
         context: {
           type: "ride",
-          pendingId: data.pendingId,
-          paymentIntentId: data.paymentIntentId,
+          pendingId,
+          paymentIntentId,
           ridePayload: sanitizedRidePayload,
         },
       });
