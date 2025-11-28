@@ -1764,16 +1764,17 @@ exports.getDriverAvailabilityStats = functions.https.onCall(async (_data, contex
       .get();
 
     const onlineDriverIdSet = new Set(onlineDriverIds);
-    const busyDriverIds = [];
+    const busyDriverIdSet = new Set();
     busyDriverSnap.forEach((docSnap) => {
       const payload = docSnap.data() || {};
       const driverId = payload.driverId || payload.assignedDriverId || null;
       if (driverId && onlineDriverIdSet.has(driverId)) {
-        busyDriverIds.push(driverId);
+        busyDriverIdSet.add(driverId);
       }
     });
 
     const onlineCount = onlineDriverIds.length;
+    const busyDriverIds = Array.from(busyDriverIdSet);
     const busyCount = busyDriverIds.length;
     const availableCount = Math.max(0, onlineCount - busyCount);
 
