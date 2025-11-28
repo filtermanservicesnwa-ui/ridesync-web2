@@ -558,6 +558,38 @@
       overflow-y: auto;
     }
     .overlay.active { display: flex; }
+    .cooldown-panel {
+      width: min(420px, 100%);
+      background: rgba(15,23,42,0.96);
+      border-radius: 20px;
+      border: 1px solid rgba(148,163,184,0.45);
+      padding: clamp(18px, 4vw, 28px);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      text-align: center;
+      box-shadow: 0 28px 70px rgba(0,0,0,0.65);
+    }
+    .cooldown-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #cbd5f5;
+    }
+    .cooldown-timer {
+      font-size: clamp(2.2rem, 9vw, 3rem);
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: #bfdbfe;
+    }
+    .cooldown-hint {
+      font-size: 0.9rem;
+      color: #94a3b8;
+      line-height: 1.4;
+    }
+    .cooldown-overlay .btn-primary {
+      margin-top: 6px;
+    }
     .rider-overlay-shell {
       width: min(520px, 100%);
       max-height: 100%;
@@ -1687,6 +1719,33 @@
     </div>
   </div>
 
+  <div
+    id="cooldownOverlay"
+    class="overlay cooldown-overlay"
+    aria-hidden="true"
+  >
+    <div
+      class="cooldown-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cooldownTitle"
+      aria-describedby="cooldownHintText"
+    >
+      <div id="cooldownLabel" class="cooldown-label">Unlimited cooldown</div>
+      <div id="cooldownTitle" class="overlay-title">Next ride unlocks soon</div>
+      <div id="cooldownSubtitle" class="overlay-subtitle">
+        Hang tight while we reset drivers nearby.
+      </div>
+      <div id="cooldownTimerValue" class="cooldown-timer">00:00</div>
+      <div id="cooldownHintText" class="cooldown-hint">
+        Unlimited riders take a short break between trips to keep rides fair.
+      </div>
+      <button id="cooldownDismissButton" type="button" class="btn-primary">
+        Okay, got it
+      </button>
+    </div>
+  </div>
+
   <!-- === RIDE SYNC STRIPE: START membership selection overlay === -->
   <div
     id="membershipSelectionOverlay"
@@ -2300,6 +2359,13 @@
     const tipCustomInput = document.getElementById("tipCustomInput");
     const submitRatingButton = document.getElementById("submitRatingButton");
     const riderFeedbackInput = document.getElementById("riderFeedbackInput");
+    const cooldownOverlay = document.getElementById("cooldownOverlay");
+    const cooldownLabelEl = document.getElementById("cooldownLabel");
+    const cooldownTitleEl = document.getElementById("cooldownTitle");
+    const cooldownSubtitleEl = document.getElementById("cooldownSubtitle");
+    const cooldownTimerValue = document.getElementById("cooldownTimerValue");
+    const cooldownHintText = document.getElementById("cooldownHintText");
+    const cooldownDismissButton = document.getElementById("cooldownDismissButton");
 
     const driverIdentityCardEl = document.getElementById("driverIdentityCard");
     const driverIdentityNameEl = document.getElementById("driverIdentityName");
@@ -2432,6 +2498,9 @@
     let currentRideId = null;
     let currentRideStatus = null;
     let currentRideWatcher = null;
+    let lastRideCompletionContext = null;
+    let cooldownOverlayUnlockAt = null;
+    let cooldownOverlayTimerId = null;
 
     const riderCancelableStatuses = new Set([
       "pending_driver",
@@ -2441,6 +2510,7 @@
       "driver_arrived",
       "pending"
     ]);
+    const COOLDOWN_ELIGIBLE_PLANS = new Set(["uofa_unlimited", "nwa_unlimited"]);
 
     function updateCancelButtonVisibility() {
       if (!cancelRideButton) return;
@@ -2544,7 +2614,134 @@
           profileMessage.textContent = message || "";
           profileError.textContent = "";
         }
+      maybeShowPostRideCooldown();
+    }
+
+    function extractRideCompletionTime(data) {
+      if (!data) return new Date();
+      const candidates = [
+        data.completedAt,
+        data.dropoffCompletedAt,
+        data.dropoffCodeVerifiedAt,
+        data.updatedAt
+      ];
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        if (typeof candidate.toDate === "function") {
+          return candidate.toDate();
+        }
+        if (candidate instanceof Date) {
+          return candidate;
+        }
+        if (typeof candidate === "number") {
+          return new Date(candidate);
+        }
       }
+      return new Date();
+    }
+
+    function rememberRideCompletionContext(status, data) {
+      if (status !== "dropoff_code_verified" && status !== "completed") {
+        lastRideCompletionContext = null;
+        return;
+      }
+      const plan = normalizePlanKey(
+        data?.membershipType ||
+          currentUserProfile?.membershipType ||
+          currentUserProfile?.membership ||
+          "basic"
+      );
+      if (!COOLDOWN_ELIGIBLE_PLANS.has(plan)) {
+        lastRideCompletionContext = null;
+        return;
+      }
+      lastRideCompletionContext = {
+        plan,
+        completedAt: extractRideCompletionTime(data)
+      };
+    }
+
+    function stopCooldownOverlayTimer() {
+      if (cooldownOverlayTimerId) {
+        clearInterval(cooldownOverlayTimerId);
+        cooldownOverlayTimerId = null;
+      }
+    }
+
+    function hideCooldownOverlay() {
+      stopCooldownOverlayTimer();
+      cooldownOverlayUnlockAt = null;
+      if (cooldownOverlay) {
+        cooldownOverlay.classList.remove("active");
+        cooldownOverlay.setAttribute("aria-hidden", "true");
+      }
+    }
+
+    function formatCooldownRemaining(ms) {
+      const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+      const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+      const seconds = String(totalSeconds % 60).padStart(2, "0");
+      return `${minutes}:${seconds}`;
+    }
+
+    function tickCooldownOverlay() {
+      if (!cooldownOverlayUnlockAt || !cooldownTimerValue) return;
+      const remainingMs = cooldownOverlayUnlockAt - Date.now();
+      if (remainingMs <= 0) {
+        cooldownTimerValue.textContent = "00:00";
+        hideCooldownOverlay();
+        return;
+      }
+      cooldownTimerValue.textContent = formatCooldownRemaining(remainingMs);
+    }
+
+    function showCooldownOverlay(options) {
+      if (!cooldownOverlay) return;
+      const { planLabel, unlockAt, coolMinutes } = options;
+      cooldownOverlayUnlockAt = unlockAt;
+      if (cooldownLabelEl) {
+        cooldownLabelEl.textContent = `${planLabel} cooldown`;
+      }
+      if (cooldownTitleEl) {
+        cooldownTitleEl.textContent = "Next ride unlocks in";
+      }
+      if (cooldownSubtitleEl) {
+        const minuteLabel = coolMinutes === 1 ? "minute" : "minutes";
+        cooldownSubtitleEl.textContent = `Hang tight for about ${coolMinutes} ${minuteLabel}.`;
+      }
+      if (cooldownHintText) {
+        cooldownHintText.textContent = `${planLabel} riders take a short break between trips so everyone gets a driver.`;
+      }
+      cooldownOverlay.classList.add("active");
+      cooldownOverlay.setAttribute("aria-hidden", "false");
+      tickCooldownOverlay();
+      if (!cooldownOverlayTimerId) {
+        cooldownOverlayTimerId = window.setInterval(tickCooldownOverlay, 1000);
+      }
+    }
+
+    function maybeShowPostRideCooldown() {
+      if (!lastRideCompletionContext) return;
+      const context = lastRideCompletionContext;
+      lastRideCompletionContext = null;
+      const coolMinutes = SURGE_MODE ? SURGE_COOLDOWN_MINUTES : UNLIMITED_COOLDOWN_MINUTES;
+      if (!coolMinutes || coolMinutes <= 0) {
+        hideCooldownOverlay();
+        return;
+      }
+      if (!COOLDOWN_ELIGIBLE_PLANS.has(context.plan)) {
+        hideCooldownOverlay();
+        return;
+      }
+      const unlockAt = context.completedAt.getTime() + coolMinutes * 60000;
+      const remainingMs = unlockAt - Date.now();
+      if (remainingMs <= 0) {
+        hideCooldownOverlay();
+        return;
+      }
+      const planLabel = formatMembershipPlanLabel(context.plan);
+      showCooldownOverlay({ planLabel, unlockAt, coolMinutes });
+    }
 
     function safeImageUrl(url) {
       if (!url && url !== 0) return null;
@@ -4488,6 +4685,7 @@
     function handleRideSnapshot(rideId, data) {
       latestRideForOverlay = { rideId, data };
       const status = normalizeRiderStatus(data);
+      rememberRideCompletionContext(status, data);
       const destinationLabel =
         data.toDestination || data.toAddress || data.destAddress || "Destination";
 
@@ -4777,6 +4975,19 @@
     }
     if (submitRatingButton) {
       submitRatingButton.addEventListener("click", submitRatingAndTip);
+    }
+
+    if (cooldownDismissButton) {
+      cooldownDismissButton.addEventListener("click", () => {
+        hideCooldownOverlay();
+      });
+    }
+    if (cooldownOverlay) {
+      cooldownOverlay.addEventListener("click", (event) => {
+        if (event.target === cooldownOverlay) {
+          hideCooldownOverlay();
+        }
+      });
     }
 
     if (supportCallButton) {
