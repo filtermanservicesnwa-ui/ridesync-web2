@@ -379,6 +379,67 @@ function cloneData(input) {
   return JSON.parse(JSON.stringify(input ?? {}));
 }
 
+function extractRideInput(data) {
+  if (!data) return null;
+  if (data.ride && typeof data.ride === "object") {
+    return data.ride;
+  }
+  if (data.ridePayload && typeof data.ridePayload === "object") {
+    return data.ridePayload;
+  }
+  if (typeof data === "object") {
+    return data;
+  }
+  return null;
+}
+
+function resolveRideTotalCents(ride = {}) {
+  const centCandidates = [
+    ride.totalCents,
+    ride.totalFareCents,
+    ride.estimatedFareCents,
+  ];
+  for (const candidate of centCandidates) {
+    const cents = Number(candidate);
+    if (Number.isFinite(cents)) {
+      return Math.round(cents);
+    }
+  }
+  const dollarCandidates = [
+    ride.total,
+    ride.totalFare,
+    ride.quotedTotal,
+    ride.fare?.total,
+  ];
+  for (const candidate of dollarCandidates) {
+    const dollars = Number(candidate);
+    if (Number.isFinite(dollars)) {
+      return Math.round(dollars * 100);
+    }
+  }
+  return null;
+}
+
+function resolveRideDurationMinutes(ride = {}) {
+  const candidates = [
+    ride.estimatedDurationMinutes,
+    ride.durationMinutes,
+    ride.estimatedDuration,
+    ride.duration,
+    ride.metrics?.estimatedDurationMinutes,
+    ride.metrics?.durationMinutes,
+    ride.rideMetrics?.estimatedDurationMinutes,
+    ride.rideMetrics?.durationMinutes,
+  ];
+  for (const candidate of candidates) {
+    const minutes = Number(candidate);
+    if (Number.isFinite(minutes) && minutes > 0) {
+      return minutes;
+    }
+  }
+  return null;
+}
+
 function normalizeRideStatus(status, poolType) {
   if (status && RIDE_STATUS_ALLOWLIST.has(status)) {
     return status;
@@ -490,6 +551,32 @@ function extractUofaRideDetails(ride = {}) {
         null
     ),
   };
+}
+
+function coerceLatLng(loc) {
+  if (!loc) return null;
+  if (typeof loc.lat === "function" && typeof loc.lng === "function") {
+    const latFn = Number(loc.lat());
+    const lngFn = Number(loc.lng());
+    if (Number.isFinite(latFn) && Number.isFinite(lngFn)) {
+      return { lat: latFn, lng: lngFn };
+    }
+  }
+  const latValue =
+    loc.lat ?? loc.latitude ?? loc._lat ?? loc._latitude ?? loc.latDegrees;
+  const lngValue =
+    loc.lng ??
+    loc.lon ??
+    loc.longitude ??
+    loc._lng ??
+    loc._longitude ??
+    loc.lngDegrees;
+  const lat = Number(latValue);
+  const lng = Number(lngValue);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return { lat, lng };
+  }
+  return null;
 }
 
 function hasValidLocation(loc) {
@@ -1501,7 +1588,7 @@ exports.createRidePaymentIntent = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
   .https.onCall(async (data, context) => {
     const uid = requireAuth(context);
-    const rideInput = data?.ride;
+    const rideInput = extractRideInput(data);
     if (!rideInput) {
       throw new functions.https.HttpsError(
         "invalid-argument",
@@ -1509,23 +1596,23 @@ exports.createRidePaymentIntent = functions
       );
     }
 
-    const totalCentsInput = Number(rideInput.totalCents);
-    if (!Number.isFinite(totalCentsInput)) {
+    const totalCentsResolved = resolveRideTotalCents(rideInput);
+    if (!Number.isFinite(totalCentsResolved)) {
       throw new functions.https.HttpsError(
         "invalid-argument",
         "Estimated fare (totalCents) is required."
       );
     }
-    const totalCents = Math.max(0, Math.round(totalCentsInput));
+    const totalCents = Math.max(0, Math.round(totalCentsResolved));
 
     const pickupLocation =
-      rideInput.pickupLocation ||
-      rideInput.fromLocation ||
-      rideInput.currentLocation;
+      coerceLatLng(rideInput.pickupLocation) ||
+      coerceLatLng(rideInput.fromLocation) ||
+      coerceLatLng(rideInput.currentLocation);
     const dropoffLocation =
-      rideInput.dropoffLocation ||
-      rideInput.toLocation ||
-      rideInput.destinationLocation;
+      coerceLatLng(rideInput.dropoffLocation) ||
+      coerceLatLng(rideInput.toLocation) ||
+      coerceLatLng(rideInput.destinationLocation);
     if (!hasValidLocation(pickupLocation) || !hasValidLocation(dropoffLocation)) {
       throw new functions.https.HttpsError(
         "invalid-argument",
@@ -1533,7 +1620,7 @@ exports.createRidePaymentIntent = functions
       );
     }
 
-    const estimatedMinutes = Number(rideInput.estimatedDurationMinutes);
+    const estimatedMinutes = resolveRideDurationMinutes(rideInput);
     if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
       throw new functions.https.HttpsError(
         "invalid-argument",
