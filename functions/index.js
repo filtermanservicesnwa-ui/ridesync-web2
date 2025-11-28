@@ -3,6 +3,16 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const Stripe = require("stripe");
+const { defineSecret } = require("firebase-functions/params");
+
+const STRIPE_SECRET_KEY = defineSecret("STRIPE_SECRET_KEY");
+const STRIPE_UOFA_PRICE_ID = defineSecret("STRIPE_UOFA_PRICE_ID");
+const STRIPE_NWA_PRICE_ID = defineSecret("STRIPE_NWA_PRICE_ID");
+const STRIPE_SECRET_PARAMS = [
+  STRIPE_SECRET_KEY,
+  STRIPE_UOFA_PRICE_ID,
+  STRIPE_NWA_PRICE_ID,
+];
 
 const runtimeConfig = (() => {
   try {
@@ -36,11 +46,13 @@ function resolveStripeSettings() {
 
 const stripeSettings = resolveStripeSettings();
 let stripe = null;
+let stripeSecretKey = stripeSettings.secretKey || null;
 let uofaPriceId = stripeSettings.uofaPriceId || null;
 let nwaPriceId = stripeSettings.nwaPriceId || null;
 
 if (stripeSettings.secretKey) {
   stripe = Stripe(stripeSettings.secretKey);
+  stripeSecretKey = stripeSettings.secretKey;
 } else {
   console.warn(
     "[RideSync][Stripe] Missing Stripe secret key. Set stripe.secret_key runtime config or STRIPE_SECRET_KEY env to enable billing."
@@ -195,7 +207,36 @@ function normalizeMembershipPlan(value = "") {
   return normalized;
 }
 
+function getSecretValue(secretParam) {
+  if (!secretParam || typeof secretParam.value !== "function") {
+    return null;
+  }
+  try {
+    return secretParam.value() || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function hydrateStripeSettingsFromSecrets() {
+  const secretKey = getSecretValue(STRIPE_SECRET_KEY);
+  const secretUofaPriceId = getSecretValue(STRIPE_UOFA_PRICE_ID);
+  const secretNwaPriceId = getSecretValue(STRIPE_NWA_PRICE_ID);
+
+  if (secretKey && secretKey !== stripeSecretKey) {
+    stripe = Stripe(secretKey);
+    stripeSecretKey = secretKey;
+  }
+  if (secretUofaPriceId) {
+    uofaPriceId = secretUofaPriceId;
+  }
+  if (secretNwaPriceId) {
+    nwaPriceId = secretNwaPriceId;
+  }
+}
+
 function getStripeClient() {
+  hydrateStripeSettingsFromSecrets();
   if (!stripe) {
     throw new functions.https.HttpsError(
       "failed-precondition",
@@ -1034,8 +1075,9 @@ exports.uofaAutoPool = functions.firestore
     }
   });
 
-exports.createMembershipPaymentIntent = functions.https.onCall(
-  async (data, context) => {
+exports.createMembershipPaymentIntent = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data, context) => {
     const uid = requireAuth(context);
     const planKey = normalizeMembershipPlan(data?.plan);
     const planConfig = resolveMembershipPlan(planKey);
@@ -1086,8 +1128,7 @@ exports.createMembershipPaymentIntent = functions.https.onCall(
       planLabel: planConfig.label,
       plan: planKey,
     };
-  }
-);
+  });
 
 async function applyMembershipPlanHandler(data = {}, uid) {
   const planKey = normalizeMembershipPlan(data?.plan);
@@ -1194,10 +1235,12 @@ async function applyMembershipPlanHandler(data = {}, uid) {
   return { status: "updated" };
 }
 
-exports.applyMembershipPlan = functions.https.onCall(async (data, context) => {
-  const uid = requireAuth(context);
-  return applyMembershipPlanHandler(data, uid);
-});
+exports.applyMembershipPlan = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data, context) => {
+    const uid = requireAuth(context);
+    return applyMembershipPlanHandler(data, uid);
+  });
 
 const APPLY_MEMBERSHIP_ALLOWED_ORIGINS = new Set([
   "https://ride-sync-nwa.web.app",
@@ -1246,8 +1289,9 @@ async function extractUidFromRequest(req) {
   return decoded.uid;
 }
 
-exports.applyMembershipPlanHttp = functions.https.onRequest(
-  async (req, res) => {
+exports.applyMembershipPlanHttp = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onRequest(async (req, res) => {
     setApplyMembershipCorsHeaders(req, res);
     if (req.method === "OPTIONS") {
       res.status(204).send("");
@@ -1283,12 +1327,12 @@ exports.applyMembershipPlanHttp = functions.https.onRequest(
         },
       });
     }
-  }
-);
+  });
 
 // === RIDE SYNC STRIPE: START createMembershipSubscriptionIntent ===
-exports.createMembershipSubscriptionIntent = functions.https.onCall(
-  async (data, context) => {
+exports.createMembershipSubscriptionIntent = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data, context) => {
     const uid = requireAuth(context);
     const planId = normalizeMembershipPlan(data?.planId || data?.plan);
     if (!["uofa_unlimited", "nwa_unlimited"].includes(planId)) {
@@ -1297,6 +1341,7 @@ exports.createMembershipSubscriptionIntent = functions.https.onCall(
         "Unsupported membership plan."
       );
     }
+    hydrateStripeSettingsFromSecrets();
     const priceId = planId === "uofa_unlimited" ? uofaPriceId : nwaPriceId;
     if (!priceId) {
       throw new functions.https.HttpsError(
@@ -1345,13 +1390,13 @@ exports.createMembershipSubscriptionIntent = functions.https.onCall(
       subscriptionId: subscription.id,
       planId,
     };
-  }
-);
+  });
 // === RIDE SYNC STRIPE: END createMembershipSubscriptionIntent ===
 
 // === RIDE SYNC STRIPE: START finalizeMembershipSubscription ===
-exports.finalizeMembershipSubscription = functions.https.onCall(
-  async (data, context) => {
+exports.finalizeMembershipSubscription = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data, context) => {
     const uid = requireAuth(context);
     const subscriptionId = data?.subscriptionId;
     if (!subscriptionId) {
@@ -1441,13 +1486,13 @@ exports.finalizeMembershipSubscription = functions.https.onCall(
     ]);
 
     return { status: "active", membershipType: subscriptionPlan };
-  }
-);
+  });
 // === RIDE SYNC STRIPE: END finalizeMembershipSubscription ===
 
 // === RIDE SYNC STRIPE: START createRidePaymentIntent ===
-exports.createRidePaymentIntent = functions.https.onCall(
-  async (data, context) => {
+exports.createRidePaymentIntent = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data, context) => {
     const uid = requireAuth(context);
     const rideInput = data?.ride;
     if (!rideInput) {
@@ -1575,12 +1620,12 @@ exports.createRidePaymentIntent = functions.https.onCall(
       currency: "usd",
       geofenceContext: chargeContext,
     };
-  }
-);
+  });
 // === RIDE SYNC STRIPE: END createRidePaymentIntent ===
 
-exports.finalizeRidePayment = functions.https.onCall(
-  async (data, context) => {
+exports.finalizeRidePayment = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data, context) => {
     const uid = requireAuth(context);
     const pendingId = data?.pendingId;
     const paymentIntentId = data?.paymentIntentId;
@@ -1675,5 +1720,4 @@ exports.finalizeRidePayment = functions.https.onCall(
     });
 
     return { rideId: rideRef.id };
-  }
-);
+  });
