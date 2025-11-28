@@ -1975,7 +1975,8 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     const storage = getStorage(app);
-    const functionsClient = getFunctions(app);
+    const FUNCTIONS_REGION = "us-central1";
+    const functionsClient = getFunctions(app, FUNCTIONS_REGION);
 
     const stripeConfig = APP_CONFIG.stripe || {};
     const fareConfig = APP_CONFIG.fares || {};
@@ -1983,6 +1984,25 @@
     const stripeMembershipConfig = stripeConfig.membershipPlans || {};
     const STRIPE_ENABLED = !!STRIPE_PUBLISHABLE_KEY;
     const STRIPE_JS_URL = "https://js.stripe.com/v3/";
+    const PAYMENT_ERROR_FALLBACK =
+      "Payments are temporarily unavailable. Please try again.";
+
+    function isFirebaseHttpsError(err) {
+      return typeof err?.code === "string" && err.code.startsWith("functions/");
+    }
+
+    function handleCallableError(source, err, fallbackMessage = PAYMENT_ERROR_FALLBACK) {
+      if (isFirebaseHttpsError(err)) {
+        console.error(`${source} failed`, {
+          code: err.code,
+          message: err.message,
+          details: err.details ?? null,
+        });
+        return new Error(fallbackMessage);
+      }
+      console.error(`${source} failed`, err);
+      return err instanceof Error ? err : new Error(fallbackMessage);
+    }
     const createMembershipPaymentIntentFn = httpsCallable(
       functionsClient,
       "createMembershipPaymentIntent"
@@ -3196,16 +3216,11 @@
         const response = await applyMembershipPlanFn(payload || {});
         return response?.data || { status: "updated" };
       } catch (err) {
-        console.error("callApplyMembershipPlan", err);
-        const details =
-          typeof err?.details === "string"
-            ? err.details
-            : err?.details?.message || null;
-        const message =
-          details ||
-          err?.message ||
-          "Unable to update membership right now. Try again.";
-        throw new Error(message);
+        throw handleCallableError(
+          "applyMembershipPlan",
+          err,
+          "Unable to update membership right now. Try again."
+        );
       }
     }
 
@@ -5009,8 +5024,13 @@
       if (!STRIPE_ENABLED) {
         throw new Error("Stripe payments are not available right now.");
       }
-      const response = await createMembershipPaymentIntentFn({ plan: planId });
-      const data = response?.data || {};
+      let data;
+      try {
+        const response = await createMembershipPaymentIntentFn({ plan: planId });
+        data = response?.data || {};
+      } catch (err) {
+        throw handleCallableError("createMembershipPaymentIntent", err);
+      }
       if (!data.clientSecret || !data.paymentIntentId) {
         throw new Error("Unable to start Stripe payment.");
       }
@@ -5037,8 +5057,13 @@
       if (!STRIPE_ENABLED) {
         throw new Error("Stripe payments are not available right now.");
       }
-      const response = await createMembershipSubscriptionIntentFn({ planId });
-      const data = response?.data || {};
+      let data;
+      try {
+        const response = await createMembershipSubscriptionIntentFn({ planId });
+        data = response?.data || {};
+      } catch (err) {
+        throw handleCallableError("createMembershipSubscriptionIntent", err);
+      }
       if (!data.clientSecret || !data.subscriptionId) {
         throw new Error("Unable to start Stripe subscription.");
       }
@@ -5321,9 +5346,14 @@
 
     async function handlePaymentSuccess(paymentIntent, context) {
       if (context?.type === "membershipSubscription") {
-        const finalizeResponse = await finalizeMembershipSubscriptionFn({
-          subscriptionId: context.subscriptionId,
-        });
+        let finalizeResponse;
+        try {
+          finalizeResponse = await finalizeMembershipSubscriptionFn({
+            subscriptionId: context.subscriptionId,
+          });
+        } catch (err) {
+          throw handleCallableError("finalizeMembershipSubscription", err);
+        }
         const status = finalizeResponse?.data?.status || "active";
         if (status === "active") {
           setMembershipMessage("Membership updated!");
@@ -5351,10 +5381,15 @@
       }
 
       if (context?.type === "ride") {
-        const response = await finalizeRidePaymentFn({
-          pendingId: context.pendingId,
-          paymentIntentId: paymentIntent.id,
-        });
+        let response;
+        try {
+          response = await finalizeRidePaymentFn({
+            pendingId: context.pendingId,
+            paymentIntentId: paymentIntent.id,
+          });
+        } catch (err) {
+          throw handleCallableError("finalizeRidePayment", err);
+        }
         const rideId = response?.data?.rideId;
         if (!rideId) {
           throw new Error("Ride could not be created after payment.");
@@ -5364,8 +5399,13 @@
     }
 
     async function startRidePaymentFlow(ridePayload) {
-      const response = await createRidePaymentIntentFn({ ride: ridePayload });
-      const data = response?.data || {};
+      let data;
+      try {
+        const response = await createRidePaymentIntentFn({ ride: ridePayload });
+        data = response?.data || {};
+      } catch (err) {
+        throw handleCallableError("createRidePaymentIntent", err);
+      }
       if (data.skipPayment && data.rideId) {
         await activateRideAfterCreation(data.rideId, ridePayload);
         return;
