@@ -435,6 +435,9 @@ function buildRidePayload(rideInput = {}, context = {}) {
   payload.stripeAmount = (context.amountCents || 0) / 100;
   payload.stripeCurrency = "usd";
   payload.totalCents = context.totalCents || payload.totalCents || 0;
+  if (context.fareBreakdown) {
+    payload.fareBreakdown = context.fareBreakdown;
+  }
   payload.geofenceContext = context.chargeContext || null;
   payload.inHomeZone =
     typeof payload.inHomeZone === "boolean"
@@ -588,6 +591,46 @@ function resolveGeofenceForPlan(planKey) {
   return null;
 }
 
+function resolveGeofenceStatus(membershipType, pickupLocation, dropoffLocation) {
+  const planKey = normalizeMembershipPlan(membershipType || "basic");
+  const geofence = resolveGeofenceForPlan(planKey);
+
+  if (!geofence) {
+    return {
+      planKey,
+      geofence: null,
+      pickupInside: false,
+      dropoffInside: false,
+    };
+  }
+
+  const pickupInside =
+    hasValidLocation(pickupLocation) &&
+    isInsideCircle(
+      pickupLocation.lat,
+      pickupLocation.lng,
+      geofence.center.lat,
+      geofence.center.lng,
+      geofence.radiusMiles
+    );
+  const dropoffInside =
+    hasValidLocation(dropoffLocation) &&
+    isInsideCircle(
+      dropoffLocation.lat,
+      dropoffLocation.lng,
+      geofence.center.lat,
+      geofence.center.lng,
+      geofence.radiusMiles
+    );
+
+  return {
+    planKey,
+    geofence,
+    pickupInside,
+    dropoffInside,
+  };
+}
+
 function maxDistanceMilesFromCenter(locations = [], geofence) {
   if (!geofence) return Infinity;
   let maxMiles = 0;
@@ -619,41 +662,24 @@ function calculateRideChargeContext({
   dropoffLocation,
   totalCents,
 }) {
-  const normalizedPlan = normalizeMembershipPlan(membershipType || "basic");
+  const {
+    planKey: normalizedPlan,
+    geofence,
+    pickupInside,
+    dropoffInside,
+  } = resolveGeofenceStatus(membershipType, pickupLocation, dropoffLocation);
   const status = (membershipStatus || "none").toLowerCase();
   const amountCents = Math.max(0, Math.round(Number(totalCents) || 0));
 
   if (!amountCents) {
     return {
       amountCents: 0,
-      pickupInside: false,
-      dropoffInside: false,
+      pickupInside,
+      dropoffInside,
       geofenceName: null,
       surchargeCents: 0,
     };
   }
-
-  const geofence = resolveGeofenceForPlan(normalizedPlan);
-  const pickupInside =
-    geofence && hasValidLocation(pickupLocation)
-      ? isInsideCircle(
-          pickupLocation.lat,
-          pickupLocation.lng,
-          geofence.center.lat,
-          geofence.center.lng,
-          geofence.radiusMiles
-        )
-      : false;
-  const dropoffInside =
-    geofence && hasValidLocation(dropoffLocation)
-      ? isInsideCircle(
-          dropoffLocation.lat,
-          dropoffLocation.lng,
-          geofence.center.lat,
-          geofence.center.lng,
-          geofence.radiusMiles
-        )
-      : false;
 
   if (!geofence || status !== "active") {
     return {
@@ -1516,7 +1542,7 @@ exports.createRidePaymentIntent = functions
         "Estimated fare (totalCents) is required."
       );
     }
-    const totalCents = Math.max(0, Math.round(totalCentsInput));
+    const clientTotalCents = Math.max(0, Math.round(totalCentsInput));
 
     const pickupLocation =
       rideInput.pickupLocation ||
@@ -1548,6 +1574,35 @@ exports.createRidePaymentIntent = functions
       profile?.membershipType || profile?.membership || "basic"
     );
     const membershipStatus = profile?.membershipStatus || "none";
+    const membershipStatusNormalized = (membershipStatus || "none").toLowerCase();
+
+    const geofenceStatus = resolveGeofenceStatus(
+      membershipType,
+      pickupLocation,
+      dropoffLocation
+    );
+    const inHomeZone =
+      !!geofenceStatus.geofence &&
+      membershipStatusNormalized === "active" &&
+      geofenceStatus.pickupInside &&
+      geofenceStatus.dropoffInside;
+
+    const fareBreakdown = computeFareForMembership(
+      membershipType,
+      estimatedMinutes,
+      inHomeZone
+    );
+    const totalCents = Math.max(
+      0,
+      Math.round(((fareBreakdown?.total ?? 0) + Number.EPSILON) * 100)
+    );
+
+    if (Math.abs(totalCents - clientTotalCents) > 100) {
+      console.warn(
+        `[createRidePaymentIntent] Client fare mismatch for ${uid}: ` +
+          `client=${clientTotalCents} server=${totalCents}`
+      );
+    }
 
     const chargeContext = calculateRideChargeContext({
       membershipType,
@@ -1565,6 +1620,7 @@ exports.createRidePaymentIntent = functions
       dropoffLocation,
       amountCents: chargeContext.amountCents,
       totalCents,
+      fareBreakdown,
       chargeContext,
       estimatedDurationMinutes: estimatedMinutes,
     });

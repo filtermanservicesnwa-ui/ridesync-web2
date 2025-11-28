@@ -7,6 +7,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isDriver(userId) {
+      return isSignedIn() &&
+        request.auth.uid == userId &&
+        exists(/databases/$(database)/documents/drivers/$(userId));
+    }
+
     match /users/{userId} {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
@@ -21,12 +27,17 @@ service cloud.firestore {
 
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
 
-      allow update: if isSignedIn() && (
-        resource.data.userId == request.auth.uid ||
-        request.resource.data.userId == request.auth.uid ||
-        resource.data.driverId == request.auth.uid ||
-        request.resource.data.driverId == request.auth.uid
-      );
+      allow update: if isSignedIn() &&
+        request.resource.data.userId == resource.data.userId &&
+        (
+          resource.data.userId == request.auth.uid ||
+          resource.data.driverId == request.auth.uid ||
+          (
+            isDriver(request.auth.uid) &&
+            (!resource.data.driverId || resource.data.driverId == "") &&
+            request.resource.data.driverId == request.auth.uid
+          )
+        );
 
       allow delete: if false;
     }
