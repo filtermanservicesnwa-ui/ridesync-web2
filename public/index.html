@@ -3822,6 +3822,14 @@
       return null;
     }
 
+    function isLatLngLiteral(value) {
+      return (
+        !!value &&
+        Number.isFinite(value.lat) &&
+        Number.isFinite(value.lng)
+      );
+    }
+
     function ensureDestinationPreviewMap() {
       if (googleMapsLoadFailed) return;
       if (!destinationPreviewMapEl || destinationPreviewMap) return;
@@ -5494,16 +5502,57 @@
       }
     }
 
+    function buildRidePaymentPayload(rawPayload = {}) {
+      const payload = { ...rawPayload };
+      payload.pickupLocation =
+        latLngToLiteral(payload.pickupLocation) ||
+        latLngToLiteral(payload.fromLocation) ||
+        null;
+      payload.dropoffLocation =
+        latLngToLiteral(payload.dropoffLocation) ||
+        latLngToLiteral(payload.toLocation) ||
+        latLngToLiteral(payload.destinationLocation) ||
+        null;
+      payload.totalCents = Number(payload.totalCents);
+      payload.estimatedDurationMinutes = Number(payload.estimatedDurationMinutes);
+      delete payload.createdAt;
+      delete payload.updatedAt;
+
+      if (!isLatLngLiteral(payload.pickupLocation) || !isLatLngLiteral(payload.dropoffLocation)) {
+        throw new Error("Pickup and dropoff locations are required. Please refresh your route.");
+      }
+
+      if (!Number.isFinite(payload.totalCents)) {
+        throw new Error("Fare estimate missing. Please refresh the fare and try again.");
+      }
+
+      if (
+        !Number.isFinite(payload.estimatedDurationMinutes) ||
+        payload.estimatedDurationMinutes <= 0
+      ) {
+        throw new Error(
+          "Estimated ride duration missing. Please refresh the fare and try again."
+        );
+      }
+
+      payload.totalCents = Math.max(0, Math.round(payload.totalCents));
+      payload.estimatedDurationMinutes =
+        Math.round(payload.estimatedDurationMinutes * 10) / 10;
+
+      return payload;
+    }
+
     async function startRidePaymentFlow(ridePayload) {
+      const sanitizedRidePayload = buildRidePaymentPayload(ridePayload);
       let data;
       try {
-        const response = await createRidePaymentIntentFn({ ride: ridePayload });
+        const response = await createRidePaymentIntentFn({ ride: sanitizedRidePayload });
         data = response?.data || {};
       } catch (err) {
         throw handleCallableError("createRidePaymentIntent", err);
       }
       if (data.skipPayment && data.rideId) {
-        await activateRideAfterCreation(data.rideId, ridePayload);
+        await activateRideAfterCreation(data.rideId, sanitizedRidePayload);
         return;
       }
       if (!STRIPE_ENABLED) {
@@ -5532,7 +5581,7 @@
           type: "ride",
           pendingId: data.pendingId,
           paymentIntentId: data.paymentIntentId,
-          ridePayload,
+          ridePayload: sanitizedRidePayload,
         },
       });
       profileMessage.textContent =
@@ -5629,7 +5678,6 @@
       const rideBase = {
         userId: user.uid,
         startedByUserId: user.uid,
-        createdAt: serverTimestamp(),
         membershipType: plan,
         membershipStatus,
         isStudent,
@@ -5666,7 +5714,6 @@
 
       try {
         const ridePaymentPayload = { ...rideBase, status };
-        delete ridePaymentPayload.createdAt;
         await startRidePaymentFlow(ridePaymentPayload);
       } catch (err) {
         console.error("New ride error", err);
