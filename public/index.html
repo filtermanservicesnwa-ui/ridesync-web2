@@ -5631,7 +5631,19 @@
           }
         }, "image/png");
       });
-      const storagePath = `users/${user.uid}/membershipSignatures/${Date.now()}.png`;
+      // Ensure Firebase Auth is fully ready before uploading signature
+      const authReadyUser = await new Promise((resolve) => {
+        if (auth.currentUser) return resolve(auth.currentUser);
+        const unsub = onAuthStateChanged(auth, (u) => {
+          if (u) {
+            unsub();
+            resolve(u);
+          }
+        });
+      });
+
+      // Updated secure signature path (allowed by Storage rules)
+      const storagePath = `users/${authReadyUser.uid}/membershipSignatures/${Date.now()}.png`;
       const signatureRef = ref(storage, storagePath);
       await uploadBytes(signatureRef, blob, { contentType: "image/png" });
       const downloadUrl = await getDownloadURL(signatureRef);
