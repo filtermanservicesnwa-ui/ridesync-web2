@@ -2288,6 +2288,15 @@
       }
       return STRIPE_DEFAULT_PUBLISHABLE_KEY || null;
     }
+
+    // === RIDE SYNC STRIPE: DEBUG HELPERS ===
+    function logStripeDebug(label, payload) {
+      try {
+        console.log("[RideSync][Stripe]", label, payload);
+      } catch (_) {
+        // no-op: logging should never break the app
+      }
+    }
     function resolveClientSecret(payload = {}) {
       return payload?.clientSecret || payload?.client_secret || null;
     }
@@ -5925,6 +5934,12 @@
         throw new Error("Stripe payments are not available right now.");
       }
       const publishableKey = resolveStripePublishableKeyForMode(livemode);
+      logStripeDebug("ensureStripeInstance", {
+        livemode,
+        publishableKeyTail: publishableKey
+          ? publishableKey.slice(0, 10) + "..." + publishableKey.slice(-6)
+          : null,
+      });
       if (!publishableKey) {
         const modeLabel = livemode === false ? "test" : "live";
         const guidance =
@@ -5949,6 +5964,12 @@
       if (!paymentElementContainer) {
         throw new Error("Payment UI is unavailable.");
       }
+      logStripeDebug("mountStripePaymentElement: before ensureStripeInstance", {
+        livemode,
+        clientSecretTail: clientSecret
+          ? clientSecret.slice(0, 10) + "..." + clientSecret.slice(-6)
+          : null,
+      });
       const stripe = await ensureStripeInstance(livemode);
       if (stripePaymentElement) {
         stripePaymentElement.unmount();
@@ -5958,16 +5979,38 @@
       if (FORCE_DISABLE_GOOGLE_PAY) {
         elementOptions.wallets = { googlePay: "never" };
       }
-      stripeElements = stripe.elements(elementOptions);
-      stripePaymentElement = stripeElements.create("payment");
-      stripePaymentElement.mount(paymentElementContainer);
+      logStripeDebug("mountStripePaymentElement: creating elements", {
+        elementOptions,
+      });
+      try {
+        stripeElements = stripe.elements(elementOptions);
+        stripePaymentElement = stripeElements.create("payment");
+        stripePaymentElement.mount(paymentElementContainer);
+        logStripeDebug("mountStripePaymentElement: mounted", {});
+      } catch (err) {
+        console.error("Stripe PaymentElement mount failed", err);
+        throw err;
+      }
     }
 
     async function openPaymentOverlay(options = {}) {
       if (!options.clientSecret) {
         throw new Error("Stripe client secret missing.");
       }
-      await mountStripePaymentElement(options.clientSecret, options.livemode ?? null);
+      logStripeDebug("openPaymentOverlay", {
+        title: options.title,
+        contextType: options.context?.type,
+        livemode: options.livemode ?? null,
+        clientSecretTail: options.clientSecret
+          ? options.clientSecret.slice(0, 10) +
+            "..." +
+            options.clientSecret.slice(-6)
+          : null,
+      });
+      await mountStripePaymentElement(
+        options.clientSecret,
+        options.livemode ?? null
+      );
       activePaymentContext = options.context || null;
       activePaymentLivemode = options.livemode ?? null;
       if (paymentOverlayTitle) {
@@ -6174,11 +6217,37 @@
 
     async function startRidePaymentFlow(ridePayload) {
       const sanitizedRidePayload = buildRidePaymentPayload(ridePayload);
+      logStripeDebug("startRidePaymentFlow: payload", {
+        ridePayload,
+        sanitizedRidePayload,
+      });
       let data;
       try {
-        const response = await createRidePaymentIntentFn({ ride: sanitizedRidePayload });
+        const response = await createRidePaymentIntentFn({
+          ride: sanitizedRidePayload,
+        });
         data = response?.data || {};
+        logStripeDebug("createRidePaymentIntent: response", {
+          raw: response,
+          data,
+          clientSecretTail: data?.clientSecret
+            ? data.clientSecret.slice(0, 10) +
+              "..." +
+              data.clientSecret.slice(-6)
+            : data?.client_secret
+            ? data.client_secret.slice(0, 10) +
+              "..." +
+              data.client_secret.slice(-6)
+            : null,
+          livemode: data?.livemode ?? data?.liveMode ?? null,
+          amountCents: data?.amountCents ?? data?.amount_cents ?? null,
+        });
       } catch (err) {
+        logStripeDebug("createRidePaymentIntent: error", {
+          errorMessage: err?.message,
+          errorCode: err?.code,
+          errorDetails: err?.details ?? null,
+        });
         throw handleCallableError("createRidePaymentIntent", err);
       }
       const rideId = data.rideId || data.ride_id || null;
@@ -6191,7 +6260,8 @@
       }
       const clientSecret = resolveClientSecret(data);
       const pendingId = data.pendingId || data.pending_id || null;
-      const paymentIntentId = data.paymentIntentId || data.payment_intent_id || null;
+      const paymentIntentId =
+        data.paymentIntentId || data.payment_intent_id || null;
       if (!clientSecret || !pendingId) {
         throw new Error("Unable to start Stripe payment for this ride.");
       }
@@ -6210,18 +6280,17 @@
             ? `Membership covers the base fare. Pay ${formattedTotal} for the out-of-zone surcharge.`
             : subtitle;
       }
-      const paymentLivemode =
-        typeof data.livemode === "boolean"
-          ? data.livemode
-          : typeof data.liveMode === "boolean"
-          ? data.liveMode
-          : null;
       await openPaymentOverlay({
         title: "Confirm ride payment",
         subtitle,
         confirmLabel: `Pay ${formattedTotal}`,
         clientSecret,
-        livemode: paymentLivemode,
+        livemode:
+          typeof data.livemode === "boolean"
+            ? data.livemode
+            : typeof data.liveMode === "boolean"
+            ? data.liveMode
+            : null,
         context: {
           type: "ride",
           pendingId,
