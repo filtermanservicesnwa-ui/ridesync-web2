@@ -191,6 +191,84 @@
       display: flex;
       flex-direction: column;
     }
+    .destination-input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .destination-input-row input {
+      flex: 1;
+    }
+    .add-stop-button {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      border: 1px solid rgba(34,197,94,0.6);
+      background: rgba(34,197,94,0.1);
+      color: #bbf7d0;
+      font-size: 1.2rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+    .add-stop-button:focus-visible {
+      outline: 2px solid rgba(34,197,94,0.8);
+      outline-offset: 2px;
+    }
+    .add-stop-button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .extra-stops {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .extra-stops:empty {
+      margin-top: 0;
+    }
+    .extra-stop-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(15,23,42,0.8);
+      border-radius: 10px;
+      border: 1px solid rgba(148,163,184,0.35);
+      padding: 6px 8px;
+    }
+    .extra-stop-field input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #f8fafc;
+    }
+    .extra-stop-field input:focus {
+      outline: none;
+    }
+    .remove-stop-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 1px solid rgba(248,113,113,0.4);
+      background: rgba(2,6,23,0.85);
+      color: #fecaca;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+    .remove-stop-btn:focus-visible {
+      outline: 2px solid rgba(248,113,113,0.5);
+      outline-offset: 2px;
+    }
+    .extra-stop-hint {
+      margin-top: 6px;
+      color: #94a3b8;
+    }
     .trip-map-preview {
       position: relative;
       min-height: 180px;
@@ -515,6 +593,14 @@
       margin: 4px 0 0;
       font-size: 0.9rem;
       color: #9ca3af;
+    }
+    .payment-fare-summary {
+      border-top: 1px solid rgba(148,163,184,0.25);
+      padding-top: 8px;
+      margin-top: -4px;
+    }
+    .fare-extra-stops {
+      margin-top: 6px;
     }
 
     .top-right {
@@ -1202,7 +1288,22 @@
         <div class="trip-builder-fields">
           <div class="trip-field">
             <label for="destination">Where are you going?</label>
-            <input id="destination" type="text" placeholder="Enter destination address" />
+            <div class="destination-input-row">
+              <input id="destination" type="text" placeholder="Enter destination address" />
+              <button
+                id="addStopButton"
+                type="button"
+                class="add-stop-button"
+                aria-label="Add an extra stop"
+                title="Add an extra stop"
+              >
+                +
+              </button>
+            </div>
+            <div class="small extra-stop-hint">
+              Need multiple stops? Tap + to add them before syncing your destination.
+            </div>
+            <div id="extraStopsContainer" class="extra-stops"></div>
           </div>
           <div id="ridersSection" class="trip-field">
             <label for="numRiders">Number of riders</label>
@@ -1235,35 +1336,10 @@
         <div id="poolGroupList"></div>
       </div>
 
-      <div class="section-title">Estimated fare</div>
-      <div class="fare-box">
-        <div id="fareNotReady" class="small">
-          Set a destination to see estimated time, distance, and total.
-        </div>
-        <div id="fareReady" style="display:none;">
-          <div class="fare-row">
-            <div class="fare-label">Time</div>
-            <div class="fare-value" id="fareTime"></div>
-          </div>
-          <div class="fare-row">
-            <div class="fare-label">Distance</div>
-            <div class="fare-value" id="fareDistance"></div>
-          </div>
-          <div class="fare-row">
-            <div class="fare-label">Plan</div>
-            <div class="fare-value" id="fareMembership"></div>
-          </div>
-          <div class="fare-row">
-            <div class="fare-label">Total (incl. fees)</div>
-            <div class="fare-total" id="fareTotal"></div>
-          </div>
-        </div>
-      </div>
-
       <div class="fare-box rider-action-box">
         <div class="rider-action-header">Account &amp; ride actions</div>
         <div class="rider-action-buttons">
-          <button id="syncButton" class="btn-primary">Sync &amp; Pay</button>
+          <button id="syncButton" class="btn-primary">Sync destination</button>
           <button id="logoutButton" class="btn-secondary">Log out</button>
         </div>
         <div id="driverAvailabilityNotice" class="small"></div>
@@ -1706,6 +1782,33 @@
         >
           Cancel
         </button>
+      </div>
+      <div id="paymentFareSummary" class="payment-fare-summary" aria-live="polite">
+        <div class="section-title" style="margin-bottom:4px;">Fare summary</div>
+        <div class="fare-box" style="margin-bottom:0;">
+          <div id="fareNotReady" class="small">
+            Choose your destination first to calculate time, distance, and total.
+          </div>
+          <div id="fareReady" style="display:none;">
+            <div class="fare-row">
+              <div class="fare-label">Time</div>
+              <div class="fare-value" id="fareTime"></div>
+            </div>
+            <div class="fare-row">
+              <div class="fare-label">Distance</div>
+              <div class="fare-value" id="fareDistance"></div>
+            </div>
+            <div class="fare-row">
+              <div class="fare-label">Plan</div>
+              <div class="fare-value" id="fareMembership"></div>
+            </div>
+            <div class="fare-row">
+              <div class="fare-label">Total (incl. fees)</div>
+              <div class="fare-total" id="fareTotal"></div>
+            </div>
+            <div id="fareExtraStops" class="fare-extra-stops"></div>
+          </div>
+        </div>
       </div>
       <div id="paymentElement"></div>
       <button
@@ -2303,17 +2406,21 @@
 
     const mapEl = document.getElementById("map");
     const destinationEl = document.getElementById("destination");
+    const addStopButton = document.getElementById("addStopButton");
+    const extraStopsContainer = document.getElementById("extraStopsContainer");
     const numRidersEl = document.getElementById("numRiders");
     const ridersSection = document.getElementById("ridersSection");
     const tripMapPreviewEl = document.getElementById("tripMapPreview");
     const destinationPreviewMapEl = document.getElementById("destinationPreviewMap");
     const destinationPreviewEmptyEl = document.getElementById("destinationPreviewEmpty");
+    const paymentFareSummary = document.getElementById("paymentFareSummary");
     const fareNotReady = document.getElementById("fareNotReady");
     const fareReady = document.getElementById("fareReady");
     const fareTime = document.getElementById("fareTime");
     const fareDistance = document.getElementById("fareDistance");
     const fareMembership = document.getElementById("fareMembership");
     const fareTotal = document.getElementById("fareTotal");
+    const fareExtraStops = document.getElementById("fareExtraStops");
     const syncButton = document.getElementById("syncButton");
     const logoutButton = document.getElementById("logoutButton");
 
@@ -2485,6 +2592,9 @@
       "pool_searching",
       "pooled_pending_driver"
     ]);
+    const MAX_EXTRA_STOPS = 3;
+    let extraStopIdCounter = 0;
+    const extraStopsState = [];
     const DRIVER_BUSY_STATUSES = [
       "driver_assigned",
       "arrived_at_pickup",
@@ -3436,34 +3546,22 @@
       if (!hasOnlineDrivers) {
         syncButton.textContent = joinMode
           ? "Join Ride (notify drivers)"
-          : "Sync & Notify Drivers";
+          : "Sync destination (notify drivers)";
         return;
       }
       if (joinMode) {
         syncButton.textContent = "Join Ride";
         return;
       }
-      const plan = normalizePlanKey(
-        currentUserProfile?.membershipType || currentUserProfile?.membership || "basic"
-      );
-      const membershipStatus = currentUserProfile?.membershipStatus || "none";
-      const inHomeZone = !!(lastRideMetrics?.inHomeZone);
-      const unlimitedActive = isUnlimitedMembershipActive(plan, membershipStatus);
-      if (!unlimitedActive) {
-        syncButton.textContent = "Sync & Pay";
-      } else if (plan === "uofa_unlimited" || plan === "nwa_unlimited") {
-        syncButton.textContent = inHomeZone ? "Sync & Ride" : "Sync & Pay";
-      } else {
-        syncButton.textContent = "Sync & Pay";
-      }
+      syncButton.textContent = "Sync destination";
     }
 
     function setDriverAvailabilityState(hasDriversOnline) {
       hasOnlineDrivers = !!hasDriversOnline;
       if (driverAvailabilityNotice) {
         driverAvailabilityNotice.textContent = hasOnlineDrivers
-          ? "Drivers are online. Tap Sync to request a ride."
-          : "No drivers are online right now. Tap Sync to notify them and we'll queue your ride.";
+          ? "Drivers are online. Tap Sync destination to request a ride."
+          : "No drivers are online right now. Tap Sync destination to notify them and we'll queue your ride.";
       }
       updateSyncButtonLabel();
     }
@@ -3638,6 +3736,15 @@
       showAuthView();
       updateCancelButtonVisibility();
     });
+
+    updateAddStopAvailability();
+    renderFareExtraStops();
+
+    if (addStopButton) {
+      addStopButton.addEventListener("click", () => {
+        addExtraStopField();
+      });
+    }
 
     if (destinationEl) {
       destinationEl.addEventListener("input", () => {
@@ -4011,6 +4118,164 @@
       }
     }
 
+    function updateAddStopAvailability() {
+      if (!addStopButton) return;
+      const isFull = extraStopsState.length >= MAX_EXTRA_STOPS;
+      addStopButton.disabled = isFull;
+      addStopButton.setAttribute("aria-disabled", isFull ? "true" : "false");
+    }
+
+    function renderFareExtraStops() {
+      if (!fareExtraStops) return;
+      fareExtraStops.innerHTML = "";
+      const visibleStops = extraStopsState.filter((stop) =>
+        stop.inputEl && stop.inputEl.value.trim()
+      );
+      if (!visibleStops.length) {
+        fareExtraStops.style.display = "none";
+        return;
+      }
+      fareExtraStops.style.display = "block";
+      visibleStops.forEach((stop, index) => {
+        const row = document.createElement("div");
+        row.className = "fare-row";
+        const label = document.createElement("div");
+        label.className = "fare-label";
+        label.textContent = `Extra stop ${index + 1}`;
+        const value = document.createElement("div");
+        value.className = "fare-value";
+        value.textContent = stop.inputEl.value.trim();
+        row.appendChild(label);
+        row.appendChild(value);
+        fareExtraStops.appendChild(row);
+      });
+    }
+
+    function setupExtraStopAutocomplete(stopEntry) {
+      if (!stopEntry || stopEntry.autocomplete) return;
+      if (googleMapsLoadFailed) return;
+      if (!window.google || !google.maps || !google.maps.places) return;
+      stopEntry.autocomplete = new google.maps.places.Autocomplete(stopEntry.inputEl, {
+        types: ["geocode"],
+        componentRestrictions: { country: "us" }
+      });
+      stopEntry.autocomplete.addListener("place_changed", () => {
+        const place = stopEntry.autocomplete?.getPlace();
+        if (!place || !place.geometry || !place.geometry.location) {
+          stopEntry.location = null;
+          return;
+        }
+        const literal = latLngToLiteral(place.geometry.location);
+        stopEntry.location = literal;
+        stopEntry.label =
+          place.formatted_address || place.name || stopEntry.inputEl.value.trim();
+        stopEntry.inputEl.value = stopEntry.label;
+        renderFareExtraStops();
+        updateRouteAndFare();
+      });
+    }
+
+    function addExtraStopField(options = {}) {
+      if (!extraStopsContainer) return null;
+      if (extraStopsState.length >= MAX_EXTRA_STOPS) return null;
+      extraStopIdCounter += 1;
+      const stopId = `extra-stop-${extraStopIdCounter}`;
+      const wrapper = document.createElement("div");
+      wrapper.className = "extra-stop-field";
+      wrapper.dataset.stopId = stopId;
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "extra-stop-input";
+      input.placeholder = "Extra stop address";
+      input.setAttribute("aria-label", `Extra stop ${extraStopsState.length + 1}`);
+
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "remove-stop-btn";
+      removeButton.setAttribute("aria-label", "Remove stop");
+      removeButton.textContent = "x";
+
+      wrapper.appendChild(input);
+      wrapper.appendChild(removeButton);
+      extraStopsContainer.appendChild(wrapper);
+
+      const stopEntry = {
+        id: stopId,
+        wrapper,
+        inputEl: input,
+        removeButton,
+        autocomplete: null,
+        location: null,
+        label: ""
+      };
+      extraStopsState.push(stopEntry);
+
+      input.addEventListener("input", () => {
+        stopEntry.location = null;
+        stopEntry.label = input.value.trim();
+        renderFareExtraStops();
+        updateRouteAndFare();
+      });
+      removeButton.addEventListener("click", () => removeExtraStop(stopEntry.id));
+
+      setupExtraStopAutocomplete(stopEntry);
+      updateAddStopAvailability();
+      renderFareExtraStops();
+
+      if (options.focus !== false) {
+        setTimeout(() => input.focus(), 0);
+      }
+
+      return stopEntry;
+    }
+
+    function removeExtraStop(stopId) {
+      const targetIndex = extraStopsState.findIndex((stop) => stop.id === stopId);
+      if (targetIndex === -1) return;
+      const [entry] = extraStopsState.splice(targetIndex, 1);
+      if (entry?.wrapper?.parentNode) {
+        entry.wrapper.parentNode.removeChild(entry.wrapper);
+      }
+      if (entry) {
+        entry.autocomplete = null;
+      }
+      updateAddStopAvailability();
+      renderFareExtraStops();
+      updateRouteAndFare();
+    }
+
+    function getExtraStopWaypoints() {
+      return extraStopsState
+        .map((stop) => stop.location)
+        .filter((loc) => isLatLngLiteral(loc));
+    }
+
+    function collectExtraStopsForRide() {
+      const collected = [];
+      extraStopsState.forEach((stop, index) => {
+        if (!stop.inputEl) {
+          return;
+        }
+        const label = stop.inputEl.value.trim();
+        if (!label) {
+          return;
+        }
+        const literal = latLngToLiteral(stop.location);
+        if (!isLatLngLiteral(literal)) {
+          throw new Error(
+            `Confirm extra stop ${index + 1} by selecting an address from the list.`
+          );
+        }
+        collected.push({
+          order: index + 1,
+          label,
+          location: literal
+        });
+      });
+      return collected;
+    }
+
     function latLngToLiteral(value) {
       if (!value) return null;
       if (typeof value.lat === "function" && typeof value.lng === "function") {
@@ -4141,17 +4406,30 @@
         destination: destinationLatLng,
         travelMode: google.maps.TravelMode.DRIVING
       };
+      const waypointLocations = getExtraStopWaypoints();
+      if (waypointLocations.length) {
+        request.waypoints = waypointLocations.map((loc) => ({
+          location: loc,
+          stopover: true
+        }));
+      }
 
       directionsService.route(request, (result, status) => {
-        if (status !== "OK") {
+        if (status !== "OK" || !result?.routes?.length) {
           console.warn("Directions failed", status);
           return;
         }
         directionsRenderer.setDirections(result);
 
-        const leg = result.routes[0].legs[0];
-        const totalDurationSec = leg.duration.value;
-        const totalDistanceMeters = leg.distance.value;
+        const legs = result.routes[0].legs || [];
+        const totalDurationSec = legs.reduce(
+          (sum, leg) => sum + (leg?.duration?.value || 0),
+          0
+        );
+        const totalDistanceMeters = legs.reduce(
+          (sum, leg) => sum + (leg?.distance?.value || 0),
+          0
+        );
 
         const minutes = totalDurationSec / 60;
         const plan = normalizePlanKey(
@@ -4176,7 +4454,18 @@
             );
             inHomeZone =
               distFromCenterPickup <= NWA_RADIUS_MILES &&
-              distFromCenterDest <= NWA_RADIUS_MILES;
+              distFromCenterDest <= NWA_RADIUS_MILES &&
+              waypointLocations.every((loc) => {
+                if (!loc) return false;
+                return (
+                  haversineDistanceMiles(
+                    NWA_CENTER.lat,
+                    NWA_CENTER.lng,
+                    Number(loc.lat),
+                    Number(loc.lng)
+                  ) <= NWA_RADIUS_MILES
+                );
+              });
           }
         }
 
@@ -4190,12 +4479,24 @@
           membershipLabel: fareInfo.membershipLabel
         };
 
-        fareNotReady.style.display = "none";
-        fareReady.style.display = "block";
-        fareTime.textContent = `${minutes.toFixed(1)} min`;
-        fareDistance.textContent = `${(totalDistanceMeters / 1609.34).toFixed(2)} mi`;
-        fareMembership.textContent = fareInfo.membershipLabel;
-        fareTotal.textContent = `$${fareInfo.total.toFixed(2)}`;
+        if (fareNotReady) {
+          fareNotReady.style.display = "none";
+        }
+        if (fareReady) {
+          fareReady.style.display = "block";
+        }
+        if (fareTime) {
+          fareTime.textContent = `${minutes.toFixed(1)} min`;
+        }
+        if (fareDistance) {
+          fareDistance.textContent = `${(totalDistanceMeters / 1609.34).toFixed(2)} mi`;
+        }
+        if (fareMembership) {
+          fareMembership.textContent = fareInfo.membershipLabel;
+        }
+        if (fareTotal) {
+          fareTotal.textContent = `$${fareInfo.total.toFixed(2)}`;
+        }
 
         updateSyncButtonLabel();
         updateTripPreviewMap();
@@ -4236,6 +4537,9 @@
         numRidersEl.value = "1";
         numRidersEl.disabled = false;
       }
+      [...extraStopsState].forEach((stop) => removeExtraStop(stop.id));
+      updateAddStopAvailability();
+      renderFareExtraStops();
     }
 
     function clearPoolGroupUI() {
@@ -5596,6 +5900,10 @@
       }
       paymentOverlay?.classList.add("active");
       paymentOverlay?.setAttribute("aria-hidden", "false");
+      if (paymentFareSummary) {
+        paymentFareSummary.style.display =
+          options.context?.type === "ride" ? "" : "none";
+      }
     }
 
     function closePaymentOverlay() {
@@ -5729,6 +6037,26 @@
         latLngToLiteral(payload.toLocation) ||
         latLngToLiteral(payload.destinationLocation) ||
         null;
+      if (Array.isArray(payload.extraStops)) {
+        payload.extraStops = payload.extraStops
+          .map((stop, index) => {
+            if (!stop) return null;
+            const label = typeof stop.label === "string" ? stop.label.trim() : "";
+            const location = latLngToLiteral(stop.location);
+            if (!label || !isLatLngLiteral(location)) {
+              return null;
+            }
+            return {
+              order: Number.isFinite(stop.order) ? stop.order : index + 1,
+              label,
+              location
+            };
+          })
+          .filter(Boolean);
+        if (!payload.extraStops.length) {
+          delete payload.extraStops;
+        }
+      }
       payload.totalCents = Number(payload.totalCents);
       payload.estimatedDurationMinutes = Number(payload.estimatedDurationMinutes);
       delete payload.createdAt;
@@ -5898,6 +6226,13 @@
         profileError.textContent = "Missing pickup or dropoff location.";
         return;
       }
+      let extraStopsPayload = [];
+      try {
+        extraStopsPayload = collectExtraStopsForRide();
+      } catch (stopErr) {
+        profileError.textContent = stopErr.message;
+        return;
+      }
 
       const rideBase = {
         userId: user.uid,
@@ -5935,6 +6270,13 @@
         dropoffCode,
         dropoffPin: dropoffCode
       };
+      if (extraStopsPayload.length) {
+        rideBase.extraStops = extraStopsPayload.map((stop) => ({
+          order: stop.order,
+          label: stop.label,
+          location: stop.location
+        }));
+      }
 
       try {
         const ridePaymentPayload = { ...rideBase, status };
@@ -6180,6 +6522,7 @@
           return;
         }
         setupDestinationAutocomplete();
+        extraStopsState.forEach((stop) => setupExtraStopAutocomplete(stop));
       }
 
     window.addEventListener("beforeunload", () => {
