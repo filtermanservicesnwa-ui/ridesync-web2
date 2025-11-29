@@ -93,8 +93,15 @@
       font-size: 0.95rem;
       font-weight: 600;
       margin-top: 4px;
+      transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
     .btn-primary { background: #22c55e; color: #022c22; }
+    .btn-danger { background: #dc2626; color: #fee2e2; }
+    .btn-success { background: #16a34a; color: #022c22; }
     .btn-secondary {
       background: #020617;
       color: #e5e7eb;
@@ -516,6 +523,7 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
+      margin-top: 0;
     }
     .membership-plan.active {
       border-color: #22c55e;
@@ -535,6 +543,38 @@
     }
     .membership-plan button {
       margin-top: auto;
+    }
+    .membership-plan-card {
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+      text-align: left;
+    }
+    .membership-plan-card:hover {
+      border-color: #22c55e;
+      background: rgba(34,197,94,0.12);
+    }
+    .membership-plan-card:focus-visible {
+      outline: 2px solid #22c55e;
+      outline-offset: 3px;
+    }
+    .membership-terms-content {
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(2,6,23,0.9);
+      padding: 14px;
+      max-height: min(60vh, 420px);
+      overflow-y: auto;
+      margin: 12px 0;
+      scroll-behavior: smooth;
+    }
+    .membership-terms-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 6px;
+    }
+    .membership-terms-footer label {
+      margin: 0;
     }
 
     .payment-overlay {
@@ -1872,44 +1912,57 @@
         Choose the unlimited plan that matches your coverage zone.
       </p>
       <div class="membership-plan-grid" style="margin-top:12px;">
-        <div
-          class="membership-plan"
-          data-membership-option="uofa_unlimited"
+        <button
+          class="membership-plan membership-plan-card"
+          type="button"
+          data-membership-option="basic"
         >
-          <div class="membership-plan-title">U of A Unlimited</div>
-          <div class="membership-plan-price">$80 / month</div>
+          <div class="membership-plan-title">Basic Membership</div>
+          <div class="membership-plan-price" data-plan-price="basic">
+            Pay per ride
+          </div>
           <p class="membership-plan-desc">
-            Unlimited Fayetteville rides. Out-of-zone trips bill a surcharge.
+            Standard pay-as-you-go pricing with no monthly commitment.
           </p>
-        </div>
-        <div
-          class="membership-plan"
+        </button>
+        <button
+          class="membership-plan membership-plan-card"
+          type="button"
           data-membership-option="nwa_unlimited"
         >
           <div class="membership-plan-title">NWA Unlimited</div>
-          <div class="membership-plan-price">$120 / month</div>
+          <div class="membership-plan-price" data-plan-price="nwa_unlimited">
+            $120 / month
+          </div>
           <p class="membership-plan-desc">
-            Unlimited rides inside the 30-mile NWA radius.
+            Unlimited rides inside the 30-mile NWA service radius.
           </p>
-        </div>
+        </button>
+        <button
+          class="membership-plan membership-plan-card"
+          type="button"
+          data-membership-option="uofa_unlimited"
+        >
+          <div class="membership-plan-title">U of A Unlimited</div>
+          <div class="membership-plan-price" data-plan-price="uofa_unlimited">
+            $80 / month
+          </div>
+          <p class="membership-plan-desc">
+            Unlimited Fayetteville rides with out-of-zone surcharges.
+          </p>
+        </button>
       </div>
       <div id="membershipSelectionError" class="error"></div>
       <button
-        id="membershipSelectionContinue"
+        id="membershipTermsButton"
         type="button"
-        class="btn-primary"
-        style="margin-top:12px;"
+        class="btn-danger"
+        style="margin-top:18px;"
+        disabled
       >
-        Continue
+        Terms of Agreement
       </button>
-      <button
-        id="membershipSelectionBasic"
-        type="button"
-        class="btn-secondary btn-small"
-        style="margin-top:8px;"
-      >
-        Switch to Basic
-      </button>
+      <div id="membershipTermsError" class="error"></div>
     </div>
   </div>
   <!-- === RIDE SYNC STRIPE: END membership selection overlay === -->
@@ -1928,57 +1981,47 @@
           Close
         </button>
       </div>
-      <div class="fare-box" style="max-height:40vh;overflow:auto;">
-        <p>
-          These membership terms describe unlimited ride coverage, billing
-          schedule, and cancellation policies. Review the full details before
-          accepting. (Placeholder copy – update anytime.)
-        </p>
-        <ul style="padding-left:18px;line-height:1.6;">
-          <li>Monthly dues bill immediately via Stripe.</li>
-          <li>Unlimited zone rides are included; surcharges apply outside.</li>
-          <li>Cancel anytime; billing stops at the next cycle.</li>
-        </ul>
-      </div>
-      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;">
-        <input id="membershipTermsCheckbox" type="checkbox" />
-        <span>I have read and agree to the Membership Terms.</span>
-      </label>
-      <div style="margin-top:12px;">
-        <div class="membership-subtitle" style="margin-bottom:6px;">
-          Signature
-        </div>
-        <canvas
-          id="membershipSignatureCanvas"
-          width="600"
-          height="180"
-          style="
-            width:100%;
-            height:180px;
-            border:1px dashed rgba(148,163,184,0.5);
-            border-radius:12px;
-            background:#0f172a;
-          "
-        ></canvas>
-        <button
-          id="membershipSignatureClear"
-          type="button"
-          class="btn-secondary btn-small"
-          style="margin-top:8px;"
-        >
-          Clear signature
-        </button>
-      </div>
-      <button
-        id="membershipTermsAccept"
-        type="button"
-        class="btn-primary"
-        style="margin-top:12px;"
-        disabled
+      <div
+        id="membershipTermsContent"
+        class="membership-terms-content"
+        tabindex="0"
+        aria-label="Membership terms"
       >
-        Accept & continue to payment
-      </button>
-      <div id="membershipTermsError" class="error"></div>
+        <h4 style="margin-top:0;">Unlimited Membership Terms</h4>
+        <p>
+          Unlimited plans provide predictable monthly billing and zone-based
+          ride coverage. Please review these terms in full before accepting.
+        </p>
+        <p>
+          Charges begin immediately when you activate a membership. Each
+          billing cycle renews on the same date monthly. Memberships can be
+          canceled at any time from the app; cancellation stops future billing
+          but does not refund the current cycle.
+        </p>
+        <p>
+          Unlimited coverage applies to the service zone for the plan you
+          select. Trips outside that zone incur the published per-minute
+          overage rate. Abuse, sharing rides with non-members, or fraudulent
+          disputes may lead to membership suspension.
+        </p>
+        <p>
+          By accepting you authorize Stripe to process the payment method
+          supplied. Data is handled under our Privacy Policy. Contact support
+          if you need accommodation before activation.
+        </p>
+        <p>
+          Scroll to the bottom of this panel to enable the acceptance checkbox.
+        </p>
+      </div>
+      <div class="membership-terms-footer">
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input id="membershipTermsCheckbox" type="checkbox" disabled />
+          <span>I have read and agree to the Membership Terms.</span>
+        </label>
+        <p class="membership-subtitle" style="margin:0;">
+          The checkbox unlocks after you view the entire agreement.
+        </p>
+      </div>
     </div>
   </div>
   <!-- === RIDE SYNC STRIPE: END membership terms overlay === -->
@@ -2365,20 +2408,13 @@
     const membershipSelectionOptions = document.querySelectorAll(
       "[data-membership-option]"
     );
-    const membershipSelectionContinue = document.getElementById(
-      "membershipSelectionContinue"
-    );
-    const membershipSelectionBasic = document.getElementById("membershipSelectionBasic");
     const membershipSelectionError = document.getElementById("membershipSelectionError");
+    const membershipTermsButton = document.getElementById("membershipTermsButton");
     const membershipTermsOverlay = document.getElementById("membershipTermsOverlay");
     const membershipTermsClose = document.getElementById("membershipTermsClose");
+    const membershipTermsContent = document.getElementById("membershipTermsContent");
     const membershipTermsCheckbox = document.getElementById("membershipTermsCheckbox");
-    const membershipTermsAccept = document.getElementById("membershipTermsAccept");
     const membershipTermsError = document.getElementById("membershipTermsError");
-    const membershipSignatureCanvas = document.getElementById(
-      "membershipSignatureCanvas"
-    );
-    const membershipSignatureClear = document.getElementById("membershipSignatureClear");
 
     const riderEmailDetailEl = document.getElementById("riderEmailDetail");
     const riderPhoneDetailEl = document.getElementById("riderPhoneDetail");
@@ -2561,10 +2597,9 @@
     let isSignupMode = false;
     let currentUserProfile = null;
     let pendingMembershipPlanId = null;
-    let membershipSignatureCtx = null;
-    let membershipSignatureDrawing = false;
-    let membershipSignatureHasInk = false;
     let membershipTermsProcessing = false;
+    let membershipTermsAcknowledged = false;
+    let membershipTermsScrollComplete = false;
 
     let map;
     let directionsService;
@@ -5476,14 +5511,62 @@
       }
     }
 
+    function setMembershipTermsAcknowledged(value) {
+      membershipTermsAcknowledged = Boolean(value);
+      if (!membershipTermsAcknowledged) {
+        membershipTermsScrollComplete = false;
+      }
+      updateMembershipTermsButtonState();
+    }
+
+    function updateMembershipTermsButtonState() {
+      if (!membershipTermsButton) return;
+      const hasPlan = Boolean(pendingMembershipPlanId);
+      const nextLabel = membershipTermsAcknowledged ? "Accept & Pay" : "Terms of Agreement";
+      membershipTermsButton.textContent = nextLabel;
+      membershipTermsButton.disabled = !hasPlan || membershipTermsProcessing;
+      membershipTermsButton.classList.toggle("btn-success", membershipTermsAcknowledged);
+      membershipTermsButton.classList.toggle("btn-danger", !membershipTermsAcknowledged);
+    }
+
+    function resetMembershipTermsScrollState() {
+      membershipTermsScrollComplete = false;
+      if (membershipTermsCheckbox) {
+        membershipTermsCheckbox.checked = false;
+        membershipTermsCheckbox.disabled = true;
+      }
+      if (membershipTermsContent) {
+        membershipTermsContent.scrollTop = 0;
+      }
+    }
+
+    function maybeUnlockMembershipTermsCheckbox() {
+      if (!membershipTermsContent || !membershipTermsCheckbox) return;
+      if (membershipTermsScrollComplete) return;
+      const remaining =
+        membershipTermsContent.scrollHeight -
+        membershipTermsContent.scrollTop -
+        membershipTermsContent.clientHeight;
+      if (remaining <= 4 || membershipTermsContent.scrollHeight <= membershipTermsContent.clientHeight + 1) {
+        membershipTermsScrollComplete = true;
+        membershipTermsCheckbox.disabled = false;
+      }
+    }
+
+    updateMembershipTermsButtonState();
+
     function resetMembershipSelectionState() {
       membershipSelectionOptions?.forEach?.((node) => {
         node.classList.remove("active");
       });
+      pendingMembershipPlanId = null;
       if (membershipSelectionError) {
         membershipSelectionError.textContent = "";
       }
-      pendingMembershipPlanId = null;
+      if (membershipTermsError) {
+        membershipTermsError.textContent = "";
+      }
+      setMembershipTermsAcknowledged(false);
     }
 
     function openMembershipSelectionOverlayUI() {
@@ -5492,6 +5575,7 @@
         return;
       }
       resetMembershipSelectionState();
+      updateMembershipTermsButtonState();
       toggleOverlay(membershipSelectionOverlay, true, membershipSelectionClose);
     }
 
@@ -5511,114 +5595,48 @@
       if (membershipSelectionError) {
         membershipSelectionError.textContent = "";
       }
-    }
-
-    function resizeMembershipSignatureCanvas() {
-      if (!membershipSignatureCanvas) return;
-      const rect = membershipSignatureCanvas.getBoundingClientRect();
-      const ratio = window.devicePixelRatio || 1;
-      membershipSignatureCanvas.width = rect.width * ratio;
-      membershipSignatureCanvas.height = rect.height * ratio;
-      membershipSignatureCtx = membershipSignatureCanvas.getContext("2d");
-      membershipSignatureCtx.setTransform(1, 0, 0, 1, 0, 0);
-      membershipSignatureCtx.scale(ratio, ratio);
-      membershipSignatureCtx.lineWidth = 2.4;
-      membershipSignatureCtx.strokeStyle = "#f97316";
-      membershipSignatureCtx.lineCap = "round";
-      membershipSignatureCtx.lineJoin = "round";
-      membershipSignatureCtx.clearRect(0, 0, rect.width, rect.height);
-      membershipSignatureHasInk = false;
-      updateMembershipTermsAcceptState();
-    }
-
-    function updateMembershipTermsAcceptState() {
-      if (!membershipTermsAccept) return;
-      // Only require that the terms checkbox is checked.
-      // Signature is now optional and no longer blocks accepting the terms.
-      const canAccept =
-        membershipTermsCheckbox?.checked && !membershipTermsProcessing;
-      membershipTermsAccept.disabled = !canAccept;
-    }
-
-    function clearMembershipSignatureCanvas() {
-      if (!membershipSignatureCanvas || !membershipSignatureCtx) return;
-      membershipSignatureCtx.clearRect(
-        0,
-        0,
-        membershipSignatureCanvas.width,
-        membershipSignatureCanvas.height
-      );
-      membershipSignatureHasInk = false;
-      updateMembershipTermsAcceptState();
-    }
-
-    function attachSignatureListeners() {
-      if (!membershipSignatureCanvas) return;
-      const getPoint = (evt) => {
-        const rect = membershipSignatureCanvas.getBoundingClientRect();
-        const clientX =
-          evt.touches && evt.touches.length ? evt.touches[0].clientX : evt.clientX;
-        const clientY =
-          evt.touches && evt.touches.length ? evt.touches[0].clientY : evt.clientY;
-        return { x: clientX - rect.left, y: clientY - rect.top };
-      };
-      const start = (evt) => {
-        if (!membershipSignatureCtx) return;
-        evt.preventDefault();
-        membershipSignatureDrawing = true;
-        const point = getPoint(evt);
-        membershipSignatureCtx.beginPath();
-        membershipSignatureCtx.moveTo(point.x, point.y);
-      };
-      const move = (evt) => {
-        if (!membershipSignatureDrawing || !membershipSignatureCtx) return;
-        evt.preventDefault();
-        const point = getPoint(evt);
-        membershipSignatureCtx.lineTo(point.x, point.y);
-        membershipSignatureCtx.stroke();
-        membershipSignatureHasInk = true;
-        updateMembershipTermsAcceptState();
-      };
-      const end = () => {
-        if (!membershipSignatureDrawing || !membershipSignatureCtx) return;
-        membershipSignatureDrawing = false;
-        membershipSignatureCtx.closePath();
-      };
-      ["mousedown", "touchstart"].forEach((eventName) => {
-        membershipSignatureCanvas.addEventListener(eventName, start, { passive: false });
-      });
-      ["mousemove", "touchmove"].forEach((eventName) => {
-        membershipSignatureCanvas.addEventListener(eventName, move, { passive: false });
-      });
-      ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach((eventName) => {
-        membershipSignatureCanvas.addEventListener(eventName, end, { passive: false });
-      });
+      if (membershipTermsError) {
+        membershipTermsError.textContent = "";
+      }
+      setMembershipTermsAcknowledged(false);
     }
 
     function openMembershipTermsOverlayUI() {
       if (!pendingMembershipPlanId) return;
-      if (membershipTermsCheckbox) {
-        membershipTermsCheckbox.checked = false;
-      }
+      resetMembershipTermsScrollState();
       if (membershipTermsError) {
         membershipTermsError.textContent = "";
       }
       toggleOverlay(membershipTermsOverlay, true, membershipTermsClose);
       requestAnimationFrame(() => {
-        resizeMembershipSignatureCanvas();
+        maybeUnlockMembershipTermsCheckbox();
       });
-      updateMembershipTermsAcceptState();
     }
 
     function closeMembershipTermsOverlayUI() {
       toggleOverlay(membershipTermsOverlay, false);
-      membershipTermsProcessing = false;
-      updateMembershipTermsAcceptState();
     }
 
-    async function persistMembershipTermsSignature() {
-      // Signature capture has been removed. We now just record that the
-      // user accepted the membership terms by checking the box.
+    function handleMembershipTermsScroll() {
+      maybeUnlockMembershipTermsCheckbox();
+    }
+
+    function handleMembershipTermsCheckboxChange(event) {
+      if (!event?.target?.checked) {
+        return;
+      }
+      setMembershipTermsAcknowledged(true);
+      if (membershipTermsError) {
+        membershipTermsError.textContent = "";
+      }
+      closeMembershipTermsOverlayUI();
+      requestAnimationFrame(() => {
+        membershipTermsButton?.focus?.();
+      });
+    }
+
+    async function recordMembershipTermsAcceptance() {
+      // Record that the user has viewed and accepted the membership terms.
       const user = auth.currentUser;
       if (!user) {
         throw new Error("Log in to continue.");
@@ -5699,22 +5717,26 @@
       setMembershipMessage("Complete the payment to finish upgrading.");
     }
 
-    async function handleMembershipTermsAccept() {
+    async function handleMembershipAcceptAndPay() {
       if (!pendingMembershipPlanId) {
-        if (membershipTermsError) {
-          membershipTermsError.textContent = "Choose a membership first.";
+        if (membershipSelectionError) {
+          membershipSelectionError.textContent = "Choose a membership first.";
         }
+        return;
+      }
+      if (!membershipTermsAcknowledged) {
+        openMembershipTermsOverlayUI();
         return;
       }
       if (membershipTermsProcessing) return;
       membershipTermsProcessing = true;
-      updateMembershipTermsAcceptState();
+      updateMembershipTermsButtonState();
       if (membershipTermsError) {
         membershipTermsError.textContent = "";
       }
       try {
         const planId = pendingMembershipPlanId;
-        await persistMembershipTermsSignature();
+        await recordMembershipTermsAcceptance();
         const planMode = getMembershipPlanMode(planId);
         if (planMode === "subscription") {
           await startMembershipSubscriptionFlow(planId);
@@ -5728,43 +5750,19 @@
             await loadUserProfile(user.uid, user.email);
           }
         }
-        closeMembershipTermsOverlayUI();
+        closeMembershipSelectionOverlayUI();
       } catch (err) {
-        console.error("Membership terms accept", err);
+        console.error("Membership accept & pay", err);
         if (membershipTermsError) {
           membershipTermsError.textContent =
             err.message || "Could not continue to payment.";
         }
       } finally {
-        if (membershipTermsOverlay?.classList.contains("active")) {
-          membershipTermsProcessing = false;
-          updateMembershipTermsAcceptState();
-        }
+        membershipTermsProcessing = false;
+        updateMembershipTermsButtonState();
       }
     }
 
-    async function handleMembershipSwitchToBasic() {
-      const user = auth.currentUser;
-      if (!user) {
-        setMembershipMessage("Log in to manage your membership.");
-        return;
-      }
-      setMembershipMessage("");
-      try {
-        if (getMembershipPlanMode("basic") === "payment") {
-          await startMembershipPaymentFlow("basic");
-          return;
-        }
-        await callApplyMembershipPlan({ plan: "basic" });
-        setMembershipMessage("You're back on the Basic plan.");
-        await loadUserProfile(user.uid, user.email);
-        closeMembershipSelectionOverlayUI();
-        closeMembershipTermsOverlayUI();
-      } catch (err) {
-        console.error("Switch to basic", err);
-        setMembershipMessage(err.message || "Could not switch to Basic.");
-      }
-    }
 
     membershipChangeButton?.addEventListener("click", () => {
       openMembershipSelectionOverlayUI();
@@ -5780,37 +5778,27 @@
         selectMembershipPlan(node.dataset.membershipOption);
       });
     });
-    membershipSelectionContinue?.addEventListener("click", () => {
+    membershipTermsButton?.addEventListener("click", () => {
       if (!pendingMembershipPlanId) {
         if (membershipSelectionError) {
-          membershipSelectionError.textContent = "Choose a plan to continue.";
+          membershipSelectionError.textContent = "Choose a membership first.";
         }
         return;
       }
-      closeMembershipSelectionOverlayUI();
-      openMembershipTermsOverlayUI();
+      if (membershipTermsAcknowledged) {
+        handleMembershipAcceptAndPay();
+      } else {
+        openMembershipTermsOverlayUI();
+      }
     });
-    membershipSelectionBasic?.addEventListener("click", handleMembershipSwitchToBasic);
     membershipTermsClose?.addEventListener("click", closeMembershipTermsOverlayUI);
     membershipTermsOverlay?.addEventListener("click", (evt) => {
       if (evt.target === membershipTermsOverlay) {
         closeMembershipTermsOverlayUI();
       }
     });
-    membershipTermsCheckbox?.addEventListener("change", updateMembershipTermsAcceptState);
-    membershipSignatureClear?.addEventListener("click", () => {
-      clearMembershipSignatureCanvas();
-      if (membershipTermsError) {
-        membershipTermsError.textContent = "";
-      }
-    });
-    membershipTermsAccept?.addEventListener("click", handleMembershipTermsAccept);
-    attachSignatureListeners();
-    window.addEventListener("resize", () => {
-      if (membershipTermsOverlay?.classList.contains("active")) {
-        resizeMembershipSignatureCanvas();
-      }
-    });
+    membershipTermsContent?.addEventListener("scroll", handleMembershipTermsScroll);
+    membershipTermsCheckbox?.addEventListener("change", handleMembershipTermsCheckboxChange);
     // === RIDE SYNC STRIPE: END membership overlay logic ===
 
     if (paymentOverlayClose) {
