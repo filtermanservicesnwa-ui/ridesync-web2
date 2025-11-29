@@ -2190,31 +2190,70 @@
     // This safely restores Stripe without affecting the rest of the file.
     const STRIPE_PUBLISHABLE_KEY_FALLBACK =
       "pk_live_51SKjO4CbEdF7xUZ5y1Uceore88zrCE8Q9ASNO6bVxGVkj9YGPazDPvx9VZwjfriUnzslstmBVa5WEzukGjMkgVz000w5bDBHhi"; // <-- insert your actual publishable key
-    const STRIPE_PUBLISHABLE_KEY_DEFAULT =
-      stripeConfig.publishableKey || STRIPE_PUBLISHABLE_KEY_FALLBACK;
-    const STRIPE_PUBLISHABLE_KEY_TEST =
-      stripeConfig.publishableKeyTest ||
-      stripeConfig.testPublishableKey ||
-      (STRIPE_PUBLISHABLE_KEY_DEFAULT.startsWith("pk_live_")
-        ? STRIPE_PUBLISHABLE_KEY_DEFAULT.replace("pk_live_", "pk_test_")
-        : "");
+
+    function normalizeStripeKeyForMode(key, mode) {
+      const trimmed = typeof key === "string" ? key.trim() : "";
+      if (!trimmed) {
+        return "";
+      }
+      if (mode === "live" && trimmed.startsWith("pk_live_")) {
+        return trimmed;
+      }
+      if (mode === "test" && trimmed.startsWith("pk_test_")) {
+        return trimmed;
+      }
+      return "";
+    }
+
+    function selectStripeKeyForMode(mode) {
+      const candidates =
+        mode === "live"
+          ? [
+              stripeConfig.publishableKeyLive,
+              stripeConfig.livePublishableKey,
+              stripeConfig.publishableKey,
+              STRIPE_PUBLISHABLE_KEY_FALLBACK,
+            ]
+          : [
+              stripeConfig.publishableKeyTest,
+              stripeConfig.testPublishableKey,
+              stripeConfig.publishableKeySandbox,
+              stripeConfig.publishableKey,
+            ];
+      for (const candidate of candidates) {
+        const normalized = normalizeStripeKeyForMode(candidate, mode);
+        if (normalized) {
+          return normalized;
+        }
+      }
+      return "";
+    }
+
     const STRIPE_KEYS_BY_MODE = {
-      live:
-        stripeConfig.publishableKeyLive ||
-        stripeConfig.livePublishableKey ||
-        (STRIPE_PUBLISHABLE_KEY_DEFAULT.startsWith("pk_live_")
-          ? STRIPE_PUBLISHABLE_KEY_DEFAULT
-          : ""),
-      test:
-        STRIPE_PUBLISHABLE_KEY_TEST ||
-        (STRIPE_PUBLISHABLE_KEY_DEFAULT.startsWith("pk_test_")
-          ? STRIPE_PUBLISHABLE_KEY_DEFAULT
-          : ""),
+      live: selectStripeKeyForMode("live"),
+      test: selectStripeKeyForMode("test"),
     };
+
+    const isLocalDevHost =
+      typeof window !== "undefined" &&
+      ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
+    if (isLocalDevHost && !STRIPE_KEYS_BY_MODE.live) {
+      console.warn(
+        "[RideSync][Stripe] Missing live publishable key. Update stripe.publishableKey or stripe.publishableKeyLive in app-config.json."
+      );
+    }
+    if (isLocalDevHost && !STRIPE_KEYS_BY_MODE.test) {
+      console.warn(
+        "[RideSync][Stripe] Missing test publishable key. Update stripe.publishableKeyTest or stripe.testPublishableKey in app-config.json."
+      );
+    }
+
     const STRIPE_DEFAULT_PUBLISHABLE_KEY =
       STRIPE_KEYS_BY_MODE.live ||
       STRIPE_KEYS_BY_MODE.test ||
-      STRIPE_PUBLISHABLE_KEY_DEFAULT;
+      normalizeStripeKeyForMode(STRIPE_PUBLISHABLE_KEY_FALLBACK, "live") ||
+      normalizeStripeKeyForMode(STRIPE_PUBLISHABLE_KEY_FALLBACK, "test") ||
+      "";
     const stripeMembershipConfig = stripeConfig.membershipPlans || {};
     // Enable Stripe when at least one key exists (fallback prevents false negatives)
     const STRIPE_ENABLED = STRIPE_DEFAULT_PUBLISHABLE_KEY.length > 0;
@@ -5888,8 +5927,12 @@
       const publishableKey = resolveStripePublishableKeyForMode(livemode);
       if (!publishableKey) {
         const modeLabel = livemode === false ? "test" : "live";
+        const guidance =
+          modeLabel === "test"
+            ? "Set stripe.publishableKeyTest (test mode) in app-config.json."
+            : "Set stripe.publishableKey or stripe.publishableKeyLive in app-config.json.";
         throw new Error(
-          `Stripe ${modeLabel} publishable key is not configured. Please update app-config.`
+          `Stripe ${modeLabel} publishable key is not configured. ${guidance}`
         );
       }
       await loadStripeJs();
