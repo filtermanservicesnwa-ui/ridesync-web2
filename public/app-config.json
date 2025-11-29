@@ -19,7 +19,7 @@
     "phoneNumber": "+14794221508"
   },
   "stripe": {
-    "publishableKey": "pk_test_51SKjO4CbEdF7xUZ526gXAFHvLIfzDVURHfi8CapeYxKVRniCDVmQxxP5W3BWiDqLx6RkGJ2OWNmLDO3EV1Lk7k8400hTpcYcFD",
+    "publishableKey": "pk_live_51SKjO4CbEdF7xUZ5y1Uceore88zrCE8Q9ASNO6bVxGVkj9YGPazDPvx9VZwjfriUnzslstmBVa5WEzukGjMkgVz000w5bDBHhi",
     "membershipPlans": {
       "basic": {
         "priceDisplay": "Pay per ride • No monthly fee",
