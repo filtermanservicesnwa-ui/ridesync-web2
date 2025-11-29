@@ -5631,7 +5631,7 @@
           }
         }, "image/png");
       });
-      const storagePath = `membershipSignatures/${user.uid}/${Date.now()}.png`;
+      const storagePath = `users/${user.uid}/membershipSignatures/${Date.now()}.png`;
       const signatureRef = ref(storage, storagePath);
       await uploadBytes(signatureRef, blob, { contentType: "image/png" });
       const downloadUrl = await getDownloadURL(signatureRef);
