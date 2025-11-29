@@ -2190,7 +2190,7 @@
     // This safely restores Stripe without affecting the rest of the file.
     const STRIPE_PUBLISHABLE_KEY =
       stripeConfig.publishableKey ||
-      "pk_test_YOUR_PUBLISHABLE_KEY_HERE"; // <-- insert your actual publishable key
+      "pk_live_51SKjO4CbEdF7xUZ5y1Uceore88zrCE8Q9ASNO6bVxGVkj9YGPazDPvx9VZwjfriUnzslstmBVa5WEzukGjMkgVz000w5bDBHhi"; // <-- insert your actual publishable key
     const stripeMembershipConfig = stripeConfig.membershipPlans || {};
     // Enable Stripe when the key exists (fallback prevents false negatives)
     const STRIPE_ENABLED = STRIPE_PUBLISHABLE_KEY.length > 0;
