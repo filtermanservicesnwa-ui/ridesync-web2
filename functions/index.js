@@ -1221,6 +1221,7 @@ exports.createMembershipPaymentIntent = functions
       currency: planConfig.currency,
       planLabel: planConfig.label,
       plan: planKey,
+      livemode: paymentIntent?.livemode ?? null,
     };
   });
 
@@ -1460,8 +1461,8 @@ exports.createMembershipSubscriptionIntent = functions
       },
     });
 
-    const clientSecret =
-      subscription?.latest_invoice?.payment_intent?.client_secret;
+    const invoicePaymentIntent = subscription?.latest_invoice?.payment_intent;
+    const clientSecret = invoicePaymentIntent?.client_secret;
     if (!clientSecret) {
       throw new functions.https.HttpsError(
         "internal",
@@ -1483,6 +1484,7 @@ exports.createMembershipSubscriptionIntent = functions
       clientSecret,
       subscriptionId: subscription.id,
       planId,
+      livemode: invoicePaymentIntent?.livemode ?? null,
     };
   });
 // === RIDE SYNC STRIPE: END createMembershipSubscriptionIntent ===
@@ -1713,6 +1715,7 @@ exports.createRidePaymentIntent = functions
       amountCents: chargeContext.amountCents,
       currency: "usd",
       geofenceContext: chargeContext,
+      livemode: paymentIntent?.livemode ?? null,
     };
   });
 // === RIDE SYNC STRIPE: END createRidePaymentIntent ===
