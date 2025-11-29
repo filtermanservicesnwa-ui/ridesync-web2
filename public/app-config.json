@@ -20,6 +20,7 @@
   },
   "stripe": {
     "publishableKey": "pk_live_51SKjO4CbEdF7xUZ5y1Uceore88zrCE8Q9ASNO6bVxGVkj9YGPazDPvx9VZwjfriUnzslstmBVa5WEzukGjMkgVz000w5bDBHhi",
+    "publishableKeyLive": "pk_live_51SKjO4CbEdF7xUZ5y1Uceore88zrCE8Q9ASNO6bVxGVkj9YGPazDPvx9VZwjfriUnzslstmBVa5WEzukGjMkgVz000w5bDBHhi",
     "publishableKeyTest": "pk_test_51SKjO4CbEdF7xUZ5y1Uceore88zrCE8Q9ASNO6bVxGVkj9YGPazDPvx9VZwjfriUnzslstmBVa5WEzukGjMkgVz000w5bDBHhi",
     "membershipPlans": {
       "basic": {
