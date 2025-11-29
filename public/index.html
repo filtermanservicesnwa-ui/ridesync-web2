@@ -5533,8 +5533,10 @@
 
     function updateMembershipTermsAcceptState() {
       if (!membershipTermsAccept) return;
+      // Only require that the terms checkbox is checked.
+      // Signature is now optional and no longer blocks accepting the terms.
       const canAccept =
-        membershipTermsCheckbox?.checked && membershipSignatureHasInk && !membershipTermsProcessing;
+        membershipTermsCheckbox?.checked && !membershipTermsProcessing;
       membershipTermsAccept.disabled = !canAccept;
     }
 
@@ -5615,49 +5617,21 @@
     }
 
     async function persistMembershipTermsSignature() {
+      // Signature capture has been removed. We now just record that the
+      // user accepted the membership terms by checking the box.
       const user = auth.currentUser;
       if (!user) {
         throw new Error("Log in to continue.");
       }
-      if (!membershipSignatureCanvas || !membershipSignatureHasInk) {
-        throw new Error("Sign the terms to continue.");
-      }
-      const blob = await new Promise((resolve, reject) => {
-        membershipSignatureCanvas.toBlob((generatedBlob) => {
-          if (generatedBlob) {
-            resolve(generatedBlob);
-          } else {
-            reject(new Error("Unable to capture signature."));
-          }
-        }, "image/png");
-      });
-      // Ensure Firebase Auth is fully ready before uploading signature
-      const authReadyUser = await new Promise((resolve) => {
-        if (auth.currentUser) return resolve(auth.currentUser);
-        const unsub = onAuthStateChanged(auth, (u) => {
-          if (u) {
-            unsub();
-            resolve(u);
-          }
-        });
-      });
-
-      // Updated secure signature path (allowed by Storage rules)
-      const storagePath = `users/${authReadyUser.uid}/membershipSignatures/${Date.now()}.png`;
-      const signatureRef = ref(storage, storagePath);
-      await uploadBytes(signatureRef, blob, { contentType: "image/png" });
-      const downloadUrl = await getDownloadURL(signatureRef);
       await setDoc(
         doc(db, "users", user.uid),
         {
           membershipTermsAccepted: true,
           membershipTermsAcceptedAt: serverTimestamp(),
           membershipTermsVersion: "v1",
-          membershipSignatureImageUrl: downloadUrl,
         },
         { merge: true }
       );
-      return downloadUrl;
     }
 
     async function startMembershipPaymentFlow(planId) {
