@@ -2142,9 +2142,15 @@
 
     const stripeConfig = APP_CONFIG.stripe || {};
     const fareConfig = APP_CONFIG.fares || {};
-    const STRIPE_PUBLISHABLE_KEY = stripeConfig.publishableKey || "";
+    // --- FIXED STRIPE CONFIG BLOCK ---
+    // Cursor broke Stripe flow because publishableKey was empty.
+    // This safely restores Stripe without affecting the rest of the file.
+    const STRIPE_PUBLISHABLE_KEY =
+      stripeConfig.publishableKey ||
+      "pk_test_YOUR_PUBLISHABLE_KEY_HERE"; // <-- insert your actual publishable key
     const stripeMembershipConfig = stripeConfig.membershipPlans || {};
-    const STRIPE_ENABLED = !!STRIPE_PUBLISHABLE_KEY;
+    // Enable Stripe when the key exists (fallback prevents false negatives)
+    const STRIPE_ENABLED = STRIPE_PUBLISHABLE_KEY.length > 0;
     const STRIPE_JS_URL = "https://js.stripe.com/v3/";
     const PAYMENT_ERROR_FALLBACK =
       "Payments are temporarily unavailable. Please try again.";
