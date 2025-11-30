@@ -5,6 +5,15 @@ const admin = require("firebase-admin");
 const Stripe = require("stripe");
 const { defineSecret } = require("firebase-functions/params");
 
+// === RideSync Stripe debug helper ===
+function logStripeDebug(label, payload = {}) {
+  try {
+    functions.logger.info(`[RideSync][Stripe] ${label}`, payload);
+  } catch (e) {
+    // Never let logging break the function
+  }
+}
+
 const STRIPE_SECRET_KEY = defineSecret("STRIPE_SECRET_KEY");
 const STRIPE_UOFA_PRICE_ID = defineSecret("STRIPE_UOFA_PRICE_ID");
 const STRIPE_NWA_PRICE_ID = defineSecret("STRIPE_NWA_PRICE_ID");
@@ -233,6 +242,12 @@ function hydrateStripeSettingsFromSecrets() {
   if (secretKey && secretKey !== stripeSecretKey) {
     stripe = Stripe(secretKey);
     stripeSecretKey = secretKey;
+    // Log only the mode and tail of the key so we don't leak secrets
+    logStripeDebug("hydrateStripeSettingsFromSecrets: stripe client updated", {
+      keyStartsWithSkLive: secretKey.startsWith("sk_live_"),
+      keyStartsWithSkTest: secretKey.startsWith("sk_test_"),
+      keyTail: secretKey.slice(-6),
+    });
   }
   if (secretUofaPriceId) {
     uofaPriceId = secretUofaPriceId;
@@ -1203,6 +1218,14 @@ exports.createMembershipPaymentIntent = functions
       automatic_payment_methods: { enabled: true },
     });
 
+    logStripeDebug("createMembershipPaymentIntent: created PaymentIntent", {
+      planKey,
+      amountCents: planConfig.amountCents,
+      currency: planConfig.currency,
+      paymentIntentId: paymentIntent.id,
+      livemode: paymentIntent.livemode,
+    });
+
     await db
       .collection("pendingMembershipPayments")
       .doc(paymentIntent.id)
@@ -1694,6 +1717,14 @@ exports.createRidePaymentIntent = functions
         purpose: "ride",
       },
       automatic_payment_methods: { enabled: true },
+    });
+
+    logStripeDebug("createRidePaymentIntent: created PaymentIntent", {
+      amountCents: chargeContext.amountCents,
+      currency: "usd",
+      pendingId: pendingRef.id,
+      paymentIntentId: paymentIntent.id,
+      livemode: paymentIntent.livemode,
     });
 
     await pendingRef.set({
