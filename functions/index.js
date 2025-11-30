@@ -1706,8 +1706,12 @@ const DEFAULT_CHECKOUT_BASE_URL =
   process.env.CHECKOUT_BASE_URL ||
   runtimeConfig?.app?.checkout_base_url ||
   "https://ride-sync-nwa.web.app";
+const DEFAULT_CHECKOUT_BASE_ORIGIN =
+  normalizeRedirectBaseOrigin(DEFAULT_CHECKOUT_BASE_URL) ||
+  "https://ride-sync-nwa.web.app";
+const CHECKOUT_REDIRECT_ALLOWLIST = resolveCheckoutRedirectAllowlist();
 
-function sanitizeRedirectBaseUrl(value) {
+function normalizeRedirectBaseOrigin(value) {
   if (typeof value !== "string") {
     return null;
   }
@@ -1723,15 +1727,74 @@ function sanitizeRedirectBaseUrl(value) {
       hostname === "localhost" ||
       hostname === "127.0.0.1" ||
       hostname === "::1";
-    const isAllowedProtocol =
-      protocol === "https:" || (protocol === "http:" && isLocalhost);
-    if (!isAllowedProtocol) {
+    const isHttps = protocol === "https:";
+    const isHttpLocalhost = protocol === "http:" && isLocalhost;
+    if (!isHttps && !isHttpLocalhost) {
       return null;
     }
     return url.origin.replace(/\/+$/, "");
   } catch (err) {
     return null;
   }
+}
+
+function collectAllowlistEntries(source) {
+  if (!source) {
+    return [];
+  }
+  if (Array.isArray(source)) {
+    return source;
+  }
+  if (source instanceof Set) {
+    return Array.from(source);
+  }
+  if (typeof source === "object") {
+    return Object.values(source).filter((value) => typeof value === "string");
+  }
+  if (typeof source === "string") {
+    return source
+      .split(/[,\s]+/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function resolveCheckoutRedirectAllowlist() {
+  const env = process.env || {};
+  const sources = [
+    env.CHECKOUT_REDIRECT_ALLOWLIST,
+    env.CHECKOUT_REDIRECT_ALLOWED_ORIGINS,
+    runtimeConfig?.app?.checkout_redirect_allowlist,
+    runtimeConfig?.app?.allowed_redirect_origins,
+  ];
+  const allowlist = new Set();
+  for (const source of sources) {
+    for (const entry of collectAllowlistEntries(source)) {
+      const normalized = normalizeRedirectBaseOrigin(entry);
+      if (normalized) {
+        allowlist.add(normalized);
+      }
+    }
+  }
+  if (DEFAULT_CHECKOUT_BASE_ORIGIN) {
+    allowlist.add(DEFAULT_CHECKOUT_BASE_ORIGIN);
+  }
+  return allowlist;
+}
+
+function sanitizeRedirectBaseUrl(value) {
+  const normalized = normalizeRedirectBaseOrigin(value);
+  if (!normalized) {
+    return null;
+  }
+  if (
+    CHECKOUT_REDIRECT_ALLOWLIST.size > 0 &&
+    !CHECKOUT_REDIRECT_ALLOWLIST.has(normalized)
+  ) {
+    return null;
+  }
+  return normalized;
 }
 
 function resolveCheckoutRedirectBaseUrl({
@@ -1742,10 +1805,10 @@ function resolveCheckoutRedirectBaseUrl({
   const payloadUrl =
     payload.redirectBaseUrl || payload.redirect_base_url || null;
   const candidates = [
-    payloadUrl,
     requestOrigin,
     requestReferer,
-    DEFAULT_CHECKOUT_BASE_URL,
+    payloadUrl,
+    DEFAULT_CHECKOUT_BASE_ORIGIN,
   ];
   for (const candidate of candidates) {
     const sanitized = sanitizeRedirectBaseUrl(candidate);
@@ -1753,7 +1816,7 @@ function resolveCheckoutRedirectBaseUrl({
       return sanitized;
     }
   }
-  return "https://ride-sync-nwa.web.app";
+  return DEFAULT_CHECKOUT_BASE_ORIGIN || "https://ride-sync-nwa.web.app";
 }
 
 async function createRideCheckoutSessionInternal({
