@@ -1722,7 +1722,7 @@ function sanitizeRedirectBaseUrl(value) {
     const isLocalhost =
       hostname === "localhost" ||
       hostname === "127.0.0.1" ||
-      hostname === "[::1]";
+      hostname === "::1";
     const isAllowedProtocol =
       protocol === "https:" || (protocol === "http:" && isLocalhost);
     if (!isAllowedProtocol) {
