@@ -2845,6 +2845,7 @@
       showing: false,
       livemode: null,
       intentRequestId: 0,
+      clientSecretContext: null,
     };
 
     const RIDER_STATES = {
@@ -5936,6 +5937,7 @@
       ridePaymentState.showing = false;
       ridePaymentState.livemode = null;
       ridePaymentState.intentRequestId = 0;
+      ridePaymentState.clientSecretContext = null;
       if (rideTipRefreshTimer) {
         clearTimeout(rideTipRefreshTimer);
         rideTipRefreshTimer = null;
@@ -6050,6 +6052,13 @@
         }
         ridePaymentState.clientSecret = clientSecret;
         ridePaymentState.livemode = livemode;
+        ridePaymentState.clientSecretContext = {
+          clientSecret,
+          livemode,
+          totalAmountCents: ridePaymentState.totalAmountCents,
+          baseAmountCents: ridePaymentState.baseAmountCents,
+          tipAmountCents: ridePaymentState.tipAmountCents,
+        };
         await mountRidePaymentElement(clientSecret, livemode);
         await mountRidePaymentRequestButton(
           clientSecret,
@@ -6202,7 +6211,8 @@
     }
 
     async function handleRidePaymentRequest(event) {
-      if (!ridePaymentState.clientSecret) {
+      const paymentIntentContext = snapshotActivePaymentIntentContext();
+      if (!paymentIntentContext) {
         event.complete("fail");
         updateRideFareStatus("Payment is still being prepared. Try again.", true);
         return;
@@ -6210,9 +6220,11 @@
       ridePaymentState.processing = true;
       updateRideFareStatus("Processing payment…", false);
       try {
-        const stripe = await ensureStripeInstance(ridePaymentState.livemode);
+        const stripe = await ensureStripeInstance(
+          paymentIntentContext.livemode ?? ridePaymentState.livemode
+        );
         const { error, paymentIntent } = await stripe.confirmCardPayment(
-          ridePaymentState.clientSecret,
+          paymentIntentContext.clientSecret,
           {
             payment_method: event.paymentMethod.id,
           },
@@ -6227,7 +6239,7 @@
         event.complete("success");
         if (paymentIntent && paymentIntent.status === "requires_action") {
           const { error: actionError } = await stripe.confirmCardPayment(
-            ridePaymentState.clientSecret
+            paymentIntentContext.clientSecret
           );
           if (actionError) {
             updateRideFareStatus(actionError.message || PAYMENT_ERROR_FALLBACK, true);
@@ -6235,7 +6247,7 @@
             return;
           }
         }
-        await markRideFarePaid(paymentIntent?.id || null);
+        await markRideFarePaid(paymentIntent?.id || null, paymentIntentContext);
         ridePaymentState.completed = true;
         ridePaymentState.processing = false;
         updateRideFareStatus(
@@ -6256,7 +6268,16 @@
     }
 
     async function handleRideCardSubmit() {
-      if (!ridePaymentState.paymentElements || !ridePaymentState.clientSecret) {
+      const paymentElementsInstance = ridePaymentState.paymentElements;
+      if (!paymentElementsInstance) {
+        if (rideCardMessage) {
+          rideCardMessage.textContent =
+            "Payment is still being prepared. Please try again.";
+        }
+        return;
+      }
+      const paymentIntentContext = snapshotActivePaymentIntentContext();
+      if (!paymentIntentContext) {
         if (rideCardMessage) {
           rideCardMessage.textContent =
             "Payment is still being prepared. Please try again.";
@@ -6272,10 +6293,12 @@
       ridePaymentState.processing = true;
       updateRideFareStatus("Processing card payment…", false);
       try {
-        const stripe = await ensureStripeInstance(ridePaymentState.livemode);
+        const stripe = await ensureStripeInstance(
+          paymentIntentContext.livemode ?? ridePaymentState.livemode
+        );
         const result = await stripe.confirmPayment({
-          elements: ridePaymentState.paymentElements,
-          clientSecret: ridePaymentState.clientSecret,
+          elements: paymentElementsInstance,
+          clientSecret: paymentIntentContext.clientSecret,
           redirect: "if_required",
         });
         if (result.error) {
@@ -6284,7 +6307,7 @@
         if (!result.paymentIntent || result.paymentIntent.status !== "succeeded") {
           throw new Error("Payment did not complete.");
         }
-        await markRideFarePaid(result.paymentIntent.id);
+        await markRideFarePaid(result.paymentIntent.id, paymentIntentContext);
         ridePaymentState.completed = true;
         updateRideFareStatus(
           "Payment complete. Thank you for riding with RideSync!",
@@ -6306,21 +6329,54 @@
       }
     }
 
-    async function markRideFarePaid(paymentIntentId) {
+    function snapshotActivePaymentIntentContext() {
+      const context = ridePaymentState.clientSecretContext;
+      if (!context || !context.clientSecret) {
+        return null;
+      }
+      return {
+        clientSecret: context.clientSecret,
+        livemode: context.livemode ?? null,
+        totalAmountCents: context.totalAmountCents,
+        baseAmountCents: context.baseAmountCents,
+        tipAmountCents: context.tipAmountCents,
+      };
+    }
+
+    async function markRideFarePaid(paymentIntentId, paymentDetails) {
       if (!ridePaymentState.rideId) {
         return;
       }
       try {
         const rideRef = doc(db, "rideRequests", ridePaymentState.rideId);
+        const normalizeCents = (value, fallback = 0) => {
+          const candidate = Number.isFinite(value) ? value : fallback;
+          const resolved = Number.isFinite(candidate) ? candidate : 0;
+          return Math.max(0, Math.round(resolved));
+        };
+        const baseAmountCents = normalizeCents(
+          paymentDetails?.baseAmountCents,
+          ridePaymentState.baseAmountCents
+        );
+        const tipAmountCents = normalizeCents(
+          paymentDetails?.tipAmountCents,
+          ridePaymentState.tipAmountCents
+        );
+        const totalAmountCents = normalizeCents(
+          paymentDetails?.totalAmountCents,
+          Number.isFinite(ridePaymentState.totalAmountCents)
+            ? ridePaymentState.totalAmountCents
+            : baseAmountCents + tipAmountCents
+        );
         await updateDoc(rideRef, {
           paymentStatus: "paid",
           stripePaymentIntentId: paymentIntentId || null,
-          stripeAmountCents: ridePaymentState.totalAmountCents,
-          stripeAmount: ridePaymentState.totalAmountCents / 100,
+          stripeAmountCents: totalAmountCents,
+          stripeAmount: totalAmountCents / 100,
           stripeCurrency: "usd",
-          fareBaseAmountCents: ridePaymentState.baseAmountCents,
-          tipAmountCents: ridePaymentState.tipAmountCents,
-          tipAmount: ridePaymentState.tipAmountCents / 100,
+          fareBaseAmountCents: baseAmountCents,
+          tipAmountCents,
+          tipAmount: tipAmountCents / 100,
           tipCurrency: "usd",
           updatedAt: serverTimestamp(),
         });
