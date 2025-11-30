@@ -2239,6 +2239,7 @@
     const geoConfig = APP_CONFIG.geo || {};
     const ridePolicyConfig = APP_CONFIG.ridePolicy || {};
     const placeholderConfig = APP_CONFIG.placeholders || {};
+    const functionsConfig = APP_CONFIG.functions || {};
     const mapsConfig = APP_CONFIG.maps || APP_CONFIG.googleMaps || {};
     const DEFAULT_MAPS_API_KEY = "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0";
     const mapsApiKey = mapsConfig.apiKey || DEFAULT_MAPS_API_KEY;
@@ -2333,6 +2334,7 @@
     const FORCE_DISABLE_GOOGLE_PAY = window.location.protocol !== "https:";
     const PAYMENT_ERROR_FALLBACK =
       "Payments are temporarily unavailable. Please try again.";
+    const rideCheckoutSessionEndpoints = buildRideCheckoutSessionEndpoints();
 
     function isFirebaseHttpsError(err) {
       return typeof err?.code === "string" && err.code.startsWith("functions/");
@@ -6298,6 +6300,57 @@
       paymentRedirectOverlay.setAttribute("aria-hidden", "true");
     }
 
+    function buildRideCheckoutSessionEndpoints() {
+      const endpoints = [];
+      const configuredUrl = normalizeCheckoutEndpoint(
+        functionsConfig.createRideCheckoutSessionUrl
+      );
+      if (configuredUrl) {
+        endpoints.push(configuredUrl);
+      }
+      const defaultRelative = normalizeCheckoutEndpoint(
+        "/createRideCheckoutSession"
+      );
+      if (defaultRelative) {
+        endpoints.push(defaultRelative);
+      }
+      if (firebaseConfig?.projectId) {
+        const functionUrl = normalizeCheckoutEndpoint(
+          `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/createRideCheckoutSession`
+        );
+        if (functionUrl) {
+          endpoints.push(functionUrl);
+        }
+      }
+      const deduped = [];
+      const seen = new Set();
+      for (const endpoint of endpoints) {
+        if (!endpoint || seen.has(endpoint)) {
+          continue;
+        }
+        seen.add(endpoint);
+        deduped.push(endpoint);
+      }
+      return deduped;
+    }
+
+    function normalizeCheckoutEndpoint(value) {
+      if (typeof value !== "string") {
+        return "";
+      }
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return "";
+      }
+      if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        return trimmed;
+      }
+      if (trimmed.startsWith("/")) {
+        return trimmed;
+      }
+      return "";
+    }
+
     async function confirmActivePayment() {
       if (!activePaymentContext) return;
       if (paymentOverlayMessage) {
@@ -6516,36 +6569,66 @@
       if (idToken) {
         headers.Authorization = `Bearer ${idToken}`;
       }
+      const requestBody = JSON.stringify({
+        amountCents: Math.round(amountCents),
+        description,
+        ridePayload: context.ridePayload || null,
+      });
       try {
-        const response = await fetch("/createRideCheckoutSession", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            amountCents: Math.round(amountCents),
-            description,
-            ridePayload: context.ridePayload || null,
-          }),
-        });
-        let data = null;
-        try {
-          data = await response.json();
-        } catch (_) {
-          data = null;
-        }
-        if (!response.ok || !data?.url) {
-          console.error("[RideSync][Stripe] Failed to create checkout session", {
-            status: response.status,
-            body: data,
-          });
-          throw new Error(PAYMENT_ERROR_FALLBACK);
-        }
-        window.location.href = data.url;
+        const sessionUrl = await requestRideCheckoutSession(headers, requestBody);
+        window.location.href = sessionUrl;
       } catch (err) {
         hidePaymentRedirectOverlay();
         throw err instanceof Error
           ? err
           : new Error(PAYMENT_ERROR_FALLBACK);
       }
+    }
+
+    async function requestRideCheckoutSession(headers, body) {
+      let lastFailure = null;
+      for (const endpoint of rideCheckoutSessionEndpoints) {
+        if (!endpoint) continue;
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers,
+            body,
+          });
+          let data = null;
+          try {
+            data = await response.json();
+          } catch (_) {
+            data = null;
+          }
+          if (response.ok && data?.url) {
+            return data.url;
+          }
+          lastFailure = {
+            endpoint,
+            status: response.status,
+            body: data,
+          };
+          logStripeDebug(
+            "createRideCheckoutSession endpoint rejected",
+            lastFailure
+          );
+        } catch (err) {
+          lastFailure = {
+            endpoint,
+            error: err instanceof Error ? err.message : String(err),
+          };
+          logStripeDebug(
+            "createRideCheckoutSession endpoint error",
+            lastFailure
+          );
+        }
+      }
+      console.error(
+        "[RideSync][Stripe] Failed to create checkout session",
+        lastFailure
+      );
+      throw new Error(PAYMENT_ERROR_FALLBACK);
     }
 
     async function startRidePaymentFlow(ridePayload) {
