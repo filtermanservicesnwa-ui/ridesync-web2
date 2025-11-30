@@ -19,6 +19,9 @@
   "support": {
     "phoneNumber": "+14794221508"
   },
+  "messaging": {
+    "publicVapidKey": ""
+  },
   "stripe": {
     "publishableKey": "pk_live_51SKjO4CbEdF7xUZ5y1Uceore88zrCE8Q9ASNO6bVxGVkj9YGPazDPvx9VZwjfriUnzslstmBVa5WEzukGjMkgVz000w5bDBHhi",
     "publishableKeyLive": "pk_live_51SKjO4CbEdF7xUZ5y1Uceore88zrCE8Q9ASNO6bVxGVkj9YGPazDPvx9VZwjfriUnzslstmBVa5WEzukGjMkgVz000w5bDBHhi",

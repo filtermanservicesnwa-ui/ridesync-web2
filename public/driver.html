@@ -951,6 +951,11 @@
       serverTimestamp,
       writeBatch
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+    import {
+      getMessaging,
+      getToken,
+      onMessage
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging.js";
 
     async function loadAppConfig() {
       if (window.__rideSyncConfigPromise) {
@@ -1021,6 +1026,7 @@
     const geoConfig = APP_CONFIG.geo || {};
     const placeholderConfig = APP_CONFIG.placeholders || {};
     const supportConfig = APP_CONFIG.support || {};
+    const messagingConfig = APP_CONFIG.messaging || {};
     const mapsConfig = APP_CONFIG.maps || APP_CONFIG.googleMaps || {};
     const DEFAULT_MAPS_API_KEY = "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0";
     const mapsApiKey = mapsConfig.apiKey || DEFAULT_MAPS_API_KEY;
@@ -1046,6 +1052,26 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
+    const messagingPublicVapidKey = messagingConfig.publicVapidKey || "";
+    const messaging = (() => {
+      try {
+        return getMessaging(app);
+      } catch (err) {
+        console.warn("Messaging init failed", err);
+        return null;
+      }
+    })();
+    let messagingToken = null;
+    let messagingServiceWorkerRegistration = null;
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/firebase-messaging-sw.js")
+        .then((registration) => {
+          messagingServiceWorkerRegistration = registration;
+        })
+        .catch((err) => console.warn("Service worker registration failed", err));
+    }
 
     const authView = document.getElementById("authView");
     const driverView = document.getElementById("driverView");
@@ -1414,6 +1440,7 @@
       await loadDriverProfile();
       initMap();
       subscribeToRides();
+      await ensureDriverMessaging();
     });
 
     async function loadDriverProfile() {
@@ -1721,6 +1748,43 @@
       refreshDriverRideVisibility();
     }
 
+    async function ensureDriverMessaging() {
+      if (!messaging || !messagingPublicVapidKey || !auth.currentUser) {
+        return;
+      }
+      try {
+        if (Notification.permission !== "granted") {
+          const permission = await Notification.requestPermission();
+          if (permission !== "granted") {
+            return;
+          }
+        }
+        const token = await getToken(messaging, {
+          vapidKey: messagingPublicVapidKey,
+          serviceWorkerRegistration: messagingServiceWorkerRegistration || undefined,
+        });
+        if (token && token !== messagingToken) {
+          messagingToken = token;
+          await setDoc(
+            doc(db, "drivers", auth.currentUser.uid),
+            {
+              fcmToken: token,
+              fcmTokenUpdatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+      } catch (err) {
+        console.warn("Unable to register driver messaging token", err);
+      }
+    }
+
+    if (messaging) {
+      onMessage(messaging, (payload) => {
+        console.log("[RideSync][Driver] foreground notification", payload);
+      });
+    }
+
     function refreshDriverRideVisibility() {
       renderRides(latestRideSnapshot);
     }
@@ -1735,6 +1799,9 @@
           isOnline,
           lastOnlineAt: serverTimestamp()
         });
+        if (isOnline) {
+          await ensureDriverMessaging();
+        }
       } catch (err) {
         console.error(err);
       }
