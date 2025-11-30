@@ -378,6 +378,23 @@
     .fare-label { color: #9ca3af; }
     .fare-value { color: #e5e7eb; }
     .fare-total { color: #bbf7d0; font-weight: 600; }
+    .ride-fare-details {
+      margin-top: 6px;
+      font-size: 0.85rem;
+      color: #9ca3af;
+      line-height: 1.45;
+    }
+    .ride-payment-button {
+      margin: 16px 0 10px;
+    }
+    .ride-payment-status {
+      font-size: 0.85rem;
+      color: #22c55e;
+      margin-top: 4px;
+    }
+    .ride-payment-status.error {
+      color: #fecaca;
+    }
 
     .badge {
       display: inline-flex;
@@ -1468,22 +1485,6 @@
           </div>
           <!-- === RIDE SYNC STRIPE: END membership summary === -->
           <div class="membership-plan-grid" style="display:none;">
-            <div class="membership-plan" data-plan="basic">
-              <div class="membership-plan-title">Basic</div>
-              <div class="membership-plan-price" data-plan-price="basic">
-                $0 / ride
-              </div>
-              <p class="membership-plan-desc">
-                Pay per ride with Stripe. Best if you only ride occasionally.
-              </p>
-              <button
-                class="btn-secondary btn-small"
-                type="button"
-                data-plan-action="basic"
-              >
-                Stay on Basic
-              </button>
-            </div>
             <div class="membership-plan" data-plan="uofa_unlimited">
               <div class="membership-plan-title">U of A Unlimited</div>
               <div
@@ -1935,6 +1936,43 @@
   </div>
 
   <div
+    id="rideFareOverlay"
+    class="payment-overlay"
+    aria-hidden="true"
+    inert
+  >
+    <div class="payment-panel" role="dialog" aria-modal="true">
+      <div class="payment-panel-header">
+        <div>
+          <h3 class="payment-panel-title">Ride payment required</h3>
+          <p id="rideFareSubtitle" class="payment-panel-subtitle">
+            Complete your fare to finish this ride.
+          </p>
+        </div>
+        <button
+          id="rideFareClose"
+          type="button"
+          class="btn-secondary btn-small"
+          data-default-focus="true"
+          disabled
+        >
+          Close
+        </button>
+      </div>
+      <div class="fare-box" style="margin-bottom:0;">
+        <div class="fare-row">
+          <div class="fare-label">Fare total</div>
+          <div class="fare-total" id="rideFareAmount">$0.00</div>
+        </div>
+        <div id="rideFareDetails" class="ride-fare-details"></div>
+      </div>
+      <div id="rideFarePaymentRequest" class="ride-payment-button"></div>
+      <p id="rideFareUnavailable" class="small"></p>
+      <div id="rideFareStatus" class="ride-payment-status"></div>
+    </div>
+  </div>
+
+  <div
     id="cooldownOverlay"
     class="overlay cooldown-overlay"
     aria-hidden="true"
@@ -1984,19 +2022,6 @@
         Choose the unlimited plan that matches your coverage zone.
       </p>
       <div class="membership-plan-grid" style="margin-top:12px;">
-        <button
-          class="membership-plan membership-plan-card"
-          type="button"
-          data-membership-option="basic"
-        >
-          <div class="membership-plan-title">Basic Membership</div>
-          <div class="membership-plan-price" data-plan-price="basic">
-            Pay per ride
-          </div>
-          <p class="membership-plan-desc">
-            Standard pay-as-you-go pricing with no monthly commitment.
-          </p>
-        </button>
         <button
           class="membership-plan membership-plan-card"
           type="button"
@@ -2398,6 +2423,10 @@
       functionsClient,
       "createRideCheckoutSessionCallable"
     );
+    const createRidePaymentIntentFn = httpsCallable(
+      functionsClient,
+      "createRidePaymentIntent"
+    );
 
     const NWA_CENTER = geoConfig.nwaCenter || { lat: 36.334, lng: -94.118 };
     const NWA_RADIUS_MILES = geoConfig.nwaRadiusMiles ?? 30;
@@ -2492,6 +2521,7 @@
 
     const PIN_CHARSET = "0123456789";
     const POOL_GENDER_ALLOWLIST = new Set(["male", "female"]);
+    const METERS_TO_MILES = 0.000621371;
 
     function normalizePoolGender(value) {
       if (typeof value !== "string") {
@@ -2737,6 +2767,15 @@
     const paymentStatusTitle = document.getElementById("paymentStatusTitle");
     const paymentStatusMessage = document.getElementById("paymentStatusMessage");
     const paymentStatusBackButton = document.getElementById("paymentStatusBackButton");
+    const rideFareOverlay = document.getElementById("rideFareOverlay");
+    const rideFareSubtitle = document.getElementById("rideFareSubtitle");
+    const rideFareAmount = document.getElementById("rideFareAmount");
+    const rideFareDetails = document.getElementById("rideFareDetails");
+    const rideFarePaymentRequest =
+      document.getElementById("rideFarePaymentRequest");
+    const rideFareUnavailable = document.getElementById("rideFareUnavailable");
+    const rideFareStatus = document.getElementById("rideFareStatus");
+    const rideFareClose = document.getElementById("rideFareClose");
 
     let latestRideForOverlay = null;
     const stripeInstancesByKey = new Map();
@@ -2745,6 +2784,18 @@
     let activePaymentContext = null;
     let activePaymentLivemode = null;
     let stripeJsPromise = null;
+    const ridePaymentState = {
+      rideId: null,
+      amountCents: 0,
+      clientSecret: null,
+      summary: null,
+      paymentRequest: null,
+      paymentRequestElement: null,
+      paymentRequestElementsInstance: null,
+      processing: false,
+      completed: false,
+      showing: false,
+    };
 
     const RIDER_STATES = {
       HIDDEN: "hidden",
@@ -2910,6 +2961,7 @@
         deactivateWaitlistPanel();
         hideGroupQr();
         updateCancelButtonVisibility();
+        closeRideFareOverlay(true);
       }
 
       function resetJoinModeUi() {
@@ -5356,6 +5408,7 @@
           break;
         case "dropoff_code_verified":
         case "completed":
+          maybePromptRideFareOverlay(rideId, data);
           if (hasRiderRating(data)) {
             setOverlayCopy("All set", "Thanks for riding with RideSync.");
             setRiderOverlayState(RIDER_STATES.THANKS);
@@ -5693,6 +5746,340 @@
 
     function closePaymentStatusOverlay() {
       toggleOverlay(paymentStatusOverlay, false);
+    }
+
+    function updateRideFareStatus(message, isError = false) {
+      if (!rideFareStatus) return;
+      rideFareStatus.textContent = message || "";
+      rideFareStatus.classList.toggle("error", Boolean(message) && isError);
+    }
+
+    function renderRideFareDetails(summary = {}) {
+      if (!rideFareDetails) return;
+      const parts = [];
+      if (summary.pickup) {
+        parts.push(`Pickup: ${summary.pickup}`);
+      }
+      if (summary.dropoff) {
+        parts.push(`Dropoff: ${summary.dropoff}`);
+      }
+      if (Number.isFinite(summary.distanceMiles)) {
+        parts.push(`Distance: ${summary.distanceMiles.toFixed(2)} miles`);
+      }
+      if (Number.isFinite(summary.durationMinutes)) {
+        parts.push(`Duration: ${Math.round(summary.durationMinutes)} min`);
+      }
+      rideFareDetails.textContent = parts.join(" • ");
+    }
+
+    function teardownRidePaymentResources() {
+      if (ridePaymentState.paymentRequestElement) {
+        ridePaymentState.paymentRequestElement.unmount();
+        ridePaymentState.paymentRequestElement = null;
+      }
+      ridePaymentState.paymentRequest = null;
+      ridePaymentState.paymentRequestElementsInstance = null;
+      if (rideFarePaymentRequest) {
+        rideFarePaymentRequest.innerHTML = "";
+      }
+    }
+
+    function resetRidePaymentState() {
+      teardownRidePaymentResources();
+      ridePaymentState.rideId = null;
+      ridePaymentState.amountCents = 0;
+      ridePaymentState.clientSecret = null;
+      ridePaymentState.summary = null;
+      ridePaymentState.processing = false;
+      ridePaymentState.completed = false;
+      ridePaymentState.showing = false;
+      if (rideFareUnavailable) {
+        rideFareUnavailable.textContent = "";
+      }
+      updateRideFareStatus("");
+      if (rideFareClose) {
+        rideFareClose.disabled = true;
+      }
+    }
+
+    function closeRideFareOverlay(force = false) {
+      if (!rideFareOverlay) return;
+      const hasActiveButton = Boolean(ridePaymentState.paymentRequest);
+      if (!force && !ridePaymentState.completed && hasActiveButton) {
+        return;
+      }
+      toggleOverlay(rideFareOverlay, false);
+      ridePaymentState.showing = false;
+      if (force) {
+        resetRidePaymentState();
+      }
+    }
+
+    async function openRideFareOverlay({ rideId, amountCents, summary }) {
+      if (!rideFareOverlay) return;
+      teardownRidePaymentResources();
+      ridePaymentState.rideId = rideId || null;
+      ridePaymentState.amountCents = Math.round(amountCents);
+      ridePaymentState.summary = summary || null;
+      ridePaymentState.completed = false;
+      ridePaymentState.processing = true;
+      ridePaymentState.clientSecret = null;
+      ridePaymentState.showing = true;
+      if (rideFareAmount) {
+        rideFareAmount.textContent = formatCurrencyFromCents(
+          ridePaymentState.amountCents,
+          "usd"
+        );
+      }
+      if (rideFareSubtitle) {
+        rideFareSubtitle.textContent = summary?.dropoff
+          ? `Destination: ${summary.dropoff}`
+          : "Complete your fare to finish this ride.";
+      }
+      renderRideFareDetails(summary);
+      if (rideFareClose) {
+        rideFareClose.disabled = true;
+      }
+      updateRideFareStatus("Preparing Apple Pay / Google Pay…", false);
+      if (rideFareUnavailable) {
+        rideFareUnavailable.textContent = "";
+      }
+      toggleOverlay(rideFareOverlay, true, rideFareClose);
+      try {
+        const clientSecret = await createRidePaymentClientSecret(
+          rideId,
+          ridePaymentState.amountCents
+        );
+        ridePaymentState.clientSecret = clientSecret;
+        await mountRidePaymentRequestButton(clientSecret, ridePaymentState.amountCents);
+        if (ridePaymentState.paymentRequest) {
+          updateRideFareStatus("Ready to pay with Apple Pay / Google Pay.", false);
+        }
+      } catch (err) {
+        updateRideFareStatus(err?.message || PAYMENT_ERROR_FALLBACK, true);
+        if (rideFareUnavailable) {
+          rideFareUnavailable.textContent =
+            "Contact RideSync support if you need help completing this payment.";
+        }
+      } finally {
+        ridePaymentState.processing = false;
+      }
+    }
+
+    async function createRidePaymentClientSecret(rideId, amountCents) {
+      try {
+        const response = await createRidePaymentIntentFn({
+          amount: Math.round(amountCents),
+          currency: "usd",
+          rideId: rideId || null,
+        });
+        const clientSecret = response?.data?.clientSecret;
+        if (typeof clientSecret !== "string" || !clientSecret) {
+          throw new Error("Unable to start ride payment.");
+        }
+        return clientSecret;
+      } catch (err) {
+        throw handleCallableError(
+          "createRidePaymentIntent",
+          err,
+          PAYMENT_ERROR_FALLBACK
+        );
+      }
+    }
+
+    async function mountRidePaymentRequestButton(clientSecret, amountCents) {
+      if (!rideFarePaymentRequest) return;
+      teardownRidePaymentResources();
+      const stripe = await ensureStripeInstance(null);
+      const paymentRequest = stripe.paymentRequest({
+        country: "US",
+        currency: "usd",
+        total: {
+          label: "RideSync Fare",
+          amount: Math.round(amountCents),
+        },
+        requestPayerName: true,
+        requestPayerEmail: true,
+      });
+      const canPay = await paymentRequest.canMakePayment();
+      if (!canPay) {
+        if (rideFareUnavailable) {
+          rideFareUnavailable.textContent =
+            "Apple Pay / Google Pay is not available on this device.";
+        }
+        if (rideFareClose) {
+          rideFareClose.disabled = false;
+        }
+        return;
+      }
+      const elements = stripe.elements();
+      const buttonElement = elements.create("paymentRequestButton", {
+        paymentRequest,
+        style: {
+          paymentRequestButton: {
+            theme: "dark",
+            height: "48px",
+          },
+        },
+      });
+      paymentRequest.on("paymentmethod", (event) => {
+        handleRidePaymentRequest(event);
+      });
+      rideFarePaymentRequest.innerHTML = "";
+      buttonElement.mount(rideFarePaymentRequest);
+      ridePaymentState.paymentRequest = paymentRequest;
+      ridePaymentState.paymentRequestElement = buttonElement;
+      ridePaymentState.paymentRequestElementsInstance = elements;
+      if (rideFareClose) {
+        rideFareClose.disabled = false;
+      }
+    }
+
+    function buildRideFareSummary(ride = {}) {
+      const pickupCandidate =
+        ride.pickupAddress ||
+        ride.fromAddress ||
+        ride.pickupLabel ||
+        ride.pickupDescription ||
+        ride.fromLocationLabel ||
+        "";
+      const dropoffCandidate =
+        ride.toDestination ||
+        ride.dropoffAddress ||
+        ride.destination ||
+        ride.dropoffDescription ||
+        "";
+      const distanceMeters =
+        ride.distanceMeters ||
+        ride.metrics?.distanceMeters ||
+        ride.rideMetrics?.distanceMeters;
+      const durationMinutes =
+        ride.durationMinutes ||
+        ride.estimatedDurationMinutes ||
+        ride.metrics?.durationMinutes ||
+        ride.rideMetrics?.durationMinutes;
+      return {
+        pickup: pickupCandidate ? sanitizeDestinationLabel(pickupCandidate) : "",
+        dropoff: dropoffCandidate ? sanitizeDestinationLabel(dropoffCandidate) : "",
+        distanceMiles: Number.isFinite(distanceMeters)
+          ? distanceMeters * METERS_TO_MILES
+          : null,
+        durationMinutes: Number.isFinite(durationMinutes)
+          ? durationMinutes
+          : null,
+      };
+    }
+
+    function rideRequiresFarePayment(rideData = {}) {
+      const status = (rideData.paymentStatus || "").toLowerCase();
+      const needsPayment = status === "fare_due" || status === "preauthorized";
+      if (!needsPayment) {
+        return 0;
+      }
+      const amountCents = resolveRideCheckoutAmountCents(rideData);
+      if (!amountCents || amountCents <= 0) {
+        return 0;
+      }
+      return amountCents;
+    }
+
+    async function handleRidePaymentRequest(event) {
+      if (!ridePaymentState.clientSecret) {
+        event.complete("fail");
+        updateRideFareStatus("Payment is still being prepared. Try again.", true);
+        return;
+      }
+      ridePaymentState.processing = true;
+      updateRideFareStatus("Processing payment…", false);
+      try {
+        const stripe = await ensureStripeInstance(null);
+        const { error, paymentIntent } = await stripe.confirmCardPayment(
+          ridePaymentState.clientSecret,
+          {
+            payment_method: event.paymentMethod.id,
+          },
+          { handleActions: false }
+        );
+        if (error) {
+          event.complete("fail");
+          updateRideFareStatus(error.message || PAYMENT_ERROR_FALLBACK, true);
+          ridePaymentState.processing = false;
+          return;
+        }
+        event.complete("success");
+        if (paymentIntent && paymentIntent.status === "requires_action") {
+          const { error: actionError } = await stripe.confirmCardPayment(
+            ridePaymentState.clientSecret
+          );
+          if (actionError) {
+            updateRideFareStatus(actionError.message || PAYMENT_ERROR_FALLBACK, true);
+            ridePaymentState.processing = false;
+            return;
+          }
+        }
+        await markRideFarePaid(paymentIntent?.id || null);
+        ridePaymentState.completed = true;
+        ridePaymentState.processing = false;
+        updateRideFareStatus(
+          "Payment complete. Thank you for riding with RideSync!",
+          false
+        );
+        if (rideFareClose) {
+          rideFareClose.disabled = false;
+        }
+        setTimeout(() => {
+          closeRideFareOverlay();
+          resetRidePaymentState();
+        }, 1800);
+      } catch (err) {
+        event.complete("fail");
+        ridePaymentState.processing = false;
+        updateRideFareStatus(err?.message || PAYMENT_ERROR_FALLBACK, true);
+      }
+    }
+
+    async function markRideFarePaid(paymentIntentId) {
+      if (!ridePaymentState.rideId) {
+        return;
+      }
+      try {
+        const rideRef = doc(db, "rideRequests", ridePaymentState.rideId);
+        await updateDoc(rideRef, {
+          paymentStatus: "paid",
+          stripePaymentIntentId: paymentIntentId || null,
+          stripeAmountCents: ridePaymentState.amountCents,
+          stripeAmount: ridePaymentState.amountCents / 100,
+          stripeCurrency: "usd",
+          updatedAt: serverTimestamp(),
+        });
+        profileMessage.textContent = "Payment received. Thanks for riding!";
+      } catch (err) {
+        console.warn("Failed to update ride payment status", err);
+      }
+    }
+
+    function maybePromptRideFareOverlay(rideId, rideData) {
+      const amountCents = rideRequiresFarePayment(rideData);
+      if (!amountCents) {
+        if (ridePaymentState.showing && ridePaymentState.rideId === rideId) {
+          closeRideFareOverlay(true);
+        }
+        return;
+      }
+      if (ridePaymentState.processing) {
+        return;
+      }
+      if (ridePaymentState.showing && ridePaymentState.rideId === rideId) {
+        return;
+      }
+      const summary = buildRideFareSummary(rideData);
+      openRideFareOverlay({
+        rideId,
+        amountCents,
+        summary,
+      }).catch((err) => {
+        console.error("Ride payment overlay error", err);
+      });
     }
 
     let checkoutFinalizationPromise = null;
@@ -6136,6 +6523,19 @@
           } else if (context?.type === "membership" && membershipCardMessage) {
             membershipCardMessage.textContent = "Membership payment canceled.";
           }
+        }
+      });
+    }
+
+    if (rideFareClose) {
+      rideFareClose.addEventListener("click", () => {
+        closeRideFareOverlay();
+      });
+    }
+    if (rideFareOverlay) {
+      rideFareOverlay.addEventListener("click", (event) => {
+        if (event.target === rideFareOverlay) {
+          closeRideFareOverlay();
         }
       });
     }
@@ -6746,7 +7146,6 @@
       const numRiders = parseInt(numRidersEl.value || "1", 10);
       const inHomeZone = !!lastRideMetrics.inHomeZone;
 
-      // 🔐 U of A pooling strict eligibility
       const uofaPoolEligible =
         plan === "uofa_unlimited" &&
         isStudent &&
@@ -6772,7 +7171,10 @@
         status = "pool_searching";
       }
 
-      const destAddress = destinationEl.value.trim() || (lastDestinationPlace?.formatted_address || "");
+      const destAddress =
+        destinationEl.value.trim() ||
+        lastDestinationPlace?.formatted_address ||
+        "";
 
       const riderName =
         currentUserProfile?.fullName ||
@@ -6853,12 +7255,44 @@
         }));
       }
 
+      const requiresPayment = totalCents > 0;
+      const paymentStatus = requiresPayment ? "preauthorized" : "included";
+      const paymentMethod = requiresPayment ? "stripe" : "included";
+      const rideRef = doc(collection(db, "rideRequests"));
+      const rideDoc = {
+        ...rideBase,
+        status,
+        paymentMethod,
+        paymentStatus,
+        stripeAmount: requiresPayment ? totalValue : 0,
+        stripeAmountCents: requiresPayment ? totalCents : 0,
+        stripeCurrency: "usd",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      if (rideDoc.isGroupRide && !rideDoc.groupId) {
+        rideDoc.groupId = rideRef.id;
+      }
+
       try {
-        const ridePaymentPayload = { ...rideBase, status };
-        await startRidePaymentFlow(ridePaymentPayload);
+        if (syncButton) {
+          syncButton.disabled = true;
+          syncButton.textContent = "Syncing...";
+        }
+        await setDoc(rideRef, rideDoc);
+        activateRideAfterCreation(rideRef.id, rideDoc);
+        profileMessage.textContent = requiresPayment
+          ? "Ride synced! Pay when the ride ends."
+          : "Ride synced! Your membership covers this fare.";
+        profileError.textContent = "";
       } catch (err) {
         console.error("New ride error", err);
-        profileError.textContent = err.message || "Could not sync ride / payment.";
+        profileError.textContent = err.message || "Could not start this ride.";
+      } finally {
+        if (syncButton) {
+          syncButton.disabled = false;
+          updateSyncButtonLabel();
+        }
       }
     }
 

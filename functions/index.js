@@ -2062,143 +2062,50 @@ exports.createRideCheckoutSessionCallable = functions
 // === RIDE SYNC STRIPE: START createRidePaymentIntent ===
 exports.createRidePaymentIntent = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
-  .https.onCall(async (data, context) => {
+  .https.onCall(async (data = {}, context) => {
     const uid = requireAuth(context);
-    const rideInput = extractRideInput(data);
-    if (!rideInput) {
+    const amountRaw = data?.amount ?? data?.amountCents ?? data?.amount_cents;
+    const amount = Number(amountRaw);
+    if (!Number.isFinite(amount) || amount <= 0) {
       throw new functions.https.HttpsError(
         "invalid-argument",
-        "Ride payload is required."
+        "A positive amount (in cents) is required."
       );
     }
 
-    const totalCentsResolved = resolveRideTotalCents(rideInput);
-    if (!Number.isFinite(totalCentsResolved)) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Estimated fare (totalCents) is required."
-      );
-    }
-    const totalCents = Math.max(0, Math.round(totalCentsResolved));
-
-    const pickupLocation =
-      coerceLatLng(rideInput.pickupLocation) ||
-      coerceLatLng(rideInput.fromLocation) ||
-      coerceLatLng(rideInput.currentLocation);
-    const dropoffLocation =
-      coerceLatLng(rideInput.dropoffLocation) ||
-      coerceLatLng(rideInput.toLocation) ||
-      coerceLatLng(rideInput.destinationLocation);
-    if (!hasValidLocation(pickupLocation) || !hasValidLocation(dropoffLocation)) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Pickup and dropoff coordinates are required."
-      );
-    }
-
-    const estimatedMinutes = resolveRideDurationMinutes(rideInput);
-    if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Estimated ride duration is required."
-      );
-    }
-
-    const userRef = db.collection("users").doc(uid);
-    const userSnap = await userRef.get();
-    const profile = userSnap.exists ? userSnap.data() : {};
-    const membershipType = normalizeMembershipPlan(
-      profile?.membershipType || profile?.membership || "basic"
-    );
-    const membershipStatus = profile?.membershipStatus || "none";
-
-    const chargeContext = calculateRideChargeContext({
-      membershipType,
-      membershipStatus,
-      pickupLocation,
-      dropoffLocation,
-      totalCents,
-    });
-
-    const sanitizedPayload = buildRidePayload(rideInput, {
-      uid,
-      membershipType,
-      membershipStatus,
-      pickupLocation,
-      dropoffLocation,
-      amountCents: chargeContext.amountCents,
-      totalCents,
-      chargeContext,
-      estimatedDurationMinutes: estimatedMinutes,
-    });
-
-    if (chargeContext.amountCents <= 0) {
-      const rideRef = db.collection("rideRequests").doc();
-      const rideData = {
-        ...sanitizedPayload,
-        paymentMethod: "included",
-        paymentStatus: "included",
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-      if (rideData.isGroupRide && !rideData.groupId) {
-        rideData.groupId = rideRef.id;
-      }
-      await rideRef.set(rideData);
-      return {
-        skipPayment: true,
-        rideId: rideRef.id,
-        status: rideData.status,
-        geofenceContext: chargeContext,
-      };
-    }
-
-    const pendingRef = db.collection("pendingRidePayments").doc();
+    const currencyInput =
+      typeof data?.currency === "string" && data.currency.trim()
+        ? data.currency.trim().toLowerCase()
+        : "usd";
+    const rideId =
+      typeof data?.rideId === "string"
+        ? data.rideId
+        : typeof data?.ride_id === "string"
+        ? data.ride_id
+        : "";
 
     const stripeClient = getStripeClient();
-    const { customerId } = await getOrCreateStripeCustomer(uid);
 
-    const paymentIntent = await stripeClient.paymentIntents.create({
-      amount: chargeContext.amountCents,
-      currency: "usd",
-      customer: customerId,
-      metadata: {
-        firebaseUid: uid,
-        pendingRideId: pendingRef.id,
-        purpose: "ride",
-      },
-      automatic_payment_methods: { enabled: true },
-    });
+    try {
+      const paymentIntent = await stripeClient.paymentIntents.create({
+        amount: Math.round(amount),
+        currency: currencyInput,
+        automatic_payment_methods: { enabled: true },
+        metadata: {
+          rideId,
+          userId: uid,
+          type: "ride_fare",
+        },
+      });
 
-    logStripeDebug("createRidePaymentIntent: created PaymentIntent", {
-      amountCents: chargeContext.amountCents,
-      currency: "usd",
-      pendingId: pendingRef.id,
-      paymentIntentId: paymentIntent.id,
-      livemode: paymentIntent.livemode,
-    });
-
-    await pendingRef.set({
-      userId: uid,
-      pendingId: pendingRef.id,
-      ridePayload: sanitizedPayload,
-      amountCents: chargeContext.amountCents,
-      totalCents,
-      geofenceContext: chargeContext,
-      currency: "usd",
-      stripePaymentIntentId: paymentIntent.id,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-
-    return {
-      clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id,
-      pendingId: pendingRef.id,
-      amountCents: chargeContext.amountCents,
-      currency: "usd",
-      geofenceContext: chargeContext,
-      livemode: paymentIntent?.livemode ?? null,
-    };
+      return { clientSecret: paymentIntent.client_secret };
+    } catch (err) {
+      console.error("createRidePaymentIntent error", err);
+      throw new functions.https.HttpsError(
+        "internal",
+        err?.message || "Failed to create ride payment intent."
+      );
+    }
   });
 // === RIDE SYNC STRIPE: END createRidePaymentIntent ===
 
