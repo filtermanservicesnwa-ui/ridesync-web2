@@ -1702,10 +1702,66 @@ function resolveCheckoutAmountCents(payload = {}) {
   return amountCents;
 }
 
+const DEFAULT_CHECKOUT_BASE_URL =
+  process.env.CHECKOUT_BASE_URL ||
+  runtimeConfig?.app?.checkout_base_url ||
+  "https://ride-sync-nwa.web.app";
+
+function sanitizeRedirectBaseUrl(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const url = new URL(trimmed);
+    const protocol = url.protocol.toLowerCase();
+    const hostname = url.hostname.toLowerCase();
+    const isLocalhost =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "[::1]";
+    const isAllowedProtocol =
+      protocol === "https:" || (protocol === "http:" && isLocalhost);
+    if (!isAllowedProtocol) {
+      return null;
+    }
+    return url.origin.replace(/\/+$/, "");
+  } catch (err) {
+    return null;
+  }
+}
+
+function resolveCheckoutRedirectBaseUrl({
+  payload = {},
+  requestOrigin = null,
+  requestReferer = null,
+} = {}) {
+  const payloadUrl =
+    payload.redirectBaseUrl || payload.redirect_base_url || null;
+  const candidates = [
+    payloadUrl,
+    requestOrigin,
+    requestReferer,
+    DEFAULT_CHECKOUT_BASE_URL,
+  ];
+  for (const candidate of candidates) {
+    const sanitized = sanitizeRedirectBaseUrl(candidate);
+    if (sanitized) {
+      return sanitized;
+    }
+  }
+  return "https://ride-sync-nwa.web.app";
+}
+
 async function createRideCheckoutSessionInternal({
   payload = {},
   uid,
   email,
+  requestOrigin = null,
+  requestReferer = null,
 }) {
   if (!uid) {
     throw new functions.https.HttpsError(
@@ -1810,6 +1866,12 @@ async function createRideCheckoutSessionInternal({
   let session = null;
 
   try {
+    const redirectBaseUrl = resolveCheckoutRedirectBaseUrl({
+      payload,
+      requestOrigin,
+      requestReferer,
+    });
+
     pendingRef = db.collection("pendingRidePayments").doc();
     await pendingRef.set({
       userId: uid,
@@ -1823,7 +1885,6 @@ async function createRideCheckoutSessionInternal({
       createdAt: FieldValue.serverTimestamp(),
     });
 
-    const baseHost = "https://ride-sync-nwa.web.app";
     session = await stripeClient.checkout.sessions.create({
       mode: "payment",
       line_items: [
@@ -1838,8 +1899,8 @@ async function createRideCheckoutSessionInternal({
           quantity: 1,
         },
       ],
-      success_url: `${baseHost}/payment-success?pending_id=${pendingRef.id}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseHost}/payment-cancelled?pending_id=${pendingRef.id}`,
+      success_url: `${redirectBaseUrl}/payment-success?pending_id=${pendingRef.id}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${redirectBaseUrl}/payment-cancelled?pending_id=${pendingRef.id}`,
       customer_email: email || undefined,
       client_reference_id: pendingRef.id,
       metadata: {
@@ -1943,6 +2004,8 @@ exports.createRideCheckoutSession = functions
         payload,
         uid,
         email,
+        requestOrigin: req.headers.origin || null,
+        requestReferer: req.headers.referer || req.headers.referrer || null,
       });
 
       res.status(200).json(result);
