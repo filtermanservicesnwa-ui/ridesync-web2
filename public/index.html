@@ -6573,10 +6573,15 @@
       if (idToken) {
         headers.Authorization = `Bearer ${idToken}`;
       }
+      const redirectBaseUrl =
+        typeof window !== "undefined" && window.location?.origin
+          ? window.location.origin
+          : null;
       const requestPayload = {
         amountCents: Math.round(amountCents),
         description,
         ridePayload: context.ridePayload || null,
+        redirectBaseUrl,
       };
       const requestBody = JSON.stringify(requestPayload);
       try {
