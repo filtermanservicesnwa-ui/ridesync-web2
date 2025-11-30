@@ -112,6 +112,29 @@ const MEMBERSHIP_PLAN_ALIASES = {
   basic: new Set(["basic", "basic (pay per ride)", "basic plan", "plan: basic"]),
 };
 
+const COOLDOWN_ELIGIBLE_PLANS = new Set(["uofa_unlimited", "nwa_unlimited"]);
+const MAX_EXTRA_STOPS = 3;
+const RIDER_CANCELABLE_STATUSES = new Set([
+  "pending_driver",
+  "pooled_pending_driver",
+  "pool_searching",
+  "pending",
+]);
+const RIDER_RATING_MIN = 1;
+const RIDER_RATING_MAX = 5;
+
+const UNLIMITED_COOLDOWN_MINUTES =
+  Number(runtimeConfig?.ridepolicy?.unlimited_cooldown_minutes) ||
+  Number(process.env.RIDE_UNLIMITED_COOLDOWN_MINUTES) ||
+  30;
+const SURGE_MODE =
+  runtimeConfig?.ridepolicy?.surge_mode === true ||
+  process.env.RIDE_SURGE_MODE === "true";
+const SURGE_COOLDOWN_MINUTES =
+  Number(runtimeConfig?.ridepolicy?.surge_cooldown_minutes) ||
+  Number(process.env.RIDE_SURGE_COOLDOWN_MINUTES) ||
+  60;
+
 const DEFAULT_FARE_CONSTANTS = {
   BASIC_RATE_PER_MIN: 0.6,
   BASIC_PLATFORM_FEE: 0.5,
@@ -2513,6 +2536,664 @@ exports.finalizeRideCheckoutSession = functions
         },
       });
     }
+  });
+
+function sanitizeProfileString(value, maxLength = 140) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.slice(0, maxLength);
+}
+
+function sanitizePhoneNumber(value) {
+  if (!value) {
+    return "";
+  }
+  const digits = String(value).replace(/\D+/g, "");
+  if (!digits) {
+    return "";
+  }
+  return digits.slice(-15);
+}
+
+function normalizeBooleanInput(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    return value.trim().toLowerCase() === "true";
+  }
+  return Boolean(value);
+}
+
+function normalizeExtraStopsInput(stops = []) {
+  if (!Array.isArray(stops)) {
+    return [];
+  }
+  const normalized = [];
+  stops.forEach((stop, index) => {
+    if (!stop) return;
+    const label = sanitizeProfileString(stop.label, 80);
+    const location = coerceLatLng(stop.location);
+    if (!label || !location) {
+      return;
+    }
+    normalized.push({
+      order: Number.isFinite(stop.order) ? stop.order : index + 1,
+      label,
+      location,
+    });
+  });
+  return normalized.slice(0, MAX_EXTRA_STOPS);
+}
+
+async function loadUserProfileOrThrow(uid) {
+  const userRef = db.collection("users").doc(uid);
+  const snap = await userRef.get();
+  if (!snap.exists) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Complete your rider profile before requesting a ride."
+    );
+  }
+  return { userRef, profile: snap.data() || {} };
+}
+
+async function enforceRideCooldown(uid, planKey) {
+  const normalizedPlan = normalizeMembershipPlan(planKey || "basic");
+  if (!COOLDOWN_ELIGIBLE_PLANS.has(normalizedPlan)) {
+    return;
+  }
+  const cooldownMinutes = SURGE_MODE
+    ? SURGE_COOLDOWN_MINUTES
+    : UNLIMITED_COOLDOWN_MINUTES;
+  if (!cooldownMinutes || cooldownMinutes <= 0) {
+    return;
+  }
+  const ridesSnap = await db
+    .collection("rideRequests")
+    .where("userId", "==", uid)
+    .orderBy("createdAt", "desc")
+    .limit(10)
+    .get();
+  if (ridesSnap.empty) {
+    return;
+  }
+  let lastCompleted = null;
+  ridesSnap.forEach((docSnap) => {
+    if (lastCompleted) return;
+    const data = docSnap.data() || {};
+    if (
+      (data.status === "completed" || data.status === "dropoff_code_verified") &&
+      normalizeMembershipPlan(data.membershipType) === normalizedPlan &&
+      data.completedAt &&
+      typeof data.completedAt.toDate === "function"
+    ) {
+      lastCompleted = data;
+    }
+  });
+  if (!lastCompleted) {
+    return;
+  }
+  const completedAt =
+    typeof lastCompleted.completedAt.toDate === "function"
+      ? lastCompleted.completedAt.toDate()
+      : null;
+  if (!completedAt) {
+    return;
+  }
+  const diffMs = Date.now() - completedAt.getTime();
+  const diffMinutes = diffMs / 60000;
+  const remaining = Math.ceil(cooldownMinutes - diffMinutes);
+  if (remaining > 0) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      `Cooldown active. Try again in about ${remaining} minute${remaining === 1 ? "" : "s"}.`
+    );
+  }
+}
+
+function resolveRidePaymentStatus(membershipType, amountCents) {
+  if (!amountCents || amountCents <= 0) {
+    return {
+      paymentStatus: "included",
+      paymentMethod: "included",
+    };
+  }
+  const normalizedPlan = normalizeMembershipPlan(membershipType || "basic");
+  if (normalizedPlan === "basic") {
+    return {
+      paymentStatus: "pending",
+      paymentMethod: "stripe",
+    };
+  }
+  return {
+    paymentStatus: "preauthorized",
+    paymentMethod: "stripe",
+  };
+}
+
+function serializeRideForClient(rideDoc) {
+  if (!rideDoc) {
+    return null;
+  }
+  const clientRide = {
+    ...rideDoc,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  if (rideDoc.pinGeneratedAt) {
+    clientRide.pinGeneratedAt = Date.now();
+  }
+  return clientRide;
+}
+
+exports.saveUserProfile = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  const payload = typeof data === "object" && data !== null ? data : {};
+  const userRef = db.collection("users").doc(uid);
+  const snap = await userRef.get();
+  const existing = snap.exists ? snap.data() || {} : {};
+
+  const profileUpdates = {
+    fullName: sanitizeProfileString(payload.fullName, 80) || existing.fullName || "",
+    gender: normalizePoolGender(payload.gender) || existing.gender || null,
+    phone: sanitizePhoneNumber(payload.phone || payload.phoneNumber) || existing.phone || "",
+    street: sanitizeProfileString(payload.street || payload.streetAddress, 140) || existing.street || "",
+    city: sanitizeProfileString(payload.city, 80) || existing.city || "",
+    state: sanitizeProfileString(payload.state, 40) || existing.state || "",
+    zip: sanitizeProfileString(payload.zip, 20) || existing.zip || "",
+    profilePicUrl: payload.profilePicUrl || existing.profilePicUrl || null,
+    licensePicUrl: payload.licensePicUrl || existing.licensePicUrl || null,
+    studentIdPicUrl: payload.studentIdPicUrl || existing.studentIdPicUrl || null,
+    isStudent: normalizeBooleanInput(
+      payload.isStudent !== undefined ? payload.isStudent : existing.isStudent
+    ),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+
+  const membershipType = normalizeMembershipPlan(existing.membershipType || "basic");
+  const membershipStatus = existing.membershipStatus || "none";
+
+  const userEmail =
+    sanitizeProfileString(payload.email, 120) ||
+    existing.email ||
+    context?.auth?.token?.email ||
+    null;
+
+  const docPayload = {
+    ...profileUpdates,
+    email: userEmail,
+    membershipType,
+    membershipStatus,
+  };
+
+  if (!snap.exists) {
+    docPayload.createdAt = FieldValue.serverTimestamp();
+    docPayload.userId = uid;
+  }
+
+  if (payload.membershipTermsAccepted === true && !existing.membershipTermsAccepted) {
+    docPayload.membershipTermsAccepted = true;
+    docPayload.membershipTermsAcceptedAt = FieldValue.serverTimestamp();
+    docPayload.membershipTermsVersion =
+      sanitizeProfileString(payload.membershipTermsVersion, 20) || "v1";
+  }
+
+  await userRef.set(docPayload, { merge: true });
+
+  return {
+    status: "saved",
+    profile: {
+      ...existing,
+      ...docPayload,
+      updatedAt: Date.now(),
+    },
+  };
+});
+
+exports.createRideRequest = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data, context) => {
+    const uid = requireAuth(context);
+    const rideInput = extractRideInput(data?.ride || data);
+    if (!rideInput) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Ride payload is required."
+      );
+    }
+    const pickupLocation =
+      coerceLatLng(rideInput.pickupLocation) ||
+      coerceLatLng(rideInput.fromLocation) ||
+      null;
+    const dropoffLocation =
+      coerceLatLng(rideInput.dropoffLocation) ||
+      coerceLatLng(rideInput.toLocation) ||
+      null;
+    if (!pickupLocation || !dropoffLocation) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Pickup and dropoff coordinates are required."
+      );
+    }
+    const estimatedMinutes = Number(rideInput.estimatedDurationMinutes);
+    if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Estimated ride duration is required."
+      );
+    }
+
+    const { profile, userRef } = await loadUserProfileOrThrow(uid);
+    const membershipType = normalizeMembershipPlan(profile.membershipType || "basic");
+    const membershipStatus = profile.membershipStatus || "none";
+    await enforceRideCooldown(uid, membershipType);
+
+    const extraStops = normalizeExtraStopsInput(rideInput.extraStops);
+    const numRiders = Math.max(1, Math.min(6, Number(rideInput.numRiders) || 1));
+    const maxRiders = Math.max(numRiders, Math.min(6, Number(rideInput.maxRiders) || numRiders));
+    const isGroupRide = Boolean(rideInput.isGroupRide) || maxRiders > 1;
+    const poolType = rideInput.poolType === "uofa" ? "uofa" : null;
+    const normalizedStatus = normalizeRideStatus(rideInput.status, poolType);
+
+    const fareBreakdown = computeFareForMembership(
+      membershipType,
+      estimatedMinutes,
+      Boolean(rideInput.inHomeZone)
+    );
+    const totalCents = Math.max(
+      0,
+      Math.round(
+        Number.isFinite(fareBreakdown.total) ? fareBreakdown.total * 100 : rideInput.totalCents
+      )
+    );
+
+    const chargeContext = calculateRideChargeContext({
+      membershipType,
+      membershipStatus,
+      pickupLocation,
+      dropoffLocation,
+      totalCents,
+    });
+    const amountCents = Math.max(0, Math.round(chargeContext.amountCents || 0));
+    const paymentMeta = resolveRidePaymentStatus(membershipType, amountCents);
+
+    const rideDoc = buildRidePayload(
+      {
+        ...rideInput,
+        extraStops,
+        pickupLocation,
+        dropoffLocation,
+        fare: fareBreakdown,
+        estimatedDurationMinutes: estimatedMinutes,
+        numRiders,
+        maxRiders,
+      },
+      {
+        uid,
+        membershipType,
+        membershipStatus,
+        pickupLocation,
+        dropoffLocation,
+        amountCents,
+        totalCents,
+        chargeContext,
+      }
+    );
+
+    rideDoc.userId = uid;
+    rideDoc.startedByUserId = uid;
+    rideDoc.status = normalizedStatus;
+    rideDoc.paymentStatus = paymentMeta.paymentStatus;
+    rideDoc.paymentMethod = paymentMeta.paymentMethod;
+    rideDoc.stripeAmountCents = amountCents;
+    rideDoc.stripeAmount = amountCents / 100;
+    rideDoc.stripeCurrency = "usd";
+    rideDoc.totalCents = totalCents;
+    rideDoc.fare = fareBreakdown;
+    rideDoc.extraStops = extraStops.length ? extraStops : undefined;
+    rideDoc.maxRiders = maxRiders;
+    rideDoc.currentRiderCount = Math.min(numRiders, maxRiders);
+    rideDoc.isGroupRide = isGroupRide;
+    rideDoc.poolType = poolType;
+    rideDoc.gender =
+      normalizePoolGender(profile.gender) ||
+      rideDoc.gender ||
+      null;
+    rideDoc.isStudent = Boolean(profile.isStudent);
+    rideDoc.uofaVerified = Boolean(profile.uofaVerified);
+    rideDoc.uofaPoolEligible =
+      membershipType === "uofa_unlimited" &&
+      Boolean(profile.isStudent) &&
+      Boolean(profile.uofaVerified) &&
+      Boolean(rideDoc.gender) &&
+      Boolean(chargeContext.pickupInside && chargeContext.dropoffInside);
+    const riderName =
+      sanitizeProfileString(
+        profile.fullName ||
+          profile.name ||
+          profile.displayName ||
+          (profile.email ? profile.email.split("@")[0] : ""),
+        80
+      ) || "Rider";
+    const riderPhone =
+      sanitizePhoneNumber(profile.phone || profile.phoneNumber || "") || "";
+    const riderPhotoUrl =
+      sanitizeProfileString(profile.profilePicUrl || profile.photoURL || "", 500) || null;
+    rideDoc.riderName = riderName;
+    rideDoc.riderPhone = riderPhone;
+    rideDoc.riderProfilePicUrl = riderPhotoUrl;
+    rideDoc.riderPhotoUrl = riderPhotoUrl;
+    rideDoc.riderAvatarUrl = riderPhotoUrl;
+    rideDoc.riderImageUrl = riderPhotoUrl;
+    rideDoc.membershipStatus = membershipStatus;
+    rideDoc.createdAt = FieldValue.serverTimestamp();
+    rideDoc.updatedAt = FieldValue.serverTimestamp();
+
+    const pinUpdates = ensurePinUpdates(rideDoc);
+    if (pinUpdates) {
+      Object.assign(rideDoc, pinUpdates);
+    }
+
+    const rideRef = db.collection("rideRequests").doc();
+    if (rideDoc.isGroupRide && !rideDoc.groupId) {
+      rideDoc.groupId = rideRef.id;
+    }
+
+    await rideRef.set(rideDoc);
+    await userRef.set({ lastRideRequestedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+    return {
+      rideId: rideRef.id,
+      paymentStatus: rideDoc.paymentStatus,
+      amountCents,
+      ride: serializeRideForClient(rideDoc),
+    };
+  });
+
+exports.joinRideGroup = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  const hostRideId = data?.hostRideId || data?.rideId;
+  if (!hostRideId) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Host ride ID is required."
+    );
+  }
+  const { profile } = await loadUserProfileOrThrow(uid);
+  const membershipType = normalizeMembershipPlan(profile.membershipType || "basic");
+  const membershipStatus = profile.membershipStatus || "none";
+  const riderGender = normalizePoolGender(profile.gender);
+  if (!riderGender) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Set your profile gender before joining pooled rides."
+    );
+  }
+  await enforceRideCooldown(uid, membershipType);
+
+  const hostRef = db.collection("rideRequests").doc(hostRideId);
+  const rideRef = db.collection("rideRequests").doc();
+  let createdRideId = null;
+
+  await db.runTransaction(async (tx) => {
+    const hostSnap = await tx.get(hostRef);
+    if (!hostSnap.exists) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "This group ride is no longer available."
+      );
+    }
+    const host = hostSnap.data() || {};
+    if (!isRideAvailableForPooling(host)) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This ride is no longer open for pooling."
+      );
+    }
+    const hostGender = normalizePoolGender(host.gender);
+    if (!hostGender || hostGender !== riderGender) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This group ride is restricted to riders with matching gender."
+      );
+    }
+
+    const maxRiders = Math.max(1, host.maxRiders || 1);
+    const currentCount = Math.max(1, host.currentRiderCount || 1);
+    if (currentCount >= maxRiders) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This group ride is already full."
+      );
+    }
+
+    const pickupLocation = coerceLatLng(host.pickupLocation);
+    const dropoffLocation = coerceLatLng(host.dropoffLocation);
+    if (!pickupLocation || !dropoffLocation) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Ride locations are incomplete."
+      );
+    }
+
+    const minutes = Number(host.estimatedDurationMinutes) || 0;
+    const fareBreakdown = computeFareForMembership(
+      membershipType,
+      minutes,
+      Boolean(host.inHomeZone)
+    );
+    const totalCents = Math.max(
+      0,
+      Math.round(
+        Number.isFinite(fareBreakdown.total) ? fareBreakdown.total * 100 : host.totalCents || 0
+      )
+    );
+    const chargeContext = calculateRideChargeContext({
+      membershipType,
+      membershipStatus,
+      pickupLocation,
+      dropoffLocation,
+      totalCents,
+    });
+    const amountCents = Math.max(0, Math.round(chargeContext.amountCents || 0));
+    const paymentMeta = resolveRidePaymentStatus(membershipType, amountCents);
+
+    const pickupCode =
+      normalizeRideCode(host.pickupCode) ||
+      normalizeRideCode(host.pickupPin) ||
+      generateRideCode();
+    const dropoffCode =
+      normalizeRideCode(host.dropoffCode) ||
+      normalizeRideCode(host.dropoffPin) ||
+      generateRideCode();
+
+    const joinRideDoc = {
+      userId: uid,
+      startedByUserId: host.startedByUserId || host.userId || uid,
+      membershipType,
+      membershipStatus,
+      isStudent: Boolean(profile.isStudent),
+      uofaVerified: Boolean(profile.uofaVerified),
+      gender: riderGender,
+      isGroupRide: true,
+      groupId: host.groupId || hostRideId,
+      maxRiders,
+      currentRiderCount: 1,
+      poolType: host.poolType || null,
+      pickupLocation,
+      dropoffLocation,
+      fare: fareBreakdown,
+      totalCents,
+      stripeAmountCents: amountCents,
+      stripeAmount: amountCents / 100,
+      stripeCurrency: "usd",
+      paymentStatus: paymentMeta.paymentStatus,
+      paymentMethod: paymentMeta.paymentMethod,
+      status: host.status || "pool_searching",
+      pickupCode,
+      pickupPin: pickupCode,
+      dropoffCode,
+      dropoffPin: dropoffCode,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    tx.set(rideRef, joinRideDoc);
+    tx.update(hostRef, {
+      currentRiderCount: Math.min(maxRiders, currentCount + 1),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    createdRideId = rideRef.id;
+  });
+
+  return { rideId: createdRideId };
+});
+
+exports.cancelRideRequest = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  const rideId = data?.rideId;
+  if (!rideId) {
+    throw new functions.https.HttpsError("invalid-argument", "Ride ID is required.");
+  }
+  const rideRef = db.collection("rideRequests").doc(rideId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(rideRef);
+    if (!snap.exists) {
+      throw new functions.https.HttpsError("not-found", "Ride not found.");
+    }
+    const ride = snap.data() || {};
+    if (ride.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "You can only cancel your own rides."
+      );
+    }
+    if (!RIDER_CANCELABLE_STATUSES.has(ride.status)) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This ride can no longer be canceled."
+      );
+    }
+    tx.update(rideRef, {
+      status: "canceled_by_rider",
+      paymentStatus: ride.paymentStatus === "paid" ? ride.paymentStatus : "canceled",
+      canceledAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return { status: "canceled" };
+});
+
+exports.submitRideRating = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  const rideId = data?.rideId;
+  const rating = Number(data?.rating);
+  const feedback =
+    typeof data?.feedback === "string" ? data.feedback.trim().slice(0, 500) : "";
+  if (!rideId) {
+    throw new functions.https.HttpsError("invalid-argument", "Ride ID is required.");
+  }
+  if (!Number.isFinite(rating) || rating < RIDER_RATING_MIN || rating > RIDER_RATING_MAX) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Rating must be between 1 and 5."
+    );
+  }
+  const rideRef = db.collection("rideRequests").doc(rideId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(rideRef);
+    if (!snap.exists) {
+      throw new functions.https.HttpsError("not-found", "Ride not found.");
+    }
+    const ride = snap.data() || {};
+    if (ride.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "You can only rate your own rides."
+      );
+    }
+    tx.update(rideRef, {
+      rating,
+      riderRating: rating,
+      riderFeedback: feedback || FieldValue.delete(),
+      riderRated: true,
+      riderRatedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+  return { status: "recorded" };
+});
+
+exports.confirmRidePaymentIntent = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data, context) => {
+    const uid = requireAuth(context);
+    const rideId = data?.rideId;
+    const paymentIntentId = data?.paymentIntentId;
+    if (!rideId || !paymentIntentId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Ride ID and payment intent ID are required."
+      );
+    }
+    const rideRef = db.collection("rideRequests").doc(rideId);
+    const snap = await rideRef.get();
+    if (!snap.exists) {
+      throw new functions.https.HttpsError("not-found", "Ride not found.");
+    }
+    const ride = snap.data() || {};
+    if (ride.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "You can only update payments for your own rides."
+      );
+    }
+    const stripeClient = getStripeClient();
+    const intent = await stripeClient.paymentIntents.retrieve(paymentIntentId);
+    if (intent.metadata?.rideId && intent.metadata.rideId !== rideId) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Payment intent does not match this ride."
+      );
+    }
+    if (intent.metadata?.userId && intent.metadata.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Payment intent is associated with another user."
+      );
+    }
+    if (intent.status !== "succeeded") {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Stripe has not confirmed this payment yet."
+      );
+    }
+
+    const amountReceived = Number(intent.amount_received || intent.amount || 0);
+    const baseAmountCents = Number(intent.metadata?.base_amount_cents) || amountReceived;
+    const tipAmountCents = Number(intent.metadata?.tip_amount_cents) || 0;
+
+    await rideRef.update({
+      paymentStatus: "paid",
+      stripePaymentIntentId: intent.id,
+      stripeAmountCents: amountReceived,
+      stripeAmount: amountReceived / 100,
+      stripeCurrency: intent.currency || "usd",
+      fareBaseAmountCents: baseAmountCents,
+      tipAmountCents,
+      tipAmount: tipAmountCents / 100,
+      tipCurrency: intent.currency || "usd",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return { status: "updated" };
   });
 
 exports.getDriverAvailabilityStats = functions.https.onCall(async (_data, context) => {

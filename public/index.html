@@ -2175,18 +2175,13 @@
       getFirestore,
       doc,
       getDoc,
-      setDoc,
       collection,
-      addDoc,
-      serverTimestamp,
       onSnapshot,
       query,
       where,
       getDocs,
       orderBy,
-      limit,
-      updateDoc,
-      runTransaction
+      limit
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
     import {
       getStorage,
@@ -2461,6 +2456,15 @@
     const createRideCheckoutSessionCallableFn = httpsCallable(
       functionsClient,
       "createRideCheckoutSessionCallable"
+    );
+    const saveUserProfileFn = httpsCallable(functionsClient, "saveUserProfile");
+    const createRideRequestFn = httpsCallable(functionsClient, "createRideRequest");
+    const joinRideGroupFn = httpsCallable(functionsClient, "joinRideGroup");
+    const cancelRideRequestFn = httpsCallable(functionsClient, "cancelRideRequest");
+    const submitRideRatingFn = httpsCallable(functionsClient, "submitRideRating");
+    const confirmRidePaymentIntentFn = httpsCallable(
+      functionsClient,
+      "confirmRidePaymentIntent"
     );
     const createRidePaymentIntentFn = httpsCallable(
       functionsClient,
@@ -3807,34 +3811,6 @@
       }
     }
 
-    async function applyMembershipPlanLocally(plan) {
-      const user = auth.currentUser;
-      if (!user) return;
-      const normalizedPlan = normalizePlanKey(plan || "basic");
-      const needsApproval = planRequiresApproval(normalizedPlan);
-      const isBasicPlan = normalizedPlan === "basic";
-      const updates = {
-        membershipType: normalizedPlan,
-        membershipStatus: isBasicPlan
-          ? "none"
-          : needsApproval
-          ? "pending_verification"
-          : "active",
-        membershipRenewedAt: serverTimestamp(),
-        membershipUpdatedAt: serverTimestamp()
-      };
-      if (!isBasicPlan && !needsApproval) {
-        updates.membershipApprovedAt = serverTimestamp();
-      }
-      await setDoc(doc(db, "users", user.uid), updates, { merge: true });
-      await loadUserProfile(user.uid, user.email);
-      if (membershipCardMessage) {
-        membershipCardMessage.textContent = needsApproval
-          ? "U of A membership requested. We'll verify your student ID shortly."
-          : `${formatMembershipPlanLabel(normalizedPlan)} activated.`;
-      }
-    }
-
     async function callApplyMembershipPlan(payload = {}) {
       const user = auth.currentUser;
       if (!user) {
@@ -4015,7 +3991,7 @@
         try {
           if (isSignupMode) {
             const cred = await createUserWithEmailAndPassword(auth, email, password);
-            await saveUserProfile(cred.user.uid, email);
+            await saveUserProfile(email);
           } else {
             await signInWithEmailAndPassword(auth, email, password);
           }
@@ -4089,56 +4065,54 @@
       }
     }
 
-    async function saveUserProfile(uid, email) {
-      const fullName = fullNameEl.value.trim();
-      const gender = (genderEl.value || "").trim().toLowerCase();
-      const phone = phoneEl.value.trim();
-      const street = streetEl.value.trim();
-      const city = cityEl.value.trim();
-      const state = stateEl.value.trim();
-      const zip = zipEl.value.trim();
-      const isStudent = isStudentEl.value === "true";
-      const membershipType = normalizePlanKey(membershipEl.value || "basic");
-
-      let profilePicUrl = null;
-      let licensePicUrl = null;
-      let studentIdPicUrl = null;
+    async function saveUserProfile(email) {
+      const activeUser = auth.currentUser;
+      if (!activeUser) {
+        throw new Error("Log in to update your profile.");
+      }
+      const profilePayload = {
+        fullName: fullNameEl.value.trim(),
+        gender: (genderEl.value || "").trim().toLowerCase(),
+        phone: phoneEl.value.trim(),
+        street: streetEl.value.trim(),
+        city: cityEl.value.trim(),
+        state: stateEl.value.trim(),
+        zip: zipEl.value.trim(),
+        isStudent: isStudentEl.value === "true",
+        email: email || auth.currentUser?.email || null,
+      };
 
       try {
-        profilePicUrl = await uploadFileIfAny(profilePicInput, `users/${uid}/profile.jpg`);
-        licensePicUrl = await uploadFileIfAny(licensePicInput, `users/${uid}/license.jpg`);
-        studentIdPicUrl = await uploadFileIfAny(studentIdPicInput, `users/${uid}/studentId.jpg`);
+        profilePayload.profilePicUrl = await uploadFileIfAny(
+          profilePicInput,
+          `users/${activeUser.uid}/profile.jpg`
+        );
+        profilePayload.licensePicUrl = await uploadFileIfAny(
+          licensePicInput,
+          `users/${activeUser.uid}/license.jpg`
+        );
+        profilePayload.studentIdPicUrl = await uploadFileIfAny(
+          studentIdPicInput,
+          `users/${activeUser.uid}/studentId.jpg`
+        );
       } catch (err) {
         console.warn("Upload error", err);
       }
 
-      const uofaVerified = !!studentIdPicUrl && isStudent;
-
-      await setDoc(doc(db, "users", uid), {
-        email,
-        fullName,
-        gender,
-        phone,
-        street,
-        city,
-        state,
-        zip,
-        isStudent,
-        membershipType,
-        membershipStatus: membershipType === "basic" ? "none" : "active",
-        profilePicUrl,
-        licensePicUrl,
-        studentIdPicUrl,
-        uofaVerified,
-        lastSeenAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        createdAt: serverTimestamp()
-      }, { merge: true });
+      await saveUserProfileFn(profilePayload);
     }
 
     async function loadUserProfile(uid, email) {
       const refDoc = doc(db, "users", uid);
-      const snap = await getDoc(refDoc);
+      let snap = await getDoc(refDoc);
+      if (!snap.exists()) {
+        try {
+          await saveUserProfileFn({ email: email || auth.currentUser?.email || null });
+          snap = await getDoc(refDoc);
+        } catch (err) {
+          console.warn("Failed to bootstrap profile", err);
+        }
+      }
       if (snap.exists()) {
         currentUserProfile = { uid, email, ...snap.data() };
       } else {
@@ -4148,10 +4122,7 @@
           membershipType: "basic",
           membershipStatus: "none"
         };
-        await setDoc(refDoc, currentUserProfile, { merge: true });
       }
-
-      await setDoc(refDoc, { lastSeenAt: serverTimestamp() }, { merge: true });
 
       renderProfile();
     }
@@ -4243,9 +4214,7 @@
         state: editStateEl.value.trim(),
         zip: editZipEl.value.trim(),
         gender: (editGenderEl.value || "").trim().toLowerCase(),
-        updatedAt: serverTimestamp()
       };
-      const userDocRef = doc(db, "users", user.uid);
       const uploadDescriptors = [
         {
           input: editProfilePicInput,
@@ -4282,11 +4251,11 @@
 
       const isStudent = !!currentUserProfile?.isStudent;
       if (updates.studentIdPicUrl && isStudent) {
-        updates.uofaVerified = true;
+        updates.isStudent = true;
       }
 
       try {
-        await setDoc(userDocRef, updates, { merge: true });
+        await saveUserProfileFn(updates);
         await loadUserProfile(user.uid, user.email);
         editProfileSection.style.display = "none";
 
@@ -4954,13 +4923,9 @@
         where("groupId", "==", groupId)
       );
 
-      const searchStartedAt = Date.now();
-      const maxSearchMs = 5000;
-
       const myGender = normalizePoolGender(currentUserProfile?.gender);
 
       activeGroupUnsub = onSnapshot(qRef, (qsnap) => {
-        const now = Date.now();
         const otherRiders = [];
 
         qsnap.forEach((docSnap) => {
@@ -4974,13 +4939,6 @@
         });
 
         renderPoolGroup(otherRiders);
-
-        if (now - searchStartedAt >= maxSearchMs) {
-          if (activeGroupUnsub) {
-            activeGroupUnsub();
-            activeGroupUnsub = null;
-          }
-        }
       });
     }
 
@@ -5524,14 +5482,11 @@
       ratingSubmitting = true;
       submitRatingButton.disabled = true;
       try {
-        const updates = {
+        await submitRideRatingFn({
+          rideId: currentRideId,
           rating: selectedRating,
-          riderRating: selectedRating,
-          riderFeedback: riderFeedbackInput.value.trim() || null,
-          riderRatedAt: serverTimestamp(),
-          riderRated: true,
-        };
-        await updateDoc(doc(db, "rideRequests", currentRideId), updates);
+          feedback: riderFeedbackInput.value.trim() || null,
+        });
         setOverlayCopy("Thank you!", "Sending your feedback now.");
         setRiderOverlayState(RIDER_STATES.THANKS, { forceReveal: true });
         setTimeout(() => returnToHomeAfterRide("Thanks for riding!"), 2000);
@@ -5641,17 +5596,11 @@
         }
 
         try {
-          const rideRef = doc(db, "rideRequests", currentRideId);
-          await updateDoc(rideRef, {
-            status: "canceled_by_rider",
-            paymentStatus: "canceled",
-            canceledAt: serverTimestamp()
-          });
-
+          await cancelRideRequestFn({ rideId: currentRideId });
           returnToHomeAfterRide("Ride canceled, you won't be charged.");
         } catch (err) {
           console.error(err);
-          cancelError.textContent = "Could not cancel ride.";
+          cancelError.textContent = err.message || "Could not cancel ride.";
         }
       });
 
@@ -6253,7 +6202,7 @@
             return;
           }
         }
-        await markRideFarePaid(paymentIntent?.id || null, paymentIntentContext);
+        await markRideFarePaid(paymentIntent?.id || null);
         ridePaymentState.completed = true;
         ridePaymentState.processing = false;
         updateRideFareStatus(
@@ -6313,7 +6262,7 @@
         if (!result.paymentIntent || result.paymentIntent.status !== "succeeded") {
           throw new Error("Payment did not complete.");
         }
-        await markRideFarePaid(result.paymentIntent.id, paymentIntentContext);
+        await markRideFarePaid(result.paymentIntent.id);
         ridePaymentState.completed = true;
         updateRideFareStatus(
           "Payment complete. Thank you for riding with RideSync!",
@@ -6349,46 +6298,19 @@
       };
     }
 
-    async function markRideFarePaid(paymentIntentId, paymentDetails) {
+    async function markRideFarePaid(paymentIntentId) {
       if (!ridePaymentState.rideId) {
         return;
       }
       try {
-        const rideRef = doc(db, "rideRequests", ridePaymentState.rideId);
-        const normalizeCents = (value, fallback = 0) => {
-          const candidate = Number.isFinite(value) ? value : fallback;
-          const resolved = Number.isFinite(candidate) ? candidate : 0;
-          return Math.max(0, Math.round(resolved));
-        };
-        const baseAmountCents = normalizeCents(
-          paymentDetails?.baseAmountCents,
-          ridePaymentState.baseAmountCents
-        );
-        const tipAmountCents = normalizeCents(
-          paymentDetails?.tipAmountCents,
-          ridePaymentState.tipAmountCents
-        );
-        const totalAmountCents = normalizeCents(
-          paymentDetails?.totalAmountCents,
-          Number.isFinite(ridePaymentState.totalAmountCents)
-            ? ridePaymentState.totalAmountCents
-            : baseAmountCents + tipAmountCents
-        );
-        await updateDoc(rideRef, {
-          paymentStatus: "paid",
-          stripePaymentIntentId: paymentIntentId || null,
-          stripeAmountCents: totalAmountCents,
-          stripeAmount: totalAmountCents / 100,
-          stripeCurrency: "usd",
-          fareBaseAmountCents: baseAmountCents,
-          tipAmountCents,
-          tipAmount: tipAmountCents / 100,
-          tipCurrency: "usd",
-          updatedAt: serverTimestamp(),
+        await confirmRidePaymentIntentFn({
+          rideId: ridePaymentState.rideId,
+          paymentIntentId,
         });
         profileMessage.textContent = "Payment received. Thanks for riding!";
       } catch (err) {
         console.warn("Failed to update ride payment status", err);
+        showErrorBanner(err.message || PAYMENT_ERROR_FALLBACK);
       }
     }
 
@@ -6550,15 +6472,11 @@
       if (!user) {
         throw new Error("Log in to continue.");
       }
-      await setDoc(
-        doc(db, "users", user.uid),
-        {
-          membershipTermsAccepted: true,
-          membershipTermsAcceptedAt: serverTimestamp(),
-          membershipTermsVersion: "v1",
-        },
-        { merge: true }
-      );
+      await saveUserProfileFn({
+        email: user.email || null,
+        membershipTermsAccepted: true,
+        membershipTermsVersion: "v1"
+      });
     }
 
     async function startMembershipPaymentFlow(planId) {
@@ -7434,26 +7352,10 @@
       }
 
       const rideBase = {
-        userId: user.uid,
-        startedByUserId: user.uid,
-        membershipType: plan,
-        membershipStatus,
-        isStudent,
-        uofaVerified,
-        gender: poolGender,
-        uofaPoolEligible,
-        riderName,
-        riderPhone,
-        riderProfilePicUrl: riderPhotoUrl,
-        riderPhotoUrl,
-        riderAvatarUrl: riderPhotoUrl,
-        riderImageUrl: riderPhotoUrl,
         isGroupRide,
         maxRiders,
-        currentRiderCount: 1,
-        groupId: null,
         poolType,
-        fromLocation: currentLocation || null,
+        numRiders,
         pickupLocation: pickupLocationLiteral,
         dropoffLocation: dropoffLocationLiteral,
         toDestination: destAddress || null,
@@ -7464,53 +7366,36 @@
         distanceMeters: lastRideMetrics.distanceMeters || null,
         fare,
         totalCents,
-        pickupCode,
-        pickupPin: pickupCode,
-        dropoffCode,
-        dropoffPin: dropoffCode
+        extraStops: extraStopsPayload,
+        status
       };
-      if (extraStopsPayload.length) {
-        rideBase.extraStops = extraStopsPayload.map((stop) => ({
-          order: stop.order,
-          label: stop.label,
-          location: stop.location
-        }));
-      }
-
-      const requiresPayment = totalCents > 0;
-      const paymentStatus = requiresPayment
-        ? planIsBasic
-          ? "pending"
-          : "preauthorized"
-        : "included";
-      const paymentMethod = requiresPayment ? "stripe" : "included";
-      const rideRef = doc(collection(db, "rideRequests"));
-      const rideDoc = {
-        ...rideBase,
-        status,
-        paymentMethod,
-        paymentStatus,
-        stripeAmount: requiresPayment ? totalValue : 0,
-        stripeAmountCents: requiresPayment ? totalCents : 0,
-        stripeCurrency: "usd",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-      if (rideDoc.isGroupRide && !rideDoc.groupId) {
-        rideDoc.groupId = rideRef.id;
-      }
-
       try {
         if (syncButton) {
           syncButton.disabled = true;
           syncButton.textContent = "Syncing...";
         }
-        await setDoc(rideRef, rideDoc);
-        activateRideAfterCreation(rideRef.id, rideDoc);
+        const response = await createRideRequestFn({
+          ride: {
+            ...rideBase,
+            fromLocation: currentLocation || pickupLocationLiteral,
+            pickupCity: currentUserProfile?.city || null,
+            riderContext: {
+              name: riderName,
+              phone: riderPhone,
+              photoUrl: riderPhotoUrl
+            }
+          }
+        });
+        const result = response?.data || {};
+        if (!result.rideId) {
+          throw new Error(result?.message || "Ride was not created.");
+        }
+        const requiresPayment = Number(result.amountCents || 0) > 0;
         profileMessage.textContent = requiresPayment
           ? "Ride synced! Pay when the ride ends."
           : "Ride synced! Your membership covers this fare.";
         profileError.textContent = "";
+        activateRideAfterCreation(result.rideId, result.ride || rideBase);
       } catch (err) {
         console.error("New ride error", err);
         profileError.textContent = err.message || "Could not start this ride.";
@@ -7543,7 +7428,6 @@
             currentUserProfile?.membership ||
             "basic"
         );
-        const planIsBasic = plan === "basic";
         const riderGender = normalizePoolGender(currentUserProfile?.gender);
         if (!riderGender) {
           profileError.textContent =
@@ -7563,147 +7447,32 @@
           return;
         }
 
-        const hostRef = doc(db, "rideRequests", joinTargetRide.id);
-        const newRideRef = doc(collection(db, "rideRequests"));
-        let createdRideId = null;
+        if (syncButton) {
+          syncButton.disabled = true;
+          syncButton.textContent = "Joining…";
+        }
 
-        await runTransaction(db, async (tx) => {
-          const hostSnap = await tx.get(hostRef);
-          if (!hostSnap.exists()) {
-            throw new Error("This group ride is no longer available.");
-          }
-          const host = hostSnap.data();
-          const max = host.maxRiders || 1;
-          const currentCount = host.currentRiderCount || 1;
-          if (currentCount >= max) {
-            throw new Error("This group ride is already full.");
-          }
+        const response = await joinRideGroupFn({ hostRideId: joinTargetRide.id });
+        const rideId = response?.data?.rideId;
+        if (!rideId) {
+          throw new Error("This group ride is no longer available.");
+        }
 
-          const normalizeHostPin = (value) =>
-            value == null ? "" : String(value).trim().toUpperCase();
-          const pickupCode =
-            normalizeHostPin(
-              host.pickupCode ||
-                host.pickupPin ||
-                host.pickupPIN ||
-                host.boardingCode
-            ) || generateRidePin();
-          const dropoffCode =
-            normalizeHostPin(
-              host.dropoffCode ||
-                host.dropoffPin ||
-                host.dropoffPIN ||
-                host.dropoffBoardingCode
-            ) || generateRidePin();
-
-          const isStudent = !!currentUserProfile?.isStudent;
-          const uofaVerified = !!currentUserProfile?.uofaVerified;
-          const hostGender = normalizePoolGender(host.gender);
-          if (!hostGender || hostGender !== riderGender) {
-            throw new Error(
-              "This group ride can only include riders with the same gender."
-            );
-          }
-          const inHomeZone = !!host.inHomeZone;
-          const minutes = host.estimatedDurationMinutes || 0;
-          const fare = computeFareForMembership(plan, minutes, inHomeZone);
-          const total = Number.isFinite(fare.total) ? fare.total : 0;
-          const paymentIsIncluded = !planIsBasic && inHomeZone;
-
-          const riderName =
-            currentUserProfile?.fullName ||
-            currentUserProfile?.name ||
-            currentUserProfile?.displayName ||
-            (currentUserProfile?.email
-              ? currentUserProfile.email.split("@")[0]
-              : "Rider");
-          const riderPhone =
-            currentUserProfile?.phone || currentUserProfile?.phoneNumber || "";
-          const riderPhotoUrl =
-            currentUserProfile?.profilePicUrl ||
-            currentUserProfile?.photoURL ||
-            null;
-
-          const groupId = host.groupId || hostSnap.id;
-          const nextCount = Math.min(max, currentCount + 1);
-          const poolType = host.poolType || null;
-          const paymentMethod = paymentIsIncluded
-            ? poolType === "uofa"
-              ? "included_pool"
-              : "included"
-            : "stripe";
-          const paymentStatus = paymentIsIncluded
-            ? "included"
-            : planIsBasic
-              ? "pending"
-              : "preauthorized";
-
-          const driverFields = {};
-          if (host.driverId) {
-            Object.keys(host).forEach((key) => {
-              if (key.startsWith("driver")) {
-                driverFields[key] = host[key];
-              }
-            });
-            if (host.assignedAt) {
-              driverFields.assignedAt = host.assignedAt;
-            }
-          }
-
-          const joinRideDoc = {
-            userId: user.uid,
-            startedByUserId: host.startedByUserId || host.userId || user.uid,
-            createdAt: serverTimestamp(),
-            membershipType: plan,
-            membershipStatus: currentUserProfile?.membershipStatus || "none",
-            isStudent,
-            uofaVerified,
-            gender: riderGender,
-            riderName,
-            riderPhone,
-            riderProfilePicUrl: riderPhotoUrl,
-            riderPhotoUrl,
-            riderAvatarUrl: riderPhotoUrl,
-            riderImageUrl: riderPhotoUrl,
-            isGroupRide: true,
-            maxRiders: host.maxRiders || 1,
-            currentRiderCount: nextCount,
-            groupId,
-            poolType,
-            fromLocation: host.fromLocation || null,
-            toDestination: host.toDestination || null,
-            inHomeZone,
-            estimatedDurationMinutes: host.estimatedDurationMinutes || null,
-            distanceMeters: host.distanceMeters || null,
-            fare,
-            pickupCode,
-            pickupPin: pickupCode,
-            dropoffCode,
-            dropoffPin: dropoffCode,
-            status: host.status || "pending_driver",
-            paymentMethod,
-            paymentStatus,
-            stripeAmount: paymentIsIncluded ? null : total,
-            joinedExistingRideId: hostSnap.id,
-            ...driverFields
-          };
-
-          tx.set(newRideRef, joinRideDoc);
-          tx.update(hostRef, {
-            currentRiderCount: nextCount
-          });
-
-          createdRideId = newRideRef.id;
-        });
-
-        currentRideId = createdRideId;
-        startRideStatusWatcher(createdRideId);
+        currentRideId = rideId;
+        joinMode = false;
+        joinTargetRide = null;
+        startRideStatusWatcher(rideId);
         updateCancelButtonVisibility();
         hideGroupQr();
         showLoadingView();
       } catch (err) {
         console.error("Join ride error", err);
         profileError.textContent = err.message || "Could not join group ride.";
+      } finally {
+        if (syncButton) {
+          syncButton.disabled = false;
+          updateSyncButtonLabel();
+        }
       }
     }
 
