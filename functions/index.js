@@ -2074,6 +2074,27 @@ exports.createRidePaymentIntent = functions
     }
     const normalizedAmount = Math.round(amount);
 
+    const tipRaw =
+      data?.tipAmountCents ??
+      data?.tipAmount ??
+      data?.tip_cents ??
+      data?.tip;
+    let tipAmountCents = 0;
+    if (
+      tipRaw !== undefined &&
+      tipRaw !== null &&
+      tipRaw !== "" &&
+      Number.isFinite(Number(tipRaw))
+    ) {
+      tipAmountCents = Math.max(0, Math.round(Number(tipRaw)));
+    }
+    if (tipAmountCents > 20000) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Tip amount is too large."
+      );
+    }
+
     const currencyInput =
       typeof data?.currency === "string" && data.currency.trim()
         ? data.currency.trim().toLowerCase()
@@ -2115,7 +2136,8 @@ exports.createRidePaymentIntent = functions
         "Unable to determine ride fare for payment."
       );
     }
-    if (normalizedAmount !== expectedAmountCents) {
+    const totalAmountCents = expectedAmountCents + tipAmountCents;
+    if (normalizedAmount !== totalAmountCents) {
       throw new functions.https.HttpsError(
         "failed-precondition",
         "Ride fare mismatch. Refresh and try again."
@@ -2132,17 +2154,25 @@ exports.createRidePaymentIntent = functions
 
     try {
       const paymentIntent = await stripeClient.paymentIntents.create({
-        amount: expectedAmountCents,
+        amount: totalAmountCents,
         currency: currencyToCharge,
         automatic_payment_methods: { enabled: true },
         metadata: {
           rideId,
           userId: uid,
           type: "ride_fare",
+          base_amount_cents: expectedAmountCents,
+          tip_amount_cents: tipAmountCents,
         },
       });
 
-      return { clientSecret: paymentIntent.client_secret };
+      return {
+        clientSecret: paymentIntent.client_secret,
+        amountCents: totalAmountCents,
+        baseAmountCents: expectedAmountCents,
+        tipAmountCents,
+        livemode: paymentIntent?.livemode ?? null,
+      };
     } catch (err) {
       console.error("createRidePaymentIntent error", err);
       throw new functions.https.HttpsError(

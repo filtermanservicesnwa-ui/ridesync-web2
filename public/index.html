@@ -387,6 +387,17 @@
     .ride-payment-button {
       margin: 16px 0 10px;
     }
+    .ride-card-element {
+      margin-top: 8px;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.25);
+      background: rgba(15,23,42,0.6);
+    }
+    #rideCardSubmit {
+      width: 100%;
+      margin-top: 12px;
+    }
     .ride-payment-status {
       font-size: 0.85rem;
       color: #22c55e;
@@ -1186,7 +1197,8 @@
       color: #022c22;
       border-color: #22c55e;
     }
-    #tipCustomInput {
+    #tipCustomInput,
+    #rideTipCustomInput {
       margin-top: 6px;
       display: none;
     }
@@ -1731,15 +1743,6 @@
               <button type="button" data-rating="5">★</button>
             </div>
             <textarea id="riderFeedbackInput" placeholder="Anything we should know?"></textarea>
-            <div class="state-text">Tip your driver</div>
-            <div id="tipOptions" class="tip-options">
-              <button type="button" class="tip-button active" data-tip="0">$0</button>
-              <button type="button" class="tip-button" data-tip="2">$2</button>
-              <button type="button" class="tip-button" data-tip="5">$5</button>
-              <button type="button" class="tip-button" data-tip="10">$10</button>
-              <button type="button" class="tip-button tip-custom" data-tip="custom">Custom</button>
-            </div>
-            <input id="tipCustomInput" type="number" min="0" step="1" placeholder="Custom tip" />
             <button id="submitRatingButton" class="btn-primary" type="button">Submit</button>
             <div id="ratingError" class="error"></div>
           </div>
@@ -1961,13 +1964,49 @@
       </div>
       <div class="fare-box" style="margin-bottom:0;">
         <div class="fare-row">
-          <div class="fare-label">Fare total</div>
+          <div class="fare-label">Base fare</div>
+          <div class="fare-value" id="rideFareBaseAmount">$0.00</div>
+        </div>
+        <div class="fare-row">
+          <div class="fare-label">Tip</div>
+          <div class="fare-value" id="rideFareTipAmount">$0.00</div>
+        </div>
+        <div class="fare-row">
+          <div class="fare-label">Total due</div>
           <div class="fare-total" id="rideFareAmount">$0.00</div>
         </div>
         <div id="rideFareDetails" class="ride-fare-details"></div>
       </div>
+      <div class="section-title" style="margin-top:16px;">Add a tip (optional)</div>
+      <div id="rideTipOptions" class="tip-options">
+        <button type="button" class="tip-button active" data-tip="0">$0</button>
+        <button type="button" class="tip-button" data-tip="2">$2</button>
+        <button type="button" class="tip-button" data-tip="5">$5</button>
+        <button type="button" class="tip-button" data-tip="10">$10</button>
+        <button type="button" class="tip-button tip-custom" data-tip="custom">Custom</button>
+      </div>
+      <input
+        id="rideTipCustomInput"
+        type="number"
+        min="0"
+        step="1"
+        placeholder="Custom tip"
+        style="display:none;"
+      />
+      <div class="section-title" style="margin-top:18px;">Pay with Apple Pay or Google Pay</div>
       <div id="rideFarePaymentRequest" class="ride-payment-button"></div>
       <p id="rideFareUnavailable" class="small"></p>
+      <div class="section-title" style="margin-top:18px;">Pay with card</div>
+      <div id="rideCardElement" class="ride-card-element"></div>
+      <button
+        id="rideCardSubmit"
+        type="button"
+        class="btn-primary"
+        disabled
+      >
+        Pay with card
+      </button>
+      <div id="rideCardMessage" class="error"></div>
       <div id="rideFareStatus" class="ride-payment-status"></div>
     </div>
   </div>
@@ -2703,8 +2742,8 @@
     const driverInfoStack = document.getElementById("driverInfoStack");
     const ratingStarsContainer = document.getElementById("ratingStars");
     const ratingError = document.getElementById("ratingError");
-    const tipOptions = document.getElementById("tipOptions");
-    const tipCustomInput = document.getElementById("tipCustomInput");
+    const rideTipOptions = document.getElementById("rideTipOptions");
+    const rideTipCustomInput = document.getElementById("rideTipCustomInput");
     const submitRatingButton = document.getElementById("submitRatingButton");
     const riderFeedbackInput = document.getElementById("riderFeedbackInput");
     const cooldownOverlay = document.getElementById("cooldownOverlay");
@@ -2776,6 +2815,11 @@
     const rideFareUnavailable = document.getElementById("rideFareUnavailable");
     const rideFareStatus = document.getElementById("rideFareStatus");
     const rideFareClose = document.getElementById("rideFareClose");
+    const rideFareBaseAmount = document.getElementById("rideFareBaseAmount");
+    const rideFareTipAmount = document.getElementById("rideFareTipAmount");
+    const rideCardElement = document.getElementById("rideCardElement");
+    const rideCardSubmit = document.getElementById("rideCardSubmit");
+    const rideCardMessage = document.getElementById("rideCardMessage");
 
     let latestRideForOverlay = null;
     const stripeInstancesByKey = new Map();
@@ -2786,15 +2830,22 @@
     let stripeJsPromise = null;
     const ridePaymentState = {
       rideId: null,
-      amountCents: 0,
+      baseAmountCents: 0,
+      tipAmountCents: 0,
+      totalAmountCents: 0,
       clientSecret: null,
       summary: null,
       paymentRequest: null,
       paymentRequestElement: null,
       paymentRequestElementsInstance: null,
+      paymentElements: null,
+      paymentElement: null,
       processing: false,
       completed: false,
       showing: false,
+      livemode: null,
+      intentRequestId: 0,
+      clientSecretContext: null,
     };
 
     const RIDER_STATES = {
@@ -2810,9 +2861,8 @@
 
     let riderOverlayState = RIDER_STATES.HIDDEN;
     let selectedRating = 0;
-    let selectedTipValue = 0;
-    let tipIsCustom = false;
     let ratingSubmitting = false;
+    let rideTipRefreshTimer = null;
 
     let isSignupMode = false;
     let currentUserProfile = null;
@@ -5409,13 +5459,21 @@
         case "dropoff_code_verified":
         case "completed":
           maybePromptRideFareOverlay(rideId, data);
+          if (rideRequiresFarePayment(data) > 0) {
+            setOverlayCopy(
+              "Payment required",
+              "Complete the fare overlay to finish this ride."
+            );
+            setRiderOverlayState(RIDER_STATES.THANKS);
+            break;
+          }
           if (hasRiderRating(data)) {
             setOverlayCopy("All set", "Thanks for riding with RideSync.");
             setRiderOverlayState(RIDER_STATES.THANKS);
             setTimeout(() => returnToHomeAfterRide("Thanks for riding!"), 1800);
           } else {
             resetRatingForm();
-            setOverlayCopy("Rate & tip", "Let us know how it went.");
+            setOverlayCopy("Rate your ride", "Let us know how it went.");
             setRiderOverlayState(RIDER_STATES.RATE_TIP);
           }
           break;
@@ -5429,16 +5487,10 @@
 
     function resetRatingForm() {
       selectedRating = 0;
-      selectedTipValue = 0;
-      tipIsCustom = false;
       ratingSubmitting = false;
       ratingError.textContent = "";
       riderFeedbackInput.value = "";
-      tipCustomInput.value = "";
-      tipCustomInput.style.display = "none";
       updateRatingButtons();
-      const defaultTipButton = tipOptions?.querySelector(".tip-button[data-tip='0']");
-      updateTipButtons(defaultTipButton);
     }
 
     function updateRatingButtons() {
@@ -5446,13 +5498,6 @@
       ratingStarsContainer.querySelectorAll("button[data-rating]").forEach((btn) => {
         const value = Number(btn.dataset.rating);
         btn.classList.toggle("active", value <= selectedRating);
-      });
-    }
-
-    function updateTipButtons(activeButton) {
-      if (!tipOptions) return;
-      tipOptions.querySelectorAll(".tip-button").forEach((btn) => {
-        btn.classList.toggle("active", btn === activeButton);
       });
     }
 
@@ -5465,25 +5510,7 @@
       updateRatingButtons();
     }
 
-    function handleTipButtonClick(event) {
-      const button = event.target.closest(".tip-button");
-      if (!button) return;
-      updateTipButtons(button);
-      const tipValue = button.dataset.tip;
-      if (tipValue === "custom") {
-        tipIsCustom = true;
-        tipCustomInput.style.display = "block";
-        tipCustomInput.focus();
-        selectedTipValue = 0;
-      } else {
-        tipIsCustom = false;
-        tipCustomInput.style.display = "none";
-        tipCustomInput.value = "";
-        selectedTipValue = Number(tipValue);
-      }
-    }
-
-    async function submitRatingAndTip() {
+    async function submitRideRating() {
       ratingError.textContent = "";
       if (ratingSubmitting) return;
       if (!currentRideId) {
@@ -5494,15 +5521,6 @@
         ratingError.textContent = "Select a rating.";
         return;
       }
-      let tipValue = selectedTipValue;
-      if (tipIsCustom) {
-        const parsed = Number(tipCustomInput.value);
-        if (Number.isNaN(parsed) || parsed < 0) {
-          ratingError.textContent = "Enter a valid custom tip.";
-          return;
-        }
-        tipValue = parsed;
-      }
       ratingSubmitting = true;
       submitRatingButton.disabled = true;
       try {
@@ -5510,11 +5528,8 @@
           rating: selectedRating,
           riderRating: selectedRating,
           riderFeedback: riderFeedbackInput.value.trim() || null,
-          tip: tipValue,
-          tipAmount: tipValue,
-          tipCurrency: "USD",
           riderRatedAt: serverTimestamp(),
-          riderRated: true
+          riderRated: true,
         };
         await updateDoc(doc(db, "rideRequests", currentRideId), updates);
         setOverlayCopy("Thank you!", "Sending your feedback now.");
@@ -5644,11 +5659,17 @@
     if (ratingStarsContainer) {
       ratingStarsContainer.addEventListener("click", handleRatingStarClick);
     }
-    if (tipOptions) {
-      tipOptions.addEventListener("click", handleTipButtonClick);
-    }
     if (submitRatingButton) {
-      submitRatingButton.addEventListener("click", submitRatingAndTip);
+      submitRatingButton.addEventListener("click", submitRideRating);
+    }
+    if (rideTipOptions) {
+      rideTipOptions.addEventListener("click", handleRideTipButtonClick);
+    }
+    if (rideTipCustomInput) {
+      rideTipCustomInput.addEventListener("input", handleRideTipCustomInput);
+    }
+    if (rideCardSubmit) {
+      rideCardSubmit.addEventListener("click", handleRideCardSubmit);
     }
 
     if (cooldownDismissButton) {
@@ -5772,6 +5793,111 @@
       rideFareDetails.textContent = parts.join(" • ");
     }
 
+    function resetRideTipUi() {
+      if (rideTipOptions) {
+        rideTipOptions.querySelectorAll(".tip-button").forEach((btn, idx) => {
+          btn.classList.toggle("active", idx === 0);
+        });
+      }
+      if (rideTipCustomInput) {
+        rideTipCustomInput.value = "";
+        rideTipCustomInput.style.display = "none";
+      }
+      ridePaymentState.tipAmountCents = 0;
+    }
+
+    function updateRidePaymentTotalsDisplay() {
+      ridePaymentState.totalAmountCents = Math.max(
+        0,
+        ridePaymentState.baseAmountCents + ridePaymentState.tipAmountCents
+      );
+      if (rideFareBaseAmount) {
+        rideFareBaseAmount.textContent = formatCurrencyFromCents(
+          ridePaymentState.baseAmountCents,
+          "usd"
+        );
+      }
+      if (rideFareTipAmount) {
+        rideFareTipAmount.textContent = formatCurrencyFromCents(
+          ridePaymentState.tipAmountCents,
+          "usd"
+        );
+      }
+      if (rideFareAmount) {
+        rideFareAmount.textContent = formatCurrencyFromCents(
+          ridePaymentState.totalAmountCents,
+          "usd"
+        );
+      }
+      if (rideCardSubmit) {
+        rideCardSubmit.textContent =
+          ridePaymentState.totalAmountCents > 0
+            ? `Pay ${formatCurrencyFromCents(
+                ridePaymentState.totalAmountCents,
+                "usd"
+              )} with card`
+            : "Pay with card";
+        if (ridePaymentState.totalAmountCents <= 0) {
+          rideCardSubmit.disabled = true;
+        }
+      }
+    }
+
+    function scheduleRidePaymentIntentRefresh() {
+      if (!ridePaymentState.showing) return;
+      if (rideTipRefreshTimer) {
+        clearTimeout(rideTipRefreshTimer);
+        rideTipRefreshTimer = null;
+      }
+      rideTipRefreshTimer = setTimeout(() => {
+        rideTipRefreshTimer = null;
+        refreshRidePaymentIntent();
+      }, 350);
+    }
+
+    function handleRideTipButtonClick(event) {
+      if (!rideTipOptions) return;
+      const button = event.target.closest(".tip-button");
+      if (!button) return;
+      rideTipOptions.querySelectorAll(".tip-button").forEach((btn) => {
+        btn.classList.toggle("active", btn === button);
+      });
+      const value = button.dataset.tip;
+      if (value === "custom") {
+        if (rideTipCustomInput) {
+          rideTipCustomInput.style.display = "block";
+          rideTipCustomInput.focus();
+          rideTipCustomInput.value = "";
+        }
+        ridePaymentState.tipAmountCents = 0;
+        updateRidePaymentTotalsDisplay();
+        scheduleRidePaymentIntentRefresh();
+        return;
+      }
+      if (rideTipCustomInput) {
+        rideTipCustomInput.style.display = "none";
+        rideTipCustomInput.value = "";
+      }
+      const dollars = Number(value);
+      ridePaymentState.tipAmountCents = Number.isFinite(dollars)
+        ? Math.max(0, Math.round(dollars * 100))
+        : 0;
+      updateRidePaymentTotalsDisplay();
+      scheduleRidePaymentIntentRefresh();
+    }
+
+    function handleRideTipCustomInput() {
+      if (!rideTipCustomInput) return;
+      const dollars = Number(rideTipCustomInput.value);
+      if (!Number.isFinite(dollars) || dollars < 0) {
+        ridePaymentState.tipAmountCents = 0;
+      } else {
+        ridePaymentState.tipAmountCents = Math.round(dollars * 100);
+      }
+      updateRidePaymentTotalsDisplay();
+      scheduleRidePaymentIntentRefresh();
+    }
+
     function teardownRidePaymentResources() {
       if (ridePaymentState.paymentRequestElement) {
         ridePaymentState.paymentRequestElement.unmount();
@@ -5782,17 +5908,42 @@
       if (rideFarePaymentRequest) {
         rideFarePaymentRequest.innerHTML = "";
       }
+      if (ridePaymentState.paymentElement) {
+        ridePaymentState.paymentElement.unmount();
+        ridePaymentState.paymentElement = null;
+      }
+      ridePaymentState.paymentElements = null;
+      if (rideCardElement) {
+        rideCardElement.innerHTML = "";
+      }
+      if (rideCardSubmit) {
+        rideCardSubmit.disabled = true;
+      }
+      if (rideCardMessage) {
+        rideCardMessage.textContent = "";
+      }
     }
 
     function resetRidePaymentState() {
       teardownRidePaymentResources();
       ridePaymentState.rideId = null;
-      ridePaymentState.amountCents = 0;
+      ridePaymentState.baseAmountCents = 0;
+      ridePaymentState.tipAmountCents = 0;
+      ridePaymentState.totalAmountCents = 0;
       ridePaymentState.clientSecret = null;
       ridePaymentState.summary = null;
       ridePaymentState.processing = false;
       ridePaymentState.completed = false;
       ridePaymentState.showing = false;
+      ridePaymentState.livemode = null;
+      ridePaymentState.intentRequestId = 0;
+      ridePaymentState.clientSecretContext = null;
+      if (rideTipRefreshTimer) {
+        clearTimeout(rideTipRefreshTimer);
+        rideTipRefreshTimer = null;
+      }
+      resetRideTipUi();
+      updateRidePaymentTotalsDisplay();
       if (rideFareUnavailable) {
         rideFareUnavailable.textContent = "";
       }
@@ -5804,80 +5955,69 @@
 
     function closeRideFareOverlay(force = false) {
       if (!rideFareOverlay) return;
-      const hasActiveButton = Boolean(ridePaymentState.paymentRequest);
-      if (!force && !ridePaymentState.completed && hasActiveButton) {
+      const hasActivePayment =
+        Boolean(ridePaymentState.paymentRequest) ||
+        Boolean(ridePaymentState.paymentElement);
+      if (!force && !ridePaymentState.completed && hasActivePayment) {
         return;
       }
       toggleOverlay(rideFareOverlay, false);
       ridePaymentState.showing = false;
-      if (force) {
+      if (force || ridePaymentState.completed) {
         resetRidePaymentState();
       }
     }
 
     async function openRideFareOverlay({ rideId, amountCents, summary }) {
       if (!rideFareOverlay) return;
-      teardownRidePaymentResources();
+      resetRidePaymentState();
       ridePaymentState.rideId = rideId || null;
-      ridePaymentState.amountCents = Math.round(amountCents);
+      ridePaymentState.baseAmountCents = Math.max(0, Math.round(amountCents));
       ridePaymentState.summary = summary || null;
       ridePaymentState.completed = false;
       ridePaymentState.processing = true;
       ridePaymentState.clientSecret = null;
       ridePaymentState.showing = true;
-      if (rideFareAmount) {
-        rideFareAmount.textContent = formatCurrencyFromCents(
-          ridePaymentState.amountCents,
-          "usd"
-        );
-      }
       if (rideFareSubtitle) {
         rideFareSubtitle.textContent = summary?.dropoff
           ? `Destination: ${summary.dropoff}`
           : "Complete your fare to finish this ride.";
       }
       renderRideFareDetails(summary);
-      if (rideFareClose) {
-        rideFareClose.disabled = true;
-      }
-      updateRideFareStatus("Preparing Apple Pay / Google Pay…", false);
+      resetRideTipUi();
+      updateRidePaymentTotalsDisplay();
+      updateRideFareStatus("Preparing payment options…", false);
       if (rideFareUnavailable) {
         rideFareUnavailable.textContent = "";
       }
-      toggleOverlay(rideFareOverlay, true, rideFareClose);
-      try {
-        const clientSecret = await createRidePaymentClientSecret(
-          rideId,
-          ridePaymentState.amountCents
-        );
-        ridePaymentState.clientSecret = clientSecret;
-        await mountRidePaymentRequestButton(clientSecret, ridePaymentState.amountCents);
-        if (ridePaymentState.paymentRequest) {
-          updateRideFareStatus("Ready to pay with Apple Pay / Google Pay.", false);
-        }
-      } catch (err) {
-        updateRideFareStatus(err?.message || PAYMENT_ERROR_FALLBACK, true);
-        if (rideFareUnavailable) {
-          rideFareUnavailable.textContent =
-            "Contact RideSync support if you need help completing this payment.";
-        }
-      } finally {
-        ridePaymentState.processing = false;
+      if (rideFareClose) {
+        rideFareClose.disabled = true;
       }
+      toggleOverlay(rideFareOverlay, true, rideFareClose);
+      await refreshRidePaymentIntent();
+      ridePaymentState.processing = false;
     }
 
-    async function createRidePaymentClientSecret(rideId, amountCents) {
+    async function createRidePaymentClientSecret({
+      rideId,
+      amountCents,
+      tipAmountCents,
+    }) {
       try {
         const response = await createRidePaymentIntentFn({
           amount: Math.round(amountCents),
           currency: "usd",
           rideId: rideId || null,
+          tipAmountCents: Math.max(0, Math.round(tipAmountCents || 0)),
         });
         const clientSecret = response?.data?.clientSecret;
         if (typeof clientSecret !== "string" || !clientSecret) {
           throw new Error("Unable to start ride payment.");
         }
-        return clientSecret;
+        return {
+          clientSecret,
+          livemode: response?.data?.livemode ?? null,
+        };
       } catch (err) {
         throw handleCallableError(
           "createRidePaymentIntent",
@@ -5887,10 +6027,74 @@
       }
     }
 
-    async function mountRidePaymentRequestButton(clientSecret, amountCents) {
-      if (!rideFarePaymentRequest) return;
+    async function refreshRidePaymentIntent() {
+      if (!ridePaymentState.rideId) {
+        updateRideFareStatus("Ride reference missing for payment.", true);
+        return;
+      }
+      if (!ridePaymentState.totalAmountCents) {
+        updateRideFareStatus("Fare total unavailable. Contact support.", true);
+        return;
+      }
+      ridePaymentState.intentRequestId += 1;
+      const currentRequestId = ridePaymentState.intentRequestId;
+      ridePaymentState.processing = true;
       teardownRidePaymentResources();
-      const stripe = await ensureStripeInstance(null);
+      updateRideFareStatus("Preparing payment options…", false);
+      try {
+        const { clientSecret, livemode } = await createRidePaymentClientSecret({
+          rideId: ridePaymentState.rideId,
+          amountCents: ridePaymentState.totalAmountCents,
+          tipAmountCents: ridePaymentState.tipAmountCents,
+        });
+        if (ridePaymentState.intentRequestId !== currentRequestId) {
+          return;
+        }
+        ridePaymentState.clientSecret = clientSecret;
+        ridePaymentState.livemode = livemode;
+        ridePaymentState.clientSecretContext = {
+          clientSecret,
+          livemode,
+          totalAmountCents: ridePaymentState.totalAmountCents,
+          baseAmountCents: ridePaymentState.baseAmountCents,
+          tipAmountCents: ridePaymentState.tipAmountCents,
+        };
+        await mountRidePaymentElement(clientSecret, livemode);
+        await mountRidePaymentRequestButton(
+          clientSecret,
+          ridePaymentState.totalAmountCents,
+          livemode
+        );
+        if (!ridePaymentState.paymentRequest && rideFareUnavailable) {
+          rideFareUnavailable.textContent =
+            "Apple Pay / Google Pay are unavailable on this device.";
+        }
+        updateRideFareStatus("Choose a payment method to finish.", false);
+        if (rideFareClose) {
+          rideFareClose.disabled = false;
+        }
+      } catch (err) {
+        if (ridePaymentState.intentRequestId !== currentRequestId) {
+          return;
+        }
+        updateRideFareStatus(err?.message || PAYMENT_ERROR_FALLBACK, true);
+        if (rideFareUnavailable) {
+          rideFareUnavailable.textContent =
+            "Contact RideSync support if you need help completing this payment.";
+        }
+        if (rideCardMessage) {
+          rideCardMessage.textContent = err?.message || "";
+        }
+      } finally {
+        if (ridePaymentState.intentRequestId === currentRequestId) {
+          ridePaymentState.processing = false;
+        }
+      }
+    }
+
+    async function mountRidePaymentRequestButton(clientSecret, amountCents, livemode) {
+      if (!rideFarePaymentRequest) return;
+      const stripe = await ensureStripeInstance(livemode);
       const paymentRequest = stripe.paymentRequest({
         country: "US",
         currency: "usd",
@@ -5932,6 +6136,29 @@
       ridePaymentState.paymentRequestElementsInstance = elements;
       if (rideFareClose) {
         rideFareClose.disabled = false;
+      }
+    }
+
+    async function mountRidePaymentElement(clientSecret, livemode) {
+      if (!rideCardElement || !clientSecret) {
+        return;
+      }
+      if (ridePaymentState.paymentElement) {
+        ridePaymentState.paymentElement.unmount();
+        ridePaymentState.paymentElement = null;
+      }
+      const stripe = await ensureStripeInstance(livemode);
+      const elements = stripe.elements({ clientSecret });
+      const paymentElement = elements.create("payment");
+      rideCardElement.innerHTML = "";
+      paymentElement.mount(rideCardElement);
+      ridePaymentState.paymentElements = elements;
+      ridePaymentState.paymentElement = paymentElement;
+      if (rideCardSubmit) {
+        rideCardSubmit.disabled = false;
+      }
+      if (rideCardMessage) {
+        rideCardMessage.textContent = "";
       }
     }
 
@@ -5990,7 +6217,8 @@
     }
 
     async function handleRidePaymentRequest(event) {
-      if (!ridePaymentState.clientSecret) {
+      const paymentIntentContext = snapshotActivePaymentIntentContext();
+      if (!paymentIntentContext) {
         event.complete("fail");
         updateRideFareStatus("Payment is still being prepared. Try again.", true);
         return;
@@ -5998,9 +6226,11 @@
       ridePaymentState.processing = true;
       updateRideFareStatus("Processing payment…", false);
       try {
-        const stripe = await ensureStripeInstance(null);
+        const stripe = await ensureStripeInstance(
+          paymentIntentContext.livemode ?? ridePaymentState.livemode
+        );
         const { error, paymentIntent } = await stripe.confirmCardPayment(
-          ridePaymentState.clientSecret,
+          paymentIntentContext.clientSecret,
           {
             payment_method: event.paymentMethod.id,
           },
@@ -6015,7 +6245,7 @@
         event.complete("success");
         if (paymentIntent && paymentIntent.status === "requires_action") {
           const { error: actionError } = await stripe.confirmCardPayment(
-            ridePaymentState.clientSecret
+            paymentIntentContext.clientSecret
           );
           if (actionError) {
             updateRideFareStatus(actionError.message || PAYMENT_ERROR_FALLBACK, true);
@@ -6023,7 +6253,7 @@
             return;
           }
         }
-        await markRideFarePaid(paymentIntent?.id || null);
+        await markRideFarePaid(paymentIntent?.id || null, paymentIntentContext);
         ridePaymentState.completed = true;
         ridePaymentState.processing = false;
         updateRideFareStatus(
@@ -6035,7 +6265,6 @@
         }
         setTimeout(() => {
           closeRideFareOverlay();
-          resetRidePaymentState();
         }, 1800);
       } catch (err) {
         event.complete("fail");
@@ -6044,18 +6273,117 @@
       }
     }
 
-    async function markRideFarePaid(paymentIntentId) {
+    async function handleRideCardSubmit() {
+      const paymentElementsInstance = ridePaymentState.paymentElements;
+      if (!paymentElementsInstance) {
+        if (rideCardMessage) {
+          rideCardMessage.textContent =
+            "Payment is still being prepared. Please try again.";
+        }
+        return;
+      }
+      const paymentIntentContext = snapshotActivePaymentIntentContext();
+      if (!paymentIntentContext) {
+        if (rideCardMessage) {
+          rideCardMessage.textContent =
+            "Payment is still being prepared. Please try again.";
+        }
+        return;
+      }
+      if (rideCardMessage) {
+        rideCardMessage.textContent = "";
+      }
+      if (rideCardSubmit) {
+        rideCardSubmit.disabled = true;
+      }
+      ridePaymentState.processing = true;
+      updateRideFareStatus("Processing card payment…", false);
+      try {
+        const stripe = await ensureStripeInstance(
+          paymentIntentContext.livemode ?? ridePaymentState.livemode
+        );
+        const result = await stripe.confirmPayment({
+          elements: paymentElementsInstance,
+          clientSecret: paymentIntentContext.clientSecret,
+          redirect: "if_required",
+        });
+        if (result.error) {
+          throw new Error(result.error.message || PAYMENT_ERROR_FALLBACK);
+        }
+        if (!result.paymentIntent || result.paymentIntent.status !== "succeeded") {
+          throw new Error("Payment did not complete.");
+        }
+        await markRideFarePaid(result.paymentIntent.id, paymentIntentContext);
+        ridePaymentState.completed = true;
+        updateRideFareStatus(
+          "Payment complete. Thank you for riding with RideSync!",
+          false
+        );
+        setTimeout(() => {
+          closeRideFareOverlay();
+        }, 1800);
+      } catch (err) {
+        updateRideFareStatus(err?.message || PAYMENT_ERROR_FALLBACK, true);
+        if (rideCardMessage) {
+          rideCardMessage.textContent = err?.message || PAYMENT_ERROR_FALLBACK;
+        }
+      } finally {
+        ridePaymentState.processing = false;
+        if (rideCardSubmit && !ridePaymentState.completed) {
+          rideCardSubmit.disabled = false;
+        }
+      }
+    }
+
+    function snapshotActivePaymentIntentContext() {
+      const context = ridePaymentState.clientSecretContext;
+      if (!context || !context.clientSecret) {
+        return null;
+      }
+      return {
+        clientSecret: context.clientSecret,
+        livemode: context.livemode ?? null,
+        totalAmountCents: context.totalAmountCents,
+        baseAmountCents: context.baseAmountCents,
+        tipAmountCents: context.tipAmountCents,
+      };
+    }
+
+    async function markRideFarePaid(paymentIntentId, paymentDetails) {
       if (!ridePaymentState.rideId) {
         return;
       }
       try {
         const rideRef = doc(db, "rideRequests", ridePaymentState.rideId);
+        const normalizeCents = (value, fallback = 0) => {
+          const candidate = Number.isFinite(value) ? value : fallback;
+          const resolved = Number.isFinite(candidate) ? candidate : 0;
+          return Math.max(0, Math.round(resolved));
+        };
+        const baseAmountCents = normalizeCents(
+          paymentDetails?.baseAmountCents,
+          ridePaymentState.baseAmountCents
+        );
+        const tipAmountCents = normalizeCents(
+          paymentDetails?.tipAmountCents,
+          ridePaymentState.tipAmountCents
+        );
+        const totalAmountCents = normalizeCents(
+          paymentDetails?.totalAmountCents,
+          Number.isFinite(ridePaymentState.totalAmountCents)
+            ? ridePaymentState.totalAmountCents
+            : baseAmountCents + tipAmountCents
+        );
         await updateDoc(rideRef, {
           paymentStatus: "paid",
           stripePaymentIntentId: paymentIntentId || null,
-          stripeAmountCents: ridePaymentState.amountCents,
-          stripeAmount: ridePaymentState.amountCents / 100,
+          stripeAmountCents: totalAmountCents,
+          stripeAmount: totalAmountCents / 100,
           stripeCurrency: "usd",
+          fareBaseAmountCents: baseAmountCents,
+          tipAmountCents,
+          tipAmount: tipAmountCents / 100,
+          tipCurrency: "usd",
           updatedAt: serverTimestamp(),
         });
         profileMessage.textContent = "Payment received. Thanks for riding!";
