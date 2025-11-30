@@ -1668,6 +1668,282 @@ exports.finalizeMembershipSubscription = functions
   });
 // === RIDE SYNC STRIPE: END finalizeMembershipSubscription ===
 
+function sanitizeCheckoutDescription(value) {
+  if (typeof value !== "string") {
+    return "RideSync ride fare";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "RideSync ride fare";
+  }
+  return trimmed.slice(0, 140);
+}
+
+async function maybeResolveUserFromAuthHeader(req) {
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    return { uid: null, email: null };
+  }
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) {
+    return { uid: null, email: null };
+  }
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    const uid = decoded?.uid || null;
+    const decodedEmail = decoded?.email || null;
+    if (!uid) {
+      return { uid: null, email: decodedEmail || null };
+    }
+    if (decodedEmail) {
+      return { uid, email: decodedEmail };
+    }
+    const userRecord = await admin.auth().getUser(uid);
+    return { uid, email: userRecord?.email || null };
+  } catch (err) {
+    logStripeDebug("maybeResolveUserFromAuthHeader: token verification failed", {
+      errorCode: err?.code || err?.errorInfo?.code || null,
+    });
+    return { uid: null, email: null };
+  }
+}
+
+exports.createRideCheckoutSession = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onRequest(async (req, res) => {
+    setApplyMembershipCorsHeaders(req, res);
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "POST") {
+      res.status(405).json({
+        error: {
+          code: "method-not-allowed",
+          message: "Use POST for this endpoint.",
+        },
+      });
+      return;
+    }
+
+    const payload =
+      typeof req.body === "object" && req.body !== null ? req.body : {};
+    const amountInput =
+      typeof payload.amountCents === "number"
+        ? payload.amountCents
+        : typeof payload.amountCents === "string"
+        ? Number(payload.amountCents)
+        : typeof payload.amount_cents === "number"
+        ? payload.amount_cents
+        : typeof payload.amount_cents === "string"
+        ? Number(payload.amount_cents)
+        : null;
+    const amountCents = Number.isFinite(amountInput)
+      ? Math.round(amountInput)
+      : null;
+    if (!amountCents || amountCents <= 0) {
+      res.status(400).json({
+        error: {
+          code: "invalid-argument",
+          message: "amountCents must be greater than zero.",
+        },
+      });
+      return;
+    }
+
+    const rideInput = extractRideInput(payload.ridePayload || payload.ride);
+    if (!rideInput) {
+      res.status(400).json({
+        error: {
+          code: "invalid-argument",
+          message: "Ride payload is required.",
+        },
+      });
+      return;
+    }
+
+    const { uid, email } = await maybeResolveUserFromAuthHeader(req);
+    if (!uid) {
+      res.status(401).json({
+        error: {
+          code: "unauthenticated",
+          message: "Sign in to start checkout.",
+        },
+      });
+      return;
+    }
+
+    const totalCentsResolved = resolveRideTotalCents(rideInput);
+    if (!Number.isFinite(totalCentsResolved) || totalCentsResolved <= 0) {
+      res.status(400).json({
+        error: {
+          code: "invalid-argument",
+          message: "Estimated fare (totalCents) is required.",
+        },
+      });
+      return;
+    }
+    const totalCents = Math.max(0, Math.round(totalCentsResolved));
+
+    const pickupLocation =
+      coerceLatLng(rideInput.pickupLocation) ||
+      coerceLatLng(rideInput.fromLocation) ||
+      coerceLatLng(rideInput.currentLocation);
+    const dropoffLocation =
+      coerceLatLng(rideInput.dropoffLocation) ||
+      coerceLatLng(rideInput.toLocation) ||
+      coerceLatLng(rideInput.destinationLocation);
+    if (!hasValidLocation(pickupLocation) || !hasValidLocation(dropoffLocation)) {
+      res.status(400).json({
+        error: {
+          code: "invalid-argument",
+          message: "Pickup and dropoff coordinates are required.",
+        },
+      });
+      return;
+    }
+
+    const estimatedMinutes = resolveRideDurationMinutes(rideInput);
+    if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
+      res.status(400).json({
+        error: {
+          code: "invalid-argument",
+          message: "Estimated ride duration is required.",
+        },
+      });
+      return;
+    }
+
+    let pendingRef = null;
+    let session = null;
+    try {
+      const stripeClient = getStripeClient();
+      const userRef = db.collection("users").doc(uid);
+      const userSnap = await userRef.get();
+      const profile = userSnap.exists ? userSnap.data() : {};
+      const membershipType = normalizeMembershipPlan(
+        profile?.membershipType || profile?.membership || "basic"
+      );
+      const membershipStatus = profile?.membershipStatus || "none";
+
+      const chargeContext = calculateRideChargeContext({
+        membershipType,
+        membershipStatus,
+        pickupLocation,
+        dropoffLocation,
+        totalCents,
+      });
+
+      if (!chargeContext.amountCents || chargeContext.amountCents <= 0) {
+        res.status(400).json({
+          error: {
+            code: "failed-precondition",
+            message: "This ride does not require a Stripe payment.",
+          },
+        });
+        return;
+      }
+
+      if (chargeContext.amountCents !== amountCents) {
+        logStripeDebug("createRideCheckoutSession: amount mismatch detected", {
+          uid,
+          amountCentsClient: amountCents,
+          amountCentsServer: chargeContext.amountCents,
+        });
+      }
+
+      const sanitizedPayload = buildRidePayload(rideInput, {
+        uid,
+        membershipType,
+        membershipStatus,
+        pickupLocation,
+        dropoffLocation,
+        amountCents: chargeContext.amountCents,
+        totalCents,
+        chargeContext,
+        estimatedDurationMinutes: estimatedMinutes,
+      });
+
+      const description = sanitizeCheckoutDescription(
+        payload.description ||
+          sanitizedPayload.description ||
+          sanitizedPayload.toDestination ||
+          "RideSync ride fare"
+      );
+
+      pendingRef = db.collection("pendingRidePayments").doc();
+      await pendingRef.set({
+        userId: uid,
+        pendingId: pendingRef.id,
+        ridePayload: sanitizedPayload,
+        amountCents: chargeContext.amountCents,
+        totalCents,
+        geofenceContext: chargeContext,
+        currency: "usd",
+        checkoutMode: "stripe_checkout",
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+      const baseHost = "https://ride-sync-nwa.web.app";
+      session = await stripeClient.checkout.sessions.create({
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: description,
+              },
+              unit_amount: chargeContext.amountCents,
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: `${baseHost}/payment-success?pending_id=${pendingRef.id}&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseHost}/payment-cancelled?pending_id=${pendingRef.id}`,
+        customer_email: email || undefined,
+        client_reference_id: pendingRef.id,
+        metadata: {
+          firebaseUid: uid,
+          pendingRideId: pendingRef.id,
+          purpose: "ride",
+        },
+        payment_intent_data: {
+          metadata: {
+            firebaseUid: uid,
+            pendingRideId: pendingRef.id,
+            purpose: "ride",
+          },
+        },
+      });
+
+      await pendingRef.update({
+        stripeCheckoutSessionId: session.id,
+        checkoutSessionCreatedAt: FieldValue.serverTimestamp(),
+      });
+
+      res.status(200).json({ url: session.url });
+    } catch (err) {
+      if (pendingRef && !session) {
+        try {
+          await pendingRef.delete();
+        } catch (_) {
+          // best effort cleanup
+        }
+      }
+      console.error(
+        "[RideSync][Stripe] createRideCheckoutSession error",
+        err
+      );
+      res.status(500).json({
+        error: {
+          code: "internal",
+          message: "Unable to start checkout. Try again shortly.",
+        },
+      });
+    }
+  });
+
 // === RIDE SYNC STRIPE: START createRidePaymentIntent ===
 exports.createRidePaymentIntent = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
@@ -1811,6 +2087,65 @@ exports.createRidePaymentIntent = functions
   });
 // === RIDE SYNC STRIPE: END createRidePaymentIntent ===
 
+async function finalizePendingRide({
+  pendingRef,
+  pending,
+  uid,
+  paymentIntentId,
+}) {
+  const rideData = cloneData(pending.ridePayload || {});
+  rideData.userId = uid;
+  rideData.startedByUserId = rideData.startedByUserId || uid;
+  rideData.status = normalizeRideStatus(rideData.status, rideData.poolType);
+  rideData.createdAt = FieldValue.serverTimestamp();
+  rideData.paymentStatus = "paid";
+  rideData.paymentMethod = "stripe";
+  rideData.stripePaymentIntentId = paymentIntentId;
+  rideData.stripeAmount = pending.amountCents / 100;
+  rideData.stripeAmountCents = pending.amountCents;
+  rideData.stripeCurrency = pending.currency || "usd";
+  rideData.totalCents = pending.totalCents ?? rideData.totalCents ?? null;
+  rideData.geofenceContext =
+    pending.geofenceContext ?? rideData.geofenceContext ?? null;
+  rideData.updatedAt = FieldValue.serverTimestamp();
+  rideData.currentRiderCount = Math.min(
+    rideData.maxRiders || 1,
+    rideData.currentRiderCount || 1
+  );
+  if (rideData.isGroupRide && !rideData.groupId) {
+    rideData.groupId = undefined;
+  }
+
+  const rideRef = db.collection("rideRequests").doc();
+  if (rideData.isGroupRide && !rideData.groupId) {
+    rideData.groupId = rideRef.id;
+  }
+
+  await db.runTransaction(async (tx) => {
+    const freshSnap = await tx.get(pendingRef);
+    if (!freshSnap.exists) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Pending ride payment not found."
+      );
+    }
+    if (freshSnap.data().processedAt) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This pending ride payment was already processed."
+      );
+    }
+    tx.set(rideRef, rideData);
+    tx.update(pendingRef, {
+      processedAt: FieldValue.serverTimestamp(),
+      rideId: rideRef.id,
+      stripePaymentIntentId: paymentIntentId,
+    });
+  });
+
+  return rideRef.id;
+}
+
 exports.finalizeRidePayment = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
   .https.onCall(async (data, context) => {
@@ -1855,59 +2190,233 @@ exports.finalizeRidePayment = functions
       );
     }
 
-    const rideData = cloneData(pending.ridePayload || {});
-    rideData.userId = uid;
-    rideData.startedByUserId = rideData.startedByUserId || uid;
-    rideData.status = normalizeRideStatus(
-      rideData.status,
-      rideData.poolType
-    );
-    rideData.createdAt = FieldValue.serverTimestamp();
-    rideData.paymentStatus = "paid";
-    rideData.paymentMethod = "stripe";
-    rideData.stripePaymentIntentId = paymentIntentId;
-    rideData.stripeAmount = pending.amountCents / 100;
-    rideData.stripeAmountCents = pending.amountCents;
-    rideData.stripeCurrency = pending.currency || "usd";
-    rideData.totalCents = pending.totalCents ?? rideData.totalCents ?? null;
-    rideData.geofenceContext =
-      pending.geofenceContext ?? rideData.geofenceContext ?? null;
-    rideData.updatedAt = FieldValue.serverTimestamp();
-    rideData.currentRiderCount = Math.min(
-      rideData.maxRiders || 1,
-      rideData.currentRiderCount || 1
-    );
-    if (rideData.isGroupRide && !rideData.groupId) {
-      rideData.groupId = undefined;
-    }
-
-    const rideRef = db.collection("rideRequests").doc();
-    if (rideData.isGroupRide && !rideData.groupId) {
-      rideData.groupId = rideRef.id;
-    }
-
-    await db.runTransaction(async (tx) => {
-      const freshSnap = await tx.get(pendingRef);
-      if (!freshSnap.exists) {
-        throw new functions.https.HttpsError(
-          "not-found",
-          "Pending ride payment not found."
-        );
-      }
-      if (freshSnap.data().processedAt) {
-        throw new functions.https.HttpsError(
-          "failed-precondition",
-          "This pending ride payment was already processed."
-        );
-      }
-      tx.set(rideRef, rideData);
-      tx.update(pendingRef, {
-        processedAt: FieldValue.serverTimestamp(),
-        rideId: rideRef.id,
-      });
+    const rideId = await finalizePendingRide({
+      pendingRef,
+      pending,
+      uid,
+      paymentIntentId: intent.id,
     });
 
-    return { rideId: rideRef.id };
+    return { rideId };
+  });
+
+exports.finalizeRideCheckoutSession = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onRequest(async (req, res) => {
+    setApplyMembershipCorsHeaders(req, res);
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "POST") {
+      res.status(405).json({
+        error: {
+          code: "method-not-allowed",
+          message: "Use POST for this endpoint.",
+        },
+      });
+      return;
+    }
+
+    const payload =
+      typeof req.body === "object" && req.body !== null ? req.body : {};
+    const pendingId =
+      typeof payload.pendingId === "string"
+        ? payload.pendingId
+        : typeof payload.pending_id === "string"
+        ? payload.pending_id
+        : null;
+    const sessionId =
+      typeof payload.sessionId === "string"
+        ? payload.sessionId
+        : typeof payload.session_id === "string"
+        ? payload.session_id
+        : null;
+
+    const { uid } = await maybeResolveUserFromAuthHeader(req);
+    if (!uid) {
+      res.status(401).json({
+        error: {
+          code: "unauthenticated",
+          message: "Sign in to finish your ride.",
+        },
+      });
+      return;
+    }
+
+    if (!pendingId || !sessionId) {
+      res.status(400).json({
+        error: {
+          code: "invalid-argument",
+          message: "pendingId and sessionId are required.",
+        },
+      });
+      return;
+    }
+
+    try {
+      const pendingRef = db.collection("pendingRidePayments").doc(pendingId);
+      const pendingSnap = await pendingRef.get();
+      if (!pendingSnap.exists) {
+        res.status(404).json({
+          error: {
+            code: "not-found",
+            message: "Pending ride payment not found.",
+          },
+        });
+        return;
+      }
+
+      const pending = pendingSnap.data();
+      if (pending.userId !== uid) {
+        res.status(403).json({
+          error: {
+            code: "permission-denied",
+            message: "Cannot finalize another rider's payment.",
+          },
+        });
+        return;
+      }
+
+      if (pending.processedAt && pending.rideId) {
+        res.status(200).json({ rideId: pending.rideId });
+        return;
+      }
+
+      const stripeClient = getStripeClient();
+      let session;
+      try {
+        session = await stripeClient.checkout.sessions.retrieve(sessionId, {
+          expand: ["payment_intent"],
+        });
+      } catch (err) {
+        if (err?.code === "resource_missing") {
+          res.status(404).json({
+            error: {
+              code: "not-found",
+              message: "Stripe checkout session not found.",
+            },
+          });
+          return;
+        }
+        throw err;
+      }
+
+      if (!session) {
+        res.status(404).json({
+          error: {
+            code: "not-found",
+            message: "Stripe checkout session not found.",
+          },
+        });
+        return;
+      }
+
+      if (session.client_reference_id && session.client_reference_id !== pendingId) {
+        res.status(409).json({
+          error: {
+            code: "failed-precondition",
+            message: "Session does not match the pending ride.",
+          },
+        });
+        return;
+      }
+
+      if (
+        session.metadata?.pendingRideId &&
+        session.metadata.pendingRideId !== pendingId
+      ) {
+        res.status(409).json({
+          error: {
+            code: "failed-precondition",
+            message: "Session metadata does not match the pending ride.",
+          },
+        });
+        return;
+      }
+
+      if (
+        pending.stripeCheckoutSessionId &&
+        pending.stripeCheckoutSessionId !== session.id
+      ) {
+        res.status(409).json({
+          error: {
+            code: "failed-precondition",
+            message: "Checkout session mismatch.",
+          },
+        });
+        return;
+      }
+
+      const paymentIntentId =
+        typeof session.payment_intent === "string"
+          ? session.payment_intent
+          : session.payment_intent?.id;
+      if (!paymentIntentId) {
+        res.status(409).json({
+          error: {
+            code: "failed-precondition",
+            message: "Checkout session has not created a payment intent yet.",
+          },
+        });
+        return;
+      }
+
+      const intent =
+        typeof session.payment_intent === "object"
+          ? session.payment_intent
+          : await stripeClient.paymentIntents.retrieve(paymentIntentId);
+
+      if (
+        pending.stripePaymentIntentId &&
+        pending.stripePaymentIntentId !== intent.id
+      ) {
+        res.status(409).json({
+          error: {
+            code: "failed-precondition",
+            message: "Payment intent mismatch.",
+          },
+        });
+        return;
+      }
+
+      if (intent.status !== "succeeded") {
+        res.status(409).json({
+          error: {
+            code: "failed-precondition",
+            message: "Stripe has not confirmed this payment yet.",
+          },
+        });
+        return;
+      }
+
+      if (!pending.stripeCheckoutSessionId) {
+        await pendingRef.update({
+          stripeCheckoutSessionId: session.id,
+        });
+      }
+
+      const rideId = await finalizePendingRide({
+        pendingRef,
+        pending,
+        uid,
+        paymentIntentId: intent.id,
+      });
+
+      res.status(200).json({ rideId });
+    } catch (err) {
+      console.error(
+        "[RideSync][Stripe] finalizeRideCheckoutSession error",
+        err
+      );
+      res.status(500).json({
+        error: {
+          code: "internal",
+          message:
+            "We received your payment but could not finalize the ride yet. Contact RideSync support.",
+        },
+      });
+    }
   });
 
 exports.getDriverAvailabilityStats = functions.https.onCall(async (_data, context) => {

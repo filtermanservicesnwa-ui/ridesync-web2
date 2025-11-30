@@ -605,6 +605,48 @@
       overflow-y: auto;
       overscroll-behavior: contain;
     }
+    .payment-panel.compact {
+      max-width: 420px;
+      text-align: center;
+      gap: 12px;
+    }
+    .payment-redirect-icon {
+      font-size: 2rem;
+    }
+    .payment-redirect-subtitle {
+      color: #cbd5f5;
+      font-size: 0.95rem;
+      margin: 0;
+    }
+    .payment-redirect-spinner {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 3px solid rgba(148,163,184,0.35);
+      border-top-color: #22c55e;
+      margin: 12px auto 0;
+      animation: paymentRedirectSpin 1s linear infinite;
+    }
+    @keyframes paymentRedirectSpin {
+      0% {
+        transform: rotate(0deg);
+      }
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+    .payment-status-overlay .payment-result-card {
+      width: min(420px, 100%);
+      background: rgba(15,23,42,0.95);
+      border-radius: 20px;
+      border: 1px solid rgba(148,163,184,0.4);
+      padding: 24px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
     @supports (height: 100dvh) {
       .payment-panel {
         max-height: min(90dvh, 640px);
@@ -1862,6 +1904,36 @@
     </div>
   </div>
 
+  <div id="paymentRedirectOverlay" class="payment-overlay" aria-hidden="true">
+    <div class="payment-panel compact" role="dialog" aria-live="assertive">
+      <div class="payment-redirect-icon" aria-hidden="true">🔒</div>
+      <h3 class="payment-panel-title">Secure payment</h3>
+      <p id="paymentRedirectSubtitle" class="payment-redirect-subtitle">
+        Redirecting you to Stripe Checkout…
+      </p>
+      <div class="payment-redirect-spinner" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <div
+    id="paymentStatusOverlay"
+    class="overlay payment-status-overlay"
+    aria-hidden="true"
+  >
+    <div
+      class="payment-result-card"
+      role="dialog"
+      aria-modal="true"
+      aria-live="polite"
+    >
+      <div id="paymentStatusTitle" class="overlay-title"></div>
+      <div id="paymentStatusMessage" class="overlay-subtitle"></div>
+      <button id="paymentStatusBackButton" type="button" class="btn-primary">
+        Back to RideSync
+      </button>
+    </div>
+  </div>
+
   <div
     id="cooldownOverlay"
     class="overlay cooldown-overlay"
@@ -2316,14 +2388,6 @@
       functionsClient,
       "finalizeMembershipSubscription"
     );
-    const createRidePaymentIntentFn = httpsCallable(
-      functionsClient,
-      "createRidePaymentIntent"
-    );
-    const finalizeRidePaymentFn = httpsCallable(
-      functionsClient,
-      "finalizeRidePayment"
-    );
     const getDriverAvailabilityStatsFn = httpsCallable(
       functionsClient,
       "getDriverAvailabilityStats"
@@ -2529,6 +2593,15 @@
     const profileError = document.getElementById("profileError");
     const driverAvailabilityNotice = document.getElementById("driverAvailabilityNotice");
 
+    function showErrorBanner(message) {
+      if (profileError) {
+        profileError.textContent =
+          message || "Payments are temporarily unavailable. Please try again.";
+      } else {
+        console.error(message);
+      }
+    }
+
     const mapEl = document.getElementById("map");
     const destinationEl = document.getElementById("destination");
     const addStopButton = document.getElementById("addStopButton");
@@ -2652,6 +2725,12 @@
     const paymentOverlayConfirm = document.getElementById("paymentOverlayConfirm");
     const paymentOverlayMessage = document.getElementById("paymentOverlayMessage");
     const paymentElementContainer = document.getElementById("paymentElement");
+    const paymentRedirectOverlay = document.getElementById("paymentRedirectOverlay");
+    const paymentRedirectSubtitle = document.getElementById("paymentRedirectSubtitle");
+    const paymentStatusOverlay = document.getElementById("paymentStatusOverlay");
+    const paymentStatusTitle = document.getElementById("paymentStatusTitle");
+    const paymentStatusMessage = document.getElementById("paymentStatusMessage");
+    const paymentStatusBackButton = document.getElementById("paymentStatusBackButton");
 
     let latestRideForOverlay = null;
     const stripeInstancesByKey = new Map();
@@ -5595,6 +5674,130 @@
       }
     }
 
+    function openPaymentStatusOverlay(title, message) {
+      if (!paymentStatusOverlay) return;
+      if (paymentStatusTitle) {
+        paymentStatusTitle.textContent = title || "";
+      }
+      if (paymentStatusMessage) {
+        paymentStatusMessage.textContent = message || "";
+      }
+      toggleOverlay(paymentStatusOverlay, true, paymentStatusBackButton);
+    }
+
+    function closePaymentStatusOverlay() {
+      toggleOverlay(paymentStatusOverlay, false);
+    }
+
+    let checkoutFinalizationPromise = null;
+
+    async function waitForAuthUserForCheckout() {
+      if (auth.currentUser) {
+        return auth.currentUser;
+      }
+      return new Promise((resolve) => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+          unsubscribe();
+          resolve(user || null);
+        });
+      });
+    }
+
+    async function finalizeRideCheckoutSessionRequest(sessionId, pendingId) {
+      if (!sessionId || !pendingId) {
+        throw new Error("Missing checkout confirmation details.");
+      }
+      let user = auth.currentUser;
+      if (!user) {
+        user = await waitForAuthUserForCheckout();
+      }
+      if (!user) {
+        throw new Error("Sign back in to finish syncing your ride.");
+      }
+      let idToken = null;
+      try {
+        idToken = await user.getIdToken();
+      } catch (err) {
+        console.warn(
+          "Failed to read auth token for finalizeRideCheckoutSession",
+          err
+        );
+      }
+      const headers = {
+        "Content-Type": "application/json",
+      };
+      if (idToken) {
+        headers.Authorization = `Bearer ${idToken}`;
+      }
+      const response = await fetch("/finalizeRideCheckoutSession", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          sessionId,
+          pendingId,
+        }),
+      });
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (_) {
+        data = null;
+      }
+      if (!response.ok) {
+        const message =
+          data?.error?.message ||
+          "We received your payment but could not sync your ride. Contact RideSync support.";
+        throw new Error(message);
+      }
+      if (!data?.rideId) {
+        throw new Error("Ride creation completed without a ride reference.");
+      }
+      activateRideAfterCreation(data.rideId);
+      return data.rideId;
+    }
+
+    async function showPaymentResultFromLocation() {
+      const path = window.location.pathname.replace(/\/+$/, "") || "/";
+      if (path === "/payment-success") {
+        const params = new URLSearchParams(window.location.search || "");
+        const sessionId = params.get("session_id");
+        const pendingId = params.get("pending_id");
+        const hasFinalizeContext = Boolean(sessionId && pendingId);
+        const message = hasFinalizeContext
+          ? "Payment successful! Finalizing your ride…"
+          : "Payment successful! We're verifying your ride on our servers.";
+        openPaymentStatusOverlay("Payment successful!", message);
+        if (!hasFinalizeContext) {
+          return;
+        }
+        try {
+          checkoutFinalizationPromise =
+            checkoutFinalizationPromise ||
+            finalizeRideCheckoutSessionRequest(sessionId, pendingId);
+          await checkoutFinalizationPromise;
+          if (paymentStatusMessage) {
+            paymentStatusMessage.textContent =
+              "Ride created! Watch the RideSync overlay for driver updates.";
+          }
+        } catch (err) {
+          const errorMessage =
+            err?.message ||
+            "Payment received, but we could not create your ride automatically. Contact RideSync support.";
+          if (paymentStatusMessage) {
+            paymentStatusMessage.textContent = errorMessage;
+          }
+          showErrorBanner(errorMessage);
+        } finally {
+          checkoutFinalizationPromise = null;
+        }
+      } else if (path === "/payment-cancelled") {
+        openPaymentStatusOverlay(
+          "Payment cancelled",
+          "No charges were made. You can return to RideSync anytime."
+        );
+      }
+    }
+
     function setMembershipTermsAcknowledged(value) {
       membershipTermsAcknowledged = Boolean(value);
       if (!membershipTermsAcknowledged) {
@@ -5902,6 +6105,7 @@
     if (paymentOverlayClose) {
       paymentOverlayClose.addEventListener("click", () => {
         const context = activePaymentContext;
+        hidePaymentRedirectOverlay();
         closePaymentOverlay();
         if (context?.type === "ride") {
           profileMessage.textContent = "Ride payment canceled. Ride not requested.";
@@ -5919,6 +6123,7 @@
       paymentOverlay.addEventListener("click", (event) => {
         if (event.target === paymentOverlay) {
           const context = activePaymentContext;
+          hidePaymentRedirectOverlay();
           closePaymentOverlay();
           if (context?.type === "ride") {
             profileMessage.textContent = "Ride payment canceled. Ride not requested.";
@@ -5926,6 +6131,13 @@
             membershipCardMessage.textContent = "Membership payment canceled.";
           }
         }
+      });
+    }
+
+    if (paymentStatusBackButton) {
+      paymentStatusBackButton.addEventListener("click", () => {
+        closePaymentStatusOverlay();
+        window.location.href = "/";
       });
     }
 
@@ -5994,25 +6206,47 @@
     }
 
     async function openPaymentOverlay(options = {}) {
-      if (!options.clientSecret) {
+      const useStripePaymentElement =
+        options.useStripePaymentElement !== false;
+      const livemode = options.livemode ?? null;
+      if (useStripePaymentElement && !options.clientSecret) {
         throw new Error("Stripe client secret missing.");
       }
       logStripeDebug("openPaymentOverlay", {
         title: options.title,
         contextType: options.context?.type,
-        livemode: options.livemode ?? null,
-        clientSecretTail: options.clientSecret
-          ? options.clientSecret.slice(0, 10) +
-            "..." +
-            options.clientSecret.slice(-6)
-          : null,
+        livemode,
+        useStripePaymentElement,
+        clientSecretTail:
+          options.clientSecret && useStripePaymentElement
+            ? options.clientSecret.slice(0, 10) +
+              "..." +
+              options.clientSecret.slice(-6)
+            : null,
       });
-      await mountStripePaymentElement(
-        options.clientSecret,
-        options.livemode ?? null
-      );
-      activePaymentContext = options.context || null;
-      activePaymentLivemode = options.livemode ?? null;
+      if (useStripePaymentElement) {
+        if (paymentElementContainer) {
+          paymentElementContainer.style.display = "";
+        }
+        await mountStripePaymentElement(options.clientSecret, livemode);
+        activePaymentLivemode = livemode;
+      } else {
+        if (paymentElementContainer) {
+          paymentElementContainer.style.display = "none";
+        }
+        if (stripePaymentElement) {
+          stripePaymentElement.unmount();
+          stripePaymentElement = null;
+        }
+        stripeElements = null;
+        activePaymentLivemode = null;
+      }
+      activePaymentContext = {
+        ...(options.context || {}),
+        useStripePaymentElement,
+        checkoutAmountCents: options.checkoutAmountCents ?? null,
+        checkoutDescription: options.checkoutDescription || null,
+      };
       if (paymentOverlayTitle) {
         paymentOverlayTitle.textContent = options.title || "Complete payment";
       }
@@ -6049,6 +6283,21 @@
       }
     }
 
+    function showPaymentRedirectOverlay(message) {
+      if (!paymentRedirectOverlay) return;
+      if (paymentRedirectSubtitle && message) {
+        paymentRedirectSubtitle.textContent = message;
+      }
+      paymentRedirectOverlay.classList.add("active");
+      paymentRedirectOverlay.setAttribute("aria-hidden", "false");
+    }
+
+    function hidePaymentRedirectOverlay() {
+      if (!paymentRedirectOverlay) return;
+      paymentRedirectOverlay.classList.remove("active");
+      paymentRedirectOverlay.setAttribute("aria-hidden", "true");
+    }
+
     async function confirmActivePayment() {
       if (!activePaymentContext) return;
       if (paymentOverlayMessage) {
@@ -6059,6 +6308,14 @@
       }
 
       try {
+        const isCheckoutRedirectRide =
+          activePaymentContext?.type === "ride" &&
+          activePaymentContext.useStripePaymentElement === false;
+        if (isCheckoutRedirectRide) {
+          await startRideCheckoutRedirect(activePaymentContext);
+          return;
+        }
+
         const stripe = await ensureStripeInstance(activePaymentLivemode);
         const result = await stripe.confirmPayment({
           elements: stripeElements,
@@ -6078,8 +6335,14 @@
           paymentOverlayMessage.textContent =
             err.message || "Unable to process payment.";
         }
+        if (activePaymentContext?.type === "ride") {
+          showErrorBanner(err.message || PAYMENT_ERROR_FALLBACK);
+        }
         if (paymentOverlayConfirm) {
           paymentOverlayConfirm.disabled = false;
+        }
+        if (activePaymentContext?.type === "ride") {
+          hidePaymentRedirectOverlay();
         }
       }
     }
@@ -6135,23 +6398,6 @@
           await loadUserProfile(user.uid, user.email);
         }
         return;
-      }
-
-      if (context?.type === "ride") {
-        let response;
-        try {
-          response = await finalizeRidePaymentFn({
-            pendingId: context.pendingId,
-            paymentIntentId: paymentIntent.id,
-          });
-        } catch (err) {
-          throw handleCallableError("finalizeRidePayment", err);
-        }
-        const rideId = response?.data?.rideId;
-        if (!rideId) {
-          throw new Error("Ride could not be created after payment.");
-        }
-        await activateRideAfterCreation(rideId, context.ridePayload);
       }
     }
 
@@ -6215,88 +6461,128 @@
       return payload;
     }
 
+    function resolveRideCheckoutAmountCents(ride = {}) {
+      const centCandidates = [
+        ride.totalCents,
+        ride.totalFareCents,
+        ride.estimatedFareCents,
+        ride.stripeAmountCents,
+        ride.totalFareEstimateCents,
+      ];
+      for (const candidate of centCandidates) {
+        const value = Number(candidate);
+        if (Number.isFinite(value) && value > 0) {
+          return Math.round(value);
+        }
+      }
+      const dollarCandidates = [
+        ride.total,
+        ride.totalFare,
+        ride.quotedTotal,
+        ride.fare?.total,
+        ride.fare?.totalFare,
+      ];
+      for (const candidate of dollarCandidates) {
+        const value = Number(candidate);
+        if (Number.isFinite(value) && value > 0) {
+          return Math.round(value * 100);
+        }
+      }
+      return null;
+    }
+
+    async function startRideCheckoutRedirect(context = {}) {
+      const amountCents = Number(context.checkoutAmountCents || 0);
+      if (!Number.isFinite(amountCents) || amountCents <= 0) {
+        throw new Error("Ride fare is unavailable. Please refresh and try again.");
+      }
+      const description =
+        context.checkoutDescription ||
+        context.ridePayload?.toDestination ||
+        "RideSync ride fare";
+      const user = auth.currentUser;
+      let idToken = null;
+      if (user) {
+        try {
+          idToken = await user.getIdToken();
+        } catch (err) {
+          console.warn("Failed to read auth token for checkout session", err);
+        }
+      }
+      showPaymentRedirectOverlay("Redirecting you to Stripe Checkout…");
+      const headers = {
+        "Content-Type": "application/json",
+      };
+      if (idToken) {
+        headers.Authorization = `Bearer ${idToken}`;
+      }
+      try {
+        const response = await fetch("/createRideCheckoutSession", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            amountCents: Math.round(amountCents),
+            description,
+            ridePayload: context.ridePayload || null,
+          }),
+        });
+        let data = null;
+        try {
+          data = await response.json();
+        } catch (_) {
+          data = null;
+        }
+        if (!response.ok || !data?.url) {
+          console.error("[RideSync][Stripe] Failed to create checkout session", {
+            status: response.status,
+            body: data,
+          });
+          throw new Error(PAYMENT_ERROR_FALLBACK);
+        }
+        window.location.href = data.url;
+      } catch (err) {
+        hidePaymentRedirectOverlay();
+        throw err instanceof Error
+          ? err
+          : new Error(PAYMENT_ERROR_FALLBACK);
+      }
+    }
+
     async function startRidePaymentFlow(ridePayload) {
       const sanitizedRidePayload = buildRidePaymentPayload(ridePayload);
       logStripeDebug("startRidePaymentFlow: payload", {
         ridePayload,
         sanitizedRidePayload,
       });
-      let data;
-      try {
-        const response = await createRidePaymentIntentFn({
-          ride: sanitizedRidePayload,
-        });
-        data = response?.data || {};
-        logStripeDebug("createRidePaymentIntent: response", {
-          raw: response,
-          data,
-          clientSecretTail: data?.clientSecret
-            ? data.clientSecret.slice(0, 10) +
-              "..." +
-              data.clientSecret.slice(-6)
-            : data?.client_secret
-            ? data.client_secret.slice(0, 10) +
-              "..." +
-              data.client_secret.slice(-6)
-            : null,
-          livemode: data?.livemode ?? data?.liveMode ?? null,
-          amountCents: data?.amountCents ?? data?.amount_cents ?? null,
-        });
-      } catch (err) {
-        logStripeDebug("createRidePaymentIntent: error", {
-          errorMessage: err?.message,
-          errorCode: err?.code,
-          errorDetails: err?.details ?? null,
-        });
-        throw handleCallableError("createRidePaymentIntent", err);
-      }
-      const rideId = data.rideId || data.ride_id || null;
-      if (data.skipPayment && rideId) {
-        await activateRideAfterCreation(rideId, sanitizedRidePayload);
-        return;
-      }
       if (!STRIPE_ENABLED) {
         throw new Error("Stripe payments are not available right now.");
       }
-      const clientSecret = resolveClientSecret(data);
-      const pendingId = data.pendingId || data.pending_id || null;
-      const paymentIntentId =
-        data.paymentIntentId || data.payment_intent_id || null;
-      if (!clientSecret || !pendingId) {
-        throw new Error("Unable to start Stripe payment for this ride.");
+      const amountCents = resolveRideCheckoutAmountCents(sanitizedRidePayload);
+      if (!amountCents || amountCents <= 0) {
+        throw new Error(
+          "Fare estimate missing. Please refresh the fare and try again."
+        );
       }
-      const formattedTotal = formatCurrencyFromCents(
-        Number.isFinite(Number(data.amountCents))
-          ? Number(data.amountCents)
-          : Number.isFinite(Number(data.amount_cents))
-          ? Number(data.amount_cents)
-          : 0,
-        data.currency || data.currencyCode || "usd"
-      );
+      const formattedTotal = formatCurrencyFromCents(amountCents, "usd");
       let subtitle = `Pay ${formattedTotal} to request this ride.`;
-      if (data.geofenceContext?.geofenceName) {
-        subtitle =
-          data.geofenceContext.amountCents > 0
-            ? `Membership covers the base fare. Pay ${formattedTotal} for the out-of-zone surcharge.`
-            : subtitle;
+      if (sanitizedRidePayload.fare?.membershipLabel) {
+        subtitle = `${sanitizedRidePayload.fare.membershipLabel}. Pay ${formattedTotal} to sync this destination.`;
       }
       await openPaymentOverlay({
         title: "Confirm ride payment",
         subtitle,
-        confirmLabel: `Pay ${formattedTotal}`,
-        clientSecret,
-        livemode:
-          typeof data.livemode === "boolean"
-            ? data.livemode
-            : typeof data.liveMode === "boolean"
-            ? data.liveMode
-            : null,
+        confirmLabel: `Sync & pay ${formattedTotal}`,
+        useStripePaymentElement: false,
         context: {
           type: "ride",
-          pendingId,
-          paymentIntentId,
+          mode: "checkoutRedirect",
           ridePayload: sanitizedRidePayload,
         },
+        checkoutAmountCents: amountCents,
+        checkoutDescription:
+          sanitizedRidePayload.description ||
+          sanitizedRidePayload.toDestination ||
+          "RideSync ride fare",
       });
       profileMessage.textContent =
         "Complete the payment to finish syncing your ride.";
@@ -6636,6 +6922,8 @@
         await handleNewRide();
       }
     });
+
+    showPaymentResultFromLocation();
 
     async function enterJoinMode(rideId) {
       try {
