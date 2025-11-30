@@ -350,20 +350,21 @@ function computeFareForMembership(planRaw, minutesRaw, inHomeZone) {
   };
 }
 
-async function getOrCreateStripeCustomer(uid) {
-  const userRef = db.collection("users").doc(uid);
-  const snap = await userRef.get();
-  const profile = snap.exists ? snap.data() : null;
-  if (profile?.stripeCustomerId) {
-    return {
-      customerId: profile.stripeCustomerId,
-      profileRef: userRef,
-      profile,
-    };
-  }
+async function createStripeCustomerForUser({
+  stripeClient,
+  uid,
+  profile,
+  userRef,
+  reason,
+  previousCustomerId = null,
+}) {
+  logStripeDebug("getOrCreateStripeCustomer: creating Stripe customer", {
+    uid,
+    reason,
+    previousCustomerId,
+  });
 
-  const stripe = getStripeClient();
-  const customer = await stripe.customers.create({
+  const customer = await stripeClient.customers.create({
     email: profile?.email || undefined,
     name:
       profile?.fullName ||
@@ -383,11 +384,70 @@ async function getOrCreateStripeCustomer(uid) {
     { merge: true }
   );
 
+  logStripeDebug("getOrCreateStripeCustomer: created Stripe customer", {
+    uid,
+    customerId: customer.id,
+    reason,
+    livemode: customer?.livemode ?? null,
+  });
+
   return {
     customerId: customer.id,
     profileRef: userRef,
     profile,
   };
+}
+
+async function getOrCreateStripeCustomer(uid) {
+  const stripeClient = getStripeClient();
+  const userRef = db.collection("users").doc(uid);
+  const snap = await userRef.get();
+  const profile = snap.exists ? snap.data() : null;
+  const existingCustomerId = profile?.stripeCustomerId || null;
+
+  if (existingCustomerId) {
+    try {
+      await stripeClient.customers.retrieve(existingCustomerId);
+      return {
+        customerId: existingCustomerId,
+        profileRef: userRef,
+        profile,
+      };
+    } catch (err) {
+      const errorMessage =
+        err?.message || err?.raw?.message || err?.raw?.message || "";
+      const isMissingCustomer =
+        (err?.code === "resource_missing" || err?.type === "invalid_request_error") &&
+        /No such customer/i.test(errorMessage || "");
+
+      if (!isMissingCustomer) {
+        throw err;
+      }
+
+      logStripeDebug("getOrCreateStripeCustomer: repairing Stripe customer mismatch", {
+        uid,
+        previousCustomerId: existingCustomerId,
+        errorCode: err?.code || null,
+      });
+
+      return createStripeCustomerForUser({
+        stripeClient,
+        uid,
+        profile,
+        userRef,
+        reason: "missing_in_live_mode",
+        previousCustomerId: existingCustomerId,
+      });
+    }
+  }
+
+  return createStripeCustomerForUser({
+    stripeClient,
+    uid,
+    profile,
+    userRef,
+    reason: "missing_customer",
+  });
 }
 
 function cloneData(input) {
