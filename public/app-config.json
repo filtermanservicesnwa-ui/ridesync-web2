@@ -9,7 +9,8 @@
     "measurementId": "G-K3ZD4YWSZZ"
   },
   "functions": {
-    "applyMembershipPlanUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/applyMembershipPlanHttp"
+    "applyMembershipPlanUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/applyMembershipPlanHttp",
+    "createRideCheckoutSessionUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/createRideCheckoutSession"
   },
   "maps": {
     "apiKey": "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0",
