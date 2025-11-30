@@ -5970,10 +5970,16 @@
       };
     }
 
+    const PAYMENT_STATUSES_REQUIRING_COLLECTION = new Set([
+      "fare_due",
+      "preauthorized",
+      "pending", // basic plan rides start as pending until paid
+      "pending_payment",
+    ]);
+
     function rideRequiresFarePayment(rideData = {}) {
       const status = (rideData.paymentStatus || "").toLowerCase();
-      const needsPayment = status === "fare_due" || status === "preauthorized";
-      if (!needsPayment) {
+      if (!PAYMENT_STATUSES_REQUIRING_COLLECTION.has(status)) {
         return 0;
       }
       const amountCents = resolveRideCheckoutAmountCents(rideData);
