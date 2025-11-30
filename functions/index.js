@@ -3157,13 +3157,27 @@ exports.confirmRidePaymentIntent = functions
     }
     const stripeClient = getStripeClient();
     const intent = await stripeClient.paymentIntents.retrieve(paymentIntentId);
-    if (intent.metadata?.rideId && intent.metadata.rideId !== rideId) {
+    const metadataRideId = intent.metadata?.rideId;
+    const metadataUserId = intent.metadata?.userId;
+    if (!metadataRideId) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Payment intent is missing ride metadata."
+      );
+    }
+    if (metadataRideId !== rideId) {
       throw new functions.https.HttpsError(
         "failed-precondition",
         "Payment intent does not match this ride."
       );
     }
-    if (intent.metadata?.userId && intent.metadata.userId !== uid) {
+    if (!metadataUserId) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Payment intent is missing user metadata."
+      );
+    }
+    if (metadataUserId !== uid) {
       throw new functions.https.HttpsError(
         "permission-denied",
         "Payment intent is associated with another user."
