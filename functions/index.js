@@ -2072,6 +2072,7 @@ exports.createRidePaymentIntent = functions
         "A positive amount (in cents) is required."
       );
     }
+    const normalizedAmount = Math.round(amount);
 
     const currencyInput =
       typeof data?.currency === "string" && data.currency.trim()
@@ -2083,13 +2084,56 @@ exports.createRidePaymentIntent = functions
         : typeof data?.ride_id === "string"
         ? data.ride_id
         : "";
+    if (!rideId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Ride ID is required."
+      );
+    }
+
+    const rideRef = db.collection("rideRequests").doc(rideId);
+    const rideSnap = await rideRef.get();
+    if (!rideSnap.exists) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Ride not found for payment."
+      );
+    }
+    const rideData = rideSnap.data() || {};
+    if (rideData.userId && rideData.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Cannot pay for another rider's fare."
+      );
+    }
+
+    const expectedAmountRaw = Number(rideData.stripeAmountCents);
+    const expectedAmountCents = Math.round(expectedAmountRaw);
+    if (!Number.isFinite(expectedAmountCents) || expectedAmountCents <= 0) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Unable to determine ride fare for payment."
+      );
+    }
+    if (normalizedAmount !== expectedAmountCents) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Ride fare mismatch. Refresh and try again."
+      );
+    }
+
+    const currencyToCharge =
+      typeof rideData.stripeCurrency === "string" &&
+      rideData.stripeCurrency.trim()
+        ? rideData.stripeCurrency.trim().toLowerCase()
+        : currencyInput;
 
     const stripeClient = getStripeClient();
 
     try {
       const paymentIntent = await stripeClient.paymentIntents.create({
-        amount: Math.round(amount),
-        currency: currencyInput,
+        amount: expectedAmountCents,
+        currency: currencyToCharge,
         automatic_payment_methods: { enabled: true },
         metadata: {
           rideId,
