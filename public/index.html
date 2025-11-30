@@ -2394,6 +2394,10 @@
       functionsClient,
       "getDriverAvailabilityStats"
     );
+    const createRideCheckoutSessionCallableFn = httpsCallable(
+      functionsClient,
+      "createRideCheckoutSessionCallable"
+    );
 
     const NWA_CENTER = geoConfig.nwaCenter || { lat: 36.334, lng: -94.118 };
     const NWA_RADIUS_MILES = geoConfig.nwaRadiusMiles ?? 30;
@@ -6569,13 +6573,26 @@
       if (idToken) {
         headers.Authorization = `Bearer ${idToken}`;
       }
-      const requestBody = JSON.stringify({
+      const requestPayload = {
         amountCents: Math.round(amountCents),
         description,
         ridePayload: context.ridePayload || null,
-      });
+      };
+      const requestBody = JSON.stringify(requestPayload);
       try {
         const sessionUrl = await requestRideCheckoutSession(headers, requestBody);
+        window.location.href = sessionUrl;
+        return;
+      } catch (httpErr) {
+        logStripeDebug("createRideCheckoutSession HTTP flow failed", {
+          message:
+            httpErr instanceof Error ? httpErr.message : String(httpErr ?? ""),
+        });
+      }
+      try {
+        const sessionUrl = await requestRideCheckoutSessionViaCallable(
+          requestPayload
+        );
         window.location.href = sessionUrl;
       } catch (err) {
         hidePaymentRedirectOverlay();
@@ -6629,6 +6646,28 @@
         lastFailure
       );
       throw new Error(PAYMENT_ERROR_FALLBACK);
+    }
+
+    async function requestRideCheckoutSessionViaCallable(payload) {
+      try {
+        const response = await createRideCheckoutSessionCallableFn(payload);
+        const url = response?.data?.url;
+        if (typeof url === "string" && url) {
+          return url;
+        }
+        logStripeDebug("createRideCheckoutSession callable missing url", {
+          payloadSummary: {
+            hasData: !!response,
+          },
+        });
+        throw new Error(PAYMENT_ERROR_FALLBACK);
+      } catch (err) {
+        throw handleCallableError(
+          "createRideCheckoutSessionCallable",
+          err,
+          PAYMENT_ERROR_FALLBACK
+        );
+      }
     }
 
     async function startRidePaymentFlow(ridePayload) {

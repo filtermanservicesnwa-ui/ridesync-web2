@@ -1679,6 +1679,204 @@ function sanitizeCheckoutDescription(value) {
   return trimmed.slice(0, 140);
 }
 
+function resolveCheckoutAmountCents(payload = {}) {
+  const amountInput =
+    typeof payload.amountCents === "number"
+      ? payload.amountCents
+      : typeof payload.amountCents === "string"
+      ? Number(payload.amountCents)
+      : typeof payload.amount_cents === "number"
+      ? payload.amount_cents
+      : typeof payload.amount_cents === "string"
+      ? Number(payload.amount_cents)
+      : null;
+  const amountCents = Number.isFinite(amountInput)
+    ? Math.round(amountInput)
+    : null;
+  if (!amountCents || amountCents <= 0) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "amountCents must be greater than zero."
+    );
+  }
+  return amountCents;
+}
+
+async function createRideCheckoutSessionInternal({
+  payload = {},
+  uid,
+  email,
+}) {
+  if (!uid) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Sign in to start checkout."
+    );
+  }
+
+  const amountCents = resolveCheckoutAmountCents(payload);
+  const rideInput = extractRideInput(payload.ridePayload || payload.ride);
+  if (!rideInput) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Ride payload is required."
+    );
+  }
+
+  const totalCentsResolved = resolveRideTotalCents(rideInput);
+  if (!Number.isFinite(totalCentsResolved) || totalCentsResolved <= 0) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Estimated fare (totalCents) is required."
+    );
+  }
+  const totalCents = Math.max(0, Math.round(totalCentsResolved));
+
+  const pickupLocation =
+    coerceLatLng(rideInput.pickupLocation) ||
+    coerceLatLng(rideInput.fromLocation) ||
+    coerceLatLng(rideInput.currentLocation);
+  const dropoffLocation =
+    coerceLatLng(rideInput.dropoffLocation) ||
+    coerceLatLng(rideInput.toLocation) ||
+    coerceLatLng(rideInput.destinationLocation);
+  if (!hasValidLocation(pickupLocation) || !hasValidLocation(dropoffLocation)) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Pickup and dropoff coordinates are required."
+    );
+  }
+
+  const estimatedMinutes = resolveRideDurationMinutes(rideInput);
+  if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Estimated ride duration is required."
+    );
+  }
+
+  const stripeClient = getStripeClient();
+  const userRef = db.collection("users").doc(uid);
+  const userSnap = await userRef.get();
+  const profile = userSnap.exists ? userSnap.data() : {};
+  const membershipType = normalizeMembershipPlan(
+    profile?.membershipType || profile?.membership || "basic"
+  );
+  const membershipStatus = profile?.membershipStatus || "none";
+
+  const chargeContext = calculateRideChargeContext({
+    membershipType,
+    membershipStatus,
+    pickupLocation,
+    dropoffLocation,
+    totalCents,
+  });
+
+  if (!chargeContext.amountCents || chargeContext.amountCents <= 0) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "This ride does not require a Stripe payment."
+    );
+  }
+
+  if (chargeContext.amountCents !== amountCents) {
+    logStripeDebug("createRideCheckoutSession: amount mismatch detected", {
+      uid,
+      amountCentsClient: amountCents,
+      amountCentsServer: chargeContext.amountCents,
+    });
+  }
+
+  const sanitizedPayload = buildRidePayload(rideInput, {
+    uid,
+    membershipType,
+    membershipStatus,
+    pickupLocation,
+    dropoffLocation,
+    amountCents: chargeContext.amountCents,
+    totalCents,
+    chargeContext,
+    estimatedDurationMinutes: estimatedMinutes,
+  });
+
+  const description = sanitizeCheckoutDescription(
+    payload.description ||
+      sanitizedPayload.description ||
+      sanitizedPayload.toDestination ||
+      "RideSync ride fare"
+  );
+
+  let pendingRef = null;
+  let session = null;
+
+  try {
+    pendingRef = db.collection("pendingRidePayments").doc();
+    await pendingRef.set({
+      userId: uid,
+      pendingId: pendingRef.id,
+      ridePayload: sanitizedPayload,
+      amountCents: chargeContext.amountCents,
+      totalCents,
+      geofenceContext: chargeContext,
+      currency: "usd",
+      checkoutMode: "stripe_checkout",
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    const baseHost = "https://ride-sync-nwa.web.app";
+    session = await stripeClient.checkout.sessions.create({
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: description,
+            },
+            unit_amount: chargeContext.amountCents,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: `${baseHost}/payment-success?pending_id=${pendingRef.id}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseHost}/payment-cancelled?pending_id=${pendingRef.id}`,
+      customer_email: email || undefined,
+      client_reference_id: pendingRef.id,
+      metadata: {
+        firebaseUid: uid,
+        pendingRideId: pendingRef.id,
+        purpose: "ride",
+      },
+      payment_intent_data: {
+        metadata: {
+          firebaseUid: uid,
+          pendingRideId: pendingRef.id,
+          purpose: "ride",
+        },
+      },
+    });
+
+    await pendingRef.update({
+      stripeCheckoutSessionId: session.id,
+      checkoutSessionCreatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return {
+      url: session.url,
+      pendingId: pendingRef.id,
+    };
+  } catch (err) {
+    if (pendingRef && !session) {
+      try {
+        await pendingRef.delete();
+      } catch (_) {
+        // best-effort cleanup
+      }
+    }
+    throw err;
+  }
+}
+
 async function maybeResolveUserFromAuthHeader(req) {
   const authHeader = req.headers.authorization || "";
   if (!authHeader.startsWith("Bearer ")) {
@@ -1728,208 +1926,35 @@ exports.createRideCheckoutSession = functions
 
     const payload =
       typeof req.body === "object" && req.body !== null ? req.body : {};
-    const amountInput =
-      typeof payload.amountCents === "number"
-        ? payload.amountCents
-        : typeof payload.amountCents === "string"
-        ? Number(payload.amountCents)
-        : typeof payload.amount_cents === "number"
-        ? payload.amount_cents
-        : typeof payload.amount_cents === "string"
-        ? Number(payload.amount_cents)
-        : null;
-    const amountCents = Number.isFinite(amountInput)
-      ? Math.round(amountInput)
-      : null;
-    if (!amountCents || amountCents <= 0) {
-      res.status(400).json({
-        error: {
-          code: "invalid-argument",
-          message: "amountCents must be greater than zero.",
-        },
-      });
-      return;
-    }
 
-    const rideInput = extractRideInput(payload.ridePayload || payload.ride);
-    if (!rideInput) {
-      res.status(400).json({
-        error: {
-          code: "invalid-argument",
-          message: "Ride payload is required.",
-        },
-      });
-      return;
-    }
-
-    const { uid, email } = await maybeResolveUserFromAuthHeader(req);
-    if (!uid) {
-      res.status(401).json({
-        error: {
-          code: "unauthenticated",
-          message: "Sign in to start checkout.",
-        },
-      });
-      return;
-    }
-
-    const totalCentsResolved = resolveRideTotalCents(rideInput);
-    if (!Number.isFinite(totalCentsResolved) || totalCentsResolved <= 0) {
-      res.status(400).json({
-        error: {
-          code: "invalid-argument",
-          message: "Estimated fare (totalCents) is required.",
-        },
-      });
-      return;
-    }
-    const totalCents = Math.max(0, Math.round(totalCentsResolved));
-
-    const pickupLocation =
-      coerceLatLng(rideInput.pickupLocation) ||
-      coerceLatLng(rideInput.fromLocation) ||
-      coerceLatLng(rideInput.currentLocation);
-    const dropoffLocation =
-      coerceLatLng(rideInput.dropoffLocation) ||
-      coerceLatLng(rideInput.toLocation) ||
-      coerceLatLng(rideInput.destinationLocation);
-    if (!hasValidLocation(pickupLocation) || !hasValidLocation(dropoffLocation)) {
-      res.status(400).json({
-        error: {
-          code: "invalid-argument",
-          message: "Pickup and dropoff coordinates are required.",
-        },
-      });
-      return;
-    }
-
-    const estimatedMinutes = resolveRideDurationMinutes(rideInput);
-    if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
-      res.status(400).json({
-        error: {
-          code: "invalid-argument",
-          message: "Estimated ride duration is required.",
-        },
-      });
-      return;
-    }
-
-    let pendingRef = null;
-    let session = null;
     try {
-      const stripeClient = getStripeClient();
-      const userRef = db.collection("users").doc(uid);
-      const userSnap = await userRef.get();
-      const profile = userSnap.exists ? userSnap.data() : {};
-      const membershipType = normalizeMembershipPlan(
-        profile?.membershipType || profile?.membership || "basic"
-      );
-      const membershipStatus = profile?.membershipStatus || "none";
-
-      const chargeContext = calculateRideChargeContext({
-        membershipType,
-        membershipStatus,
-        pickupLocation,
-        dropoffLocation,
-        totalCents,
-      });
-
-      if (!chargeContext.amountCents || chargeContext.amountCents <= 0) {
-        res.status(400).json({
+      const { uid, email } = await maybeResolveUserFromAuthHeader(req);
+      if (!uid) {
+        res.status(401).json({
           error: {
-            code: "failed-precondition",
-            message: "This ride does not require a Stripe payment.",
+            code: "unauthenticated",
+            message: "Sign in to start checkout.",
           },
         });
         return;
       }
 
-      if (chargeContext.amountCents !== amountCents) {
-        logStripeDebug("createRideCheckoutSession: amount mismatch detected", {
-          uid,
-          amountCentsClient: amountCents,
-          amountCentsServer: chargeContext.amountCents,
-        });
-      }
-
-      const sanitizedPayload = buildRidePayload(rideInput, {
+      const result = await createRideCheckoutSessionInternal({
+        payload,
         uid,
-        membershipType,
-        membershipStatus,
-        pickupLocation,
-        dropoffLocation,
-        amountCents: chargeContext.amountCents,
-        totalCents,
-        chargeContext,
-        estimatedDurationMinutes: estimatedMinutes,
+        email,
       });
 
-      const description = sanitizeCheckoutDescription(
-        payload.description ||
-          sanitizedPayload.description ||
-          sanitizedPayload.toDestination ||
-          "RideSync ride fare"
-      );
-
-      pendingRef = db.collection("pendingRidePayments").doc();
-      await pendingRef.set({
-        userId: uid,
-        pendingId: pendingRef.id,
-        ridePayload: sanitizedPayload,
-        amountCents: chargeContext.amountCents,
-        totalCents,
-        geofenceContext: chargeContext,
-        currency: "usd",
-        checkoutMode: "stripe_checkout",
-        createdAt: FieldValue.serverTimestamp(),
-      });
-
-      const baseHost = "https://ride-sync-nwa.web.app";
-      session = await stripeClient.checkout.sessions.create({
-        mode: "payment",
-        line_items: [
-          {
-            price_data: {
-              currency: "usd",
-              product_data: {
-                name: description,
-              },
-              unit_amount: chargeContext.amountCents,
-            },
-            quantity: 1,
-          },
-        ],
-        success_url: `${baseHost}/payment-success?pending_id=${pendingRef.id}&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${baseHost}/payment-cancelled?pending_id=${pendingRef.id}`,
-        customer_email: email || undefined,
-        client_reference_id: pendingRef.id,
-        metadata: {
-          firebaseUid: uid,
-          pendingRideId: pendingRef.id,
-          purpose: "ride",
-        },
-        payment_intent_data: {
-          metadata: {
-            firebaseUid: uid,
-            pendingRideId: pendingRef.id,
-            purpose: "ride",
-          },
-        },
-      });
-
-      await pendingRef.update({
-        stripeCheckoutSessionId: session.id,
-        checkoutSessionCreatedAt: FieldValue.serverTimestamp(),
-      });
-
-      res.status(200).json({ url: session.url });
+      res.status(200).json(result);
     } catch (err) {
-      if (pendingRef && !session) {
-        try {
-          await pendingRef.delete();
-        } catch (_) {
-          // best effort cleanup
-        }
+      if (err instanceof functions.https.HttpsError) {
+        res.status(err.httpErrorCode?.status || 500).json({
+          error: {
+            code: err.code,
+            message: err.message,
+          },
+        });
+        return;
       }
       console.error(
         "[RideSync][Stripe] createRideCheckoutSession error",
@@ -1941,6 +1966,33 @@ exports.createRideCheckoutSession = functions
           message: "Unable to start checkout. Try again shortly.",
         },
       });
+    }
+  });
+
+exports.createRideCheckoutSessionCallable = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data, context) => {
+    const uid = requireAuth(context);
+    const payload =
+      typeof data === "object" && data !== null ? data : {};
+    try {
+      return await createRideCheckoutSessionInternal({
+        payload,
+        uid,
+        email: context?.auth?.token?.email || null,
+      });
+    } catch (err) {
+      if (err instanceof functions.https.HttpsError) {
+        throw err;
+      }
+      console.error(
+        "[RideSync][Stripe] createRideCheckoutSessionCallable error",
+        err
+      );
+      throw new functions.https.HttpsError(
+        "internal",
+        "Unable to start checkout. Try again shortly."
+      );
     }
   });
 
