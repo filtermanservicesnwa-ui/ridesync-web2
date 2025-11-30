@@ -14,6 +14,19 @@ function logStripeDebug(label, payload = {}) {
   }
 }
 
+const STRIPE_SECRET_ENV_NAMES = Object.freeze({
+  secretKey: "STRIPE_SECRET_KEY",
+  uofaPriceId: "STRIPE_UOFA_PRICE_ID",
+  nwaPriceId: "STRIPE_NWA_PRICE_ID",
+});
+
+const STRIPE_CONFIG_DEBUG_FLAG = (
+  process.env.STRIPE_CONFIG_DEBUG || ""
+).toString().toLowerCase();
+const STRIPE_CONFIG_DEBUG_ENABLED = ["1", "true", "debug", "verbose"].includes(
+  STRIPE_CONFIG_DEBUG_FLAG
+);
+
 const STRIPE_SECRET_KEY = defineSecret("STRIPE_SECRET_KEY");
 const STRIPE_UOFA_PRICE_ID = defineSecret("STRIPE_UOFA_PRICE_ID");
 const STRIPE_NWA_PRICE_ID = defineSecret("STRIPE_NWA_PRICE_ID");
@@ -31,34 +44,93 @@ const runtimeConfig = (() => {
   }
 })();
 
+function readEnvValue(envKey) {
+  if (!envKey) {
+    return null;
+  }
+  const env = process.env || {};
+  return env[envKey] || null;
+}
+
+function pickRuntimeStripeValue(stripeConfig, ...keys) {
+  if (!stripeConfig) {
+    return null;
+  }
+  for (const key of keys) {
+    if (key in stripeConfig && stripeConfig[key]) {
+      return stripeConfig[key];
+    }
+  }
+  return null;
+}
+
 function resolveStripeSettings() {
   const stripeConfig = runtimeConfig?.stripe || {};
-  const env = process.env || {};
   return {
     secretKey:
-      env.STRIPE_SECRET_KEY ||
-      stripeConfig.secret_key ||
-      stripeConfig.secretKey ||
-      null,
+      readEnvValue(STRIPE_SECRET_ENV_NAMES.secretKey) ||
+      pickRuntimeStripeValue(stripeConfig, "secret_key", "secretKey"),
     uofaPriceId:
-      env.STRIPE_UOFA_PRICE_ID ||
-      stripeConfig.uofa_price_id ||
-      stripeConfig.uofaPriceId ||
-      null,
+      readEnvValue(STRIPE_SECRET_ENV_NAMES.uofaPriceId) ||
+      pickRuntimeStripeValue(stripeConfig, "uofa_price_id", "uofaPriceId"),
     nwaPriceId:
-      env.STRIPE_NWA_PRICE_ID ||
-      stripeConfig.nwa_price_id ||
-      stripeConfig.nwaPriceId ||
-      null,
+      readEnvValue(STRIPE_SECRET_ENV_NAMES.nwaPriceId) ||
+      pickRuntimeStripeValue(stripeConfig, "nwa_price_id", "nwaPriceId"),
   };
 }
+
+function buildStripeConfigSnapshot() {
+  const env = process.env || {};
+  return {
+    projectId: env.GCLOUD_PROJECT || env.GCP_PROJECT || null,
+    secretKeyPresent: !!stripeSecretKey,
+    uofaPriceIdPresent: !!uofaPriceId,
+    nwaPriceIdPresent: !!nwaPriceId,
+    rawEnvKeys: Object.keys(env).filter((key) =>
+      key.toUpperCase().startsWith("STRIPE_")
+    ),
+  };
+}
+
+function logStripeConfigState(context, options = {}) {
+  const {
+    severity = "debug",
+    includeEnvKeys = false,
+    extra = null,
+  } = options;
+  const snapshot = buildStripeConfigSnapshot();
+  const shouldIncludeEnvKeys = includeEnvKeys || severity === "ok";
+  if (!shouldIncludeEnvKeys) {
+    delete snapshot.rawEnvKeys;
+  }
+  const payload = {
+    context,
+    ...snapshot,
+  };
+  if (extra && typeof extra === "object") {
+    payload.extra = extra;
+  }
+  if (severity === "ok") {
+    console.log("[StripeConfigOK]", payload);
+    return;
+  }
+  if (STRIPE_CONFIG_DEBUG_ENABLED || severity === "error") {
+    console.log("[StripeConfigDebug]", payload);
+  }
+}
+
+// --- Stripe config summary (Nov 30 2025) ---
+// * All functions now read STRIPE_SECRET_KEY / STRIPE_UOFA_PRICE_ID / STRIPE_NWA_PRICE_ID
+//   from Secret Manager first, with runtime config keys as a fallback.
+// * logStripeConfigState surfaces `[StripeConfigOK]` (or `[StripeConfigDebug]` on errors)
+//   so Cloud Functions logs show GCLOUD_PROJECT plus which values are present.
+// * After pulling these changes run `firebase deploy --only functions` to ship them.
 
 const stripeSettings = resolveStripeSettings();
 let stripe = null;
 let stripeSecretKey = stripeSettings.secretKey || null;
 let uofaPriceId = stripeSettings.uofaPriceId || null;
 let nwaPriceId = stripeSettings.nwaPriceId || null;
-
 if (stripeSettings.secretKey) {
   stripe = Stripe(stripeSettings.secretKey);
   stripeSecretKey = stripeSettings.secretKey;
@@ -66,16 +138,30 @@ if (stripeSettings.secretKey) {
   console.warn(
     "[RideSync][Stripe] Missing Stripe secret key. Set stripe.secret_key runtime config or STRIPE_SECRET_KEY env to enable billing."
   );
+  logStripeConfigState("init_missing_secret_key", {
+    severity: "error",
+    includeEnvKeys: true,
+  });
 }
 if (!uofaPriceId) {
   console.warn(
     "[RideSync][Stripe] Missing U of A Stripe price ID. Set stripe.uofa_price_id or STRIPE_UOFA_PRICE_ID."
   );
+  logStripeConfigState("init_missing_uofa_price", {
+    severity: "error",
+    includeEnvKeys: true,
+    extra: { plan: "uofa_unlimited" },
+  });
 }
 if (!nwaPriceId) {
   console.warn(
     "[RideSync][Stripe] Missing NWA Stripe price ID. Set stripe.nwa_price_id or STRIPE_NWA_PRICE_ID."
   );
+  logStripeConfigState("init_missing_nwa_price", {
+    severity: "error",
+    includeEnvKeys: true,
+    extra: { plan: "nwa_unlimited" },
+  });
 }
 // === RIDE SYNC STRIPE: END config ===
 
@@ -249,22 +335,27 @@ function hydrateStripeSettingsFromSecrets() {
       keyTail: secretKey.slice(-6),
     });
   }
-  if (secretUofaPriceId) {
+  if (secretUofaPriceId && secretUofaPriceId !== uofaPriceId) {
     uofaPriceId = secretUofaPriceId;
   }
-  if (secretNwaPriceId) {
+  if (secretNwaPriceId && secretNwaPriceId !== nwaPriceId) {
     nwaPriceId = secretNwaPriceId;
   }
 }
 
-function getStripeClient() {
+function getStripeClient(contextLabel = "getStripeClient") {
   hydrateStripeSettingsFromSecrets();
   if (!stripe) {
+    logStripeConfigState(contextLabel, {
+      severity: "error",
+      includeEnvKeys: true,
+    });
     throw new functions.https.HttpsError(
-      "failed-precondition",
-      "Stripe secret key is not configured."
+      "unavailable",
+      "Stripe configuration is unavailable. Please contact RideSync support."
     );
   }
+  logStripeConfigState(contextLabel, { severity: "ok" });
   return stripe;
 }
 
@@ -399,7 +490,7 @@ async function createStripeCustomerForUser({
 }
 
 async function getOrCreateStripeCustomer(uid) {
-  const stripeClient = getStripeClient();
+  const stripeClient = getStripeClient("getOrCreateStripeCustomer");
   const userRef = db.collection("users").doc(uid);
   const snap = await userRef.get();
   const profile = snap.exists ? snap.data() : null;
@@ -1263,7 +1354,7 @@ exports.createMembershipPaymentIntent = functions
       );
     }
 
-    const stripe = getStripeClient();
+    const stripe = getStripeClient("createMembershipPaymentIntent");
     const { customerId } = await getOrCreateStripeCustomer(uid);
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -1386,7 +1477,7 @@ async function applyMembershipPlanHandler(data = {}, uid) {
     );
   }
 
-  const stripe = getStripeClient();
+  const stripe = getStripeClient("applyMembershipPlanHandler");
   const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
   if (intent.status !== "succeeded") {
     throw new functions.https.HttpsError(
@@ -1522,13 +1613,20 @@ exports.createMembershipSubscriptionIntent = functions
     hydrateStripeSettingsFromSecrets();
     const priceId = planId === "uofa_unlimited" ? uofaPriceId : nwaPriceId;
     if (!priceId) {
+      logStripeConfigState("createMembershipSubscriptionIntent", {
+        severity: "error",
+        includeEnvKeys: true,
+        extra: { planId, hasStripeSecret: !!stripeSecretKey },
+      });
       throw new functions.https.HttpsError(
-        "failed-precondition",
-        "Stripe price ID is not configured for this plan."
+        "unavailable",
+        "Membership billing is temporarily unavailable. Please contact RideSync support."
       );
     }
 
-    const stripeClient = getStripeClient();
+    const stripeClient = getStripeClient(
+      "createMembershipSubscriptionIntent"
+    );
     const { customerId, profileRef } = await getOrCreateStripeCustomer(uid);
     const userRef = profileRef || db.collection("users").doc(uid);
 
@@ -1585,7 +1683,7 @@ exports.finalizeMembershipSubscription = functions
       );
     }
 
-    const stripeClient = getStripeClient();
+    const stripeClient = getStripeClient("finalizeMembershipSubscription");
     const subscription = await stripeClient.subscriptions.retrieve(
       subscriptionId,
       {
@@ -1811,7 +1909,7 @@ async function createRideCheckoutSessionInternal({
     );
   }
 
-  const stripeClient = getStripeClient();
+  const stripeClient = getStripeClient("createRideCheckoutSessionInternal");
   const userRef = db.collection("users").doc(uid);
   const userSnap = await userRef.get();
   const profile = userSnap.exists ? userSnap.data() : {};
@@ -2150,7 +2248,7 @@ exports.createRidePaymentIntent = functions
         ? rideData.stripeCurrency.trim().toLowerCase()
         : currencyInput;
 
-    const stripeClient = getStripeClient();
+    const stripeClient = getStripeClient("createRidePaymentIntent");
 
     try {
       const paymentIntent = await stripeClient.paymentIntents.create({
@@ -2277,7 +2375,7 @@ exports.finalizeRidePayment = functions
       );
     }
 
-    const stripe = getStripeClient();
+    const stripe = getStripeClient("finalizeRidePayment");
     const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
     if (intent.status !== "succeeded") {
       throw new functions.https.HttpsError(
@@ -2379,7 +2477,7 @@ exports.finalizeRideCheckoutSession = functions
         return;
       }
 
-      const stripeClient = getStripeClient();
+      const stripeClient = getStripeClient("finalizeRideCheckoutSession");
       let session;
       try {
         session = await stripeClient.checkout.sessions.retrieve(sessionId, {
