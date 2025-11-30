@@ -5689,15 +5689,107 @@
       toggleOverlay(paymentStatusOverlay, false);
     }
 
-    function showPaymentResultFromLocation() {
+    let checkoutFinalizationPromise = null;
+
+    async function waitForAuthUserForCheckout() {
+      if (auth.currentUser) {
+        return auth.currentUser;
+      }
+      return new Promise((resolve) => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+          unsubscribe();
+          resolve(user || null);
+        });
+      });
+    }
+
+    async function finalizeRideCheckoutSessionRequest(sessionId, pendingId) {
+      if (!sessionId || !pendingId) {
+        throw new Error("Missing checkout confirmation details.");
+      }
+      let user = auth.currentUser;
+      if (!user) {
+        user = await waitForAuthUserForCheckout();
+      }
+      if (!user) {
+        throw new Error("Sign back in to finish syncing your ride.");
+      }
+      let idToken = null;
+      try {
+        idToken = await user.getIdToken();
+      } catch (err) {
+        console.warn(
+          "Failed to read auth token for finalizeRideCheckoutSession",
+          err
+        );
+      }
+      const headers = {
+        "Content-Type": "application/json",
+      };
+      if (idToken) {
+        headers.Authorization = `Bearer ${idToken}`;
+      }
+      const response = await fetch("/finalizeRideCheckoutSession", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          sessionId,
+          pendingId,
+        }),
+      });
+      let data = null;
+      try {
+        data = await response.json();
+      } catch (_) {
+        data = null;
+      }
+      if (!response.ok) {
+        const message =
+          data?.error?.message ||
+          "We received your payment but could not sync your ride. Contact RideSync support.";
+        throw new Error(message);
+      }
+      if (!data?.rideId) {
+        throw new Error("Ride creation completed without a ride reference.");
+      }
+      activateRideAfterCreation(data.rideId);
+      return data.rideId;
+    }
+
+    async function showPaymentResultFromLocation() {
       const path = window.location.pathname.replace(/\/+$/, "") || "/";
       if (path === "/payment-success") {
         const params = new URLSearchParams(window.location.search || "");
         const sessionId = params.get("session_id");
-        const message = sessionId
-          ? "Payment successful! We received your secure Stripe checkout."
-          : "Payment successful! Your RideSync trip is confirmed.";
+        const pendingId = params.get("pending_id");
+        const hasFinalizeContext = Boolean(sessionId && pendingId);
+        const message = hasFinalizeContext
+          ? "Payment successful! Finalizing your ride…"
+          : "Payment successful! We're verifying your ride on our servers.";
         openPaymentStatusOverlay("Payment successful!", message);
+        if (!hasFinalizeContext) {
+          return;
+        }
+        try {
+          checkoutFinalizationPromise =
+            checkoutFinalizationPromise ||
+            finalizeRideCheckoutSessionRequest(sessionId, pendingId);
+          await checkoutFinalizationPromise;
+          if (paymentStatusMessage) {
+            paymentStatusMessage.textContent =
+              "Ride created! Watch the RideSync overlay for driver updates.";
+          }
+        } catch (err) {
+          const errorMessage =
+            err?.message ||
+            "Payment received, but we could not create your ride automatically. Contact RideSync support.";
+          if (paymentStatusMessage) {
+            paymentStatusMessage.textContent = errorMessage;
+          }
+          showErrorBanner(errorMessage);
+        } finally {
+          checkoutFinalizationPromise = null;
+        }
       } else if (path === "/payment-cancelled") {
         openPaymentStatusOverlay(
           "Payment cancelled",
@@ -6431,6 +6523,7 @@
           body: JSON.stringify({
             amountCents: Math.round(amountCents),
             description,
+            ridePayload: context.ridePayload || null,
           }),
         });
         let data = null;
