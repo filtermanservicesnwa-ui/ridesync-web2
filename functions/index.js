@@ -17,10 +17,14 @@ function logStripeDebug(label, payload = {}) {
 const STRIPE_SECRET_KEY = defineSecret("STRIPE_SECRET_KEY");
 const STRIPE_UOFA_PRICE_ID = defineSecret("STRIPE_UOFA_PRICE_ID");
 const STRIPE_NWA_PRICE_ID = defineSecret("STRIPE_NWA_PRICE_ID");
+const STRIPE_PUBLISHABLE_KEY_LIVE = defineSecret("STRIPE_PUBLISHABLE_KEY_LIVE");
+const STRIPE_PUBLISHABLE_KEY_TEST = defineSecret("STRIPE_PUBLISHABLE_KEY_TEST");
 const STRIPE_SECRET_PARAMS = [
   STRIPE_SECRET_KEY,
   STRIPE_UOFA_PRICE_ID,
   STRIPE_NWA_PRICE_ID,
+  STRIPE_PUBLISHABLE_KEY_LIVE,
+  STRIPE_PUBLISHABLE_KEY_TEST,
 ];
 
 const runtimeConfig = (() => {
@@ -34,6 +38,11 @@ const runtimeConfig = (() => {
 function resolveStripeSettings() {
   const stripeConfig = runtimeConfig?.stripe || {};
   const env = process.env || {};
+  const fallbackPublishableKey =
+    env.STRIPE_PUBLISHABLE_KEY ||
+    stripeConfig.publishable_key ||
+    stripeConfig.publishableKey ||
+    null;
   return {
     secretKey:
       env.STRIPE_SECRET_KEY ||
@@ -50,6 +59,19 @@ function resolveStripeSettings() {
       stripeConfig.nwa_price_id ||
       stripeConfig.nwaPriceId ||
       null,
+    publishableKeyLive:
+      env.STRIPE_PUBLISHABLE_KEY_LIVE ||
+      stripeConfig.publishable_key_live ||
+      stripeConfig.publishableKeyLive ||
+      fallbackPublishableKey ||
+      null,
+    publishableKeyTest:
+      env.STRIPE_PUBLISHABLE_KEY_TEST ||
+      stripeConfig.publishable_key_test ||
+      stripeConfig.publishableKeyTest ||
+      stripeConfig.testPublishableKey ||
+      fallbackPublishableKey ||
+      null,
   };
 }
 
@@ -58,6 +80,8 @@ let stripe = null;
 let stripeSecretKey = stripeSettings.secretKey || null;
 let uofaPriceId = stripeSettings.uofaPriceId || null;
 let nwaPriceId = stripeSettings.nwaPriceId || null;
+let publishableKeyLive = stripeSettings.publishableKeyLive || null;
+let publishableKeyTest = stripeSettings.publishableKeyTest || null;
 
 if (stripeSettings.secretKey) {
   stripe = Stripe(stripeSettings.secretKey);
@@ -238,6 +262,8 @@ function hydrateStripeSettingsFromSecrets() {
   const secretKey = getSecretValue(STRIPE_SECRET_KEY);
   const secretUofaPriceId = getSecretValue(STRIPE_UOFA_PRICE_ID);
   const secretNwaPriceId = getSecretValue(STRIPE_NWA_PRICE_ID);
+  const secretPublishableLive = getSecretValue(STRIPE_PUBLISHABLE_KEY_LIVE);
+  const secretPublishableTest = getSecretValue(STRIPE_PUBLISHABLE_KEY_TEST);
 
   if (secretKey && secretKey !== stripeSecretKey) {
     stripe = Stripe(secretKey);
@@ -255,6 +281,12 @@ function hydrateStripeSettingsFromSecrets() {
   if (secretNwaPriceId) {
     nwaPriceId = secretNwaPriceId;
   }
+  if (secretPublishableLive) {
+    publishableKeyLive = secretPublishableLive;
+  }
+  if (secretPublishableTest) {
+    publishableKeyTest = secretPublishableTest;
+  }
 }
 
 function getStripeClient() {
@@ -266,6 +298,17 @@ function getStripeClient() {
     );
   }
   return stripe;
+}
+
+function resolvePublishableKeyForLivemode(livemode) {
+  hydrateStripeSettingsFromSecrets();
+  if (livemode === true) {
+    return publishableKeyLive || publishableKeyTest || null;
+  }
+  if (livemode === false) {
+    return publishableKeyTest || publishableKeyLive || null;
+  }
+  return publishableKeyLive || publishableKeyTest || null;
 }
 
 function resolveMembershipPlan(planRaw = "") {
@@ -1305,6 +1348,9 @@ exports.createMembershipPaymentIntent = functions
       planLabel: planConfig.label,
       plan: planKey,
       livemode: paymentIntent?.livemode ?? null,
+      publishableKey: resolvePublishableKeyForLivemode(
+        paymentIntent?.livemode ?? null
+      ),
     };
   });
 
@@ -1545,6 +1591,10 @@ exports.createMembershipSubscriptionIntent = functions
     });
 
     const invoicePaymentIntent = subscription?.latest_invoice?.payment_intent;
+    const paymentLivemode =
+      typeof invoicePaymentIntent?.livemode === "boolean"
+        ? invoicePaymentIntent.livemode
+        : null;
     const clientSecret = invoicePaymentIntent?.client_secret;
     if (!clientSecret) {
       throw new functions.https.HttpsError(
@@ -1567,7 +1617,8 @@ exports.createMembershipSubscriptionIntent = functions
       clientSecret,
       subscriptionId: subscription.id,
       planId,
-      livemode: invoicePaymentIntent?.livemode ?? null,
+      livemode: paymentLivemode,
+      publishableKey: resolvePublishableKeyForLivemode(paymentLivemode),
     };
   });
 // === RIDE SYNC STRIPE: END createMembershipSubscriptionIntent ===
@@ -1807,6 +1858,9 @@ exports.createRidePaymentIntent = functions
       currency: "usd",
       geofenceContext: chargeContext,
       livemode: paymentIntent?.livemode ?? null,
+      publishableKey: resolvePublishableKeyForLivemode(
+        paymentIntent?.livemode ?? null
+      ),
     };
   });
 // === RIDE SYNC STRIPE: END createRidePaymentIntent ===

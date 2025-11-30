@@ -2128,11 +2128,6 @@
     }
 
     function loadStripeJs() {
-      if (!STRIPE_ENABLED) {
-        return Promise.reject(
-          new Error("Stripe payments are not available right now.")
-        );
-      }
       if (window.Stripe) {
         return Promise.resolve(window.Stripe);
       }
@@ -2299,6 +2294,19 @@
     }
     function resolveClientSecret(payload = {}) {
       return payload?.clientSecret || payload?.client_secret || null;
+    }
+    function extractPublishableKeyFromResponse(payload = {}) {
+      const candidate =
+        payload?.publishableKey ||
+        payload?.publishable_key ||
+        payload?.stripePublishableKey ||
+        payload?.stripe_publishable_key ||
+        null;
+      if (typeof candidate !== "string") {
+        return null;
+      }
+      const trimmed = candidate.trim();
+      return trimmed.length ? trimmed : null;
     }
     const createMembershipPaymentIntentFn = httpsCallable(
       functionsClient,
@@ -2659,6 +2667,7 @@
     let stripePaymentElement = null;
     let activePaymentContext = null;
     let activePaymentLivemode = null;
+    let activePaymentPublishableKey = null;
     let stripeJsPromise = null;
 
     const RIDER_STATES = {
@@ -5737,9 +5746,6 @@
     }
 
     async function startMembershipPaymentFlow(planId) {
-      if (!STRIPE_ENABLED) {
-        throw new Error("Stripe payments are not available right now.");
-      }
       let data;
       try {
         const response = await createMembershipPaymentIntentFn({ plan: planId });
@@ -5747,9 +5753,13 @@
       } catch (err) {
         throw handleCallableError("createMembershipPaymentIntent", err);
       }
+      const publishableKey = extractPublishableKeyFromResponse(data);
       const clientSecret = resolveClientSecret(data);
       if (!clientSecret || !data.paymentIntentId) {
         throw new Error("Unable to start Stripe payment.");
+      }
+      if (!STRIPE_ENABLED && !publishableKey) {
+        throw new Error("Stripe payments are not available right now.");
       }
       const planLabel = formatMembershipPlanLabel(planId);
       const amountLabel = formatCurrencyFromCents(
@@ -5768,6 +5778,7 @@
         confirmLabel: `Pay ${amountLabel}`,
         clientSecret,
         livemode: paymentLivemode,
+        publishableKey,
         context: {
           type: "membership",
           plan: planId,
@@ -5778,9 +5789,6 @@
     }
 
     async function startMembershipSubscriptionFlow(planId) {
-      if (!STRIPE_ENABLED) {
-        throw new Error("Stripe payments are not available right now.");
-      }
       let data;
       try {
         const response = await createMembershipSubscriptionIntentFn({ planId });
@@ -5788,9 +5796,13 @@
       } catch (err) {
         throw handleCallableError("createMembershipSubscriptionIntent", err);
       }
+      const publishableKey = extractPublishableKeyFromResponse(data);
       const clientSecret = resolveClientSecret(data);
       if (!clientSecret || !data.subscriptionId) {
         throw new Error("Unable to start Stripe subscription.");
+      }
+      if (!STRIPE_ENABLED && !publishableKey) {
+        throw new Error("Stripe payments are not available right now.");
       }
       const planLabel =
         MEMBERSHIP_PLAN_COPY[planId]?.label || formatMembershipPlanLabel(planId);
@@ -5806,6 +5818,7 @@
         confirmLabel: "Start subscription",
         clientSecret,
         livemode: paymentLivemode,
+        publishableKey,
         context: {
           type: "membershipSubscription",
           subscriptionId: data.subscriptionId,
@@ -5929,23 +5942,32 @@
       });
     }
 
-    async function ensureStripeInstance(livemode = null) {
-      if (!STRIPE_ENABLED) {
-        throw new Error("Stripe payments are not available right now.");
-      }
-      const publishableKey = resolveStripePublishableKeyForMode(livemode);
+    async function ensureStripeInstance(
+      livemode = null,
+      explicitPublishableKey = null
+    ) {
+      const normalizedExplicit =
+        typeof explicitPublishableKey === "string"
+          ? explicitPublishableKey.trim()
+          : "";
+      const publishableKey =
+        normalizedExplicit || resolveStripePublishableKeyForMode(livemode);
       logStripeDebug("ensureStripeInstance", {
         livemode,
+        explicitKeyProvided: !!normalizedExplicit,
         publishableKeyTail: publishableKey
           ? publishableKey.slice(0, 10) + "..." + publishableKey.slice(-6)
           : null,
       });
       if (!publishableKey) {
+        if (!STRIPE_ENABLED) {
+          throw new Error("Stripe payments are not available right now.");
+        }
         const modeLabel = livemode === false ? "test" : "live";
         const guidance =
           modeLabel === "test"
-            ? "Set stripe.publishableKeyTest (test mode) in app-config.json."
-            : "Set stripe.publishableKey or stripe.publishableKeyLive in app-config.json.";
+            ? "Set STRIPE_PUBLISHABLE_KEY_TEST (secret) or stripe.publishableKeyTest in app-config.json."
+            : "Set STRIPE_PUBLISHABLE_KEY_LIVE (secret) or stripe.publishableKey in app-config.json.";
         throw new Error(
           `Stripe ${modeLabel} publishable key is not configured. ${guidance}`
         );
@@ -5960,17 +5982,24 @@
       return stripeInstancesByKey.get(publishableKey);
     }
 
-    async function mountStripePaymentElement(clientSecret, livemode = null) {
+    async function mountStripePaymentElement(
+      clientSecret,
+      livemode = null,
+      publishableKey = null
+    ) {
       if (!paymentElementContainer) {
         throw new Error("Payment UI is unavailable.");
       }
       logStripeDebug("mountStripePaymentElement: before ensureStripeInstance", {
         livemode,
+        publishableKeyTail: publishableKey
+          ? publishableKey.slice(0, 10) + "..." + publishableKey.slice(-6)
+          : null,
         clientSecretTail: clientSecret
           ? clientSecret.slice(0, 10) + "..." + clientSecret.slice(-6)
           : null,
       });
-      const stripe = await ensureStripeInstance(livemode);
+      const stripe = await ensureStripeInstance(livemode, publishableKey);
       if (stripePaymentElement) {
         stripePaymentElement.unmount();
         stripePaymentElement = null;
@@ -6009,10 +6038,12 @@
       });
       await mountStripePaymentElement(
         options.clientSecret,
-        options.livemode ?? null
+        options.livemode ?? null,
+        options.publishableKey || null
       );
       activePaymentContext = options.context || null;
       activePaymentLivemode = options.livemode ?? null;
+      activePaymentPublishableKey = options.publishableKey || null;
       if (paymentOverlayTitle) {
         paymentOverlayTitle.textContent = options.title || "Complete payment";
       }
@@ -6042,6 +6073,7 @@
       stripeElements = null;
       activePaymentContext = null;
       activePaymentLivemode = null;
+      activePaymentPublishableKey = null;
       paymentOverlay?.classList.remove("active");
       paymentOverlay?.setAttribute("aria-hidden", "true");
       if (paymentOverlayMessage) {
@@ -6059,7 +6091,10 @@
       }
 
       try {
-        const stripe = await ensureStripeInstance(activePaymentLivemode);
+        const stripe = await ensureStripeInstance(
+          activePaymentLivemode,
+          activePaymentPublishableKey
+        );
         const result = await stripe.confirmPayment({
           elements: stripeElements,
           redirect: "if_required",
@@ -6255,7 +6290,8 @@
         await activateRideAfterCreation(rideId, sanitizedRidePayload);
         return;
       }
-      if (!STRIPE_ENABLED) {
+      const publishableKey = extractPublishableKeyFromResponse(data);
+      if (!STRIPE_ENABLED && !publishableKey) {
         throw new Error("Stripe payments are not available right now.");
       }
       const clientSecret = resolveClientSecret(data);
@@ -6291,6 +6327,7 @@
             : typeof data.liveMode === "boolean"
             ? data.liveMode
             : null,
+        publishableKey,
         context: {
           type: "ride",
           pendingId,
