@@ -14,6 +14,10 @@
     ],
     "rewrites": [
       {
+        "source": "/createRideCheckoutSession",
+        "function": "createRideCheckoutSession"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

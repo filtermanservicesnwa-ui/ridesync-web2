@@ -1668,6 +1668,133 @@ exports.finalizeMembershipSubscription = functions
   });
 // === RIDE SYNC STRIPE: END finalizeMembershipSubscription ===
 
+function sanitizeCheckoutDescription(value) {
+  if (typeof value !== "string") {
+    return "RideSync ride fare";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "RideSync ride fare";
+  }
+  return trimmed.slice(0, 140);
+}
+
+async function maybeResolveUserFromAuthHeader(req) {
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) {
+    return { uid: null, email: null };
+  }
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) {
+    return { uid: null, email: null };
+  }
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    const uid = decoded?.uid || null;
+    const decodedEmail = decoded?.email || null;
+    if (!uid) {
+      return { uid: null, email: decodedEmail || null };
+    }
+    if (decodedEmail) {
+      return { uid, email: decodedEmail };
+    }
+    const userRecord = await admin.auth().getUser(uid);
+    return { uid, email: userRecord?.email || null };
+  } catch (err) {
+    logStripeDebug("maybeResolveUserFromAuthHeader: token verification failed", {
+      errorCode: err?.code || err?.errorInfo?.code || null,
+    });
+    return { uid: null, email: null };
+  }
+}
+
+exports.createRideCheckoutSession = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onRequest(async (req, res) => {
+    setApplyMembershipCorsHeaders(req, res);
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "POST") {
+      res.status(405).json({
+        error: {
+          code: "method-not-allowed",
+          message: "Use POST for this endpoint.",
+        },
+      });
+      return;
+    }
+
+    const payload =
+      typeof req.body === "object" && req.body !== null ? req.body : {};
+    const amountInput =
+      typeof payload.amountCents === "number"
+        ? payload.amountCents
+        : typeof payload.amountCents === "string"
+        ? Number(payload.amountCents)
+        : typeof payload.amount_cents === "number"
+        ? payload.amount_cents
+        : typeof payload.amount_cents === "string"
+        ? Number(payload.amount_cents)
+        : null;
+    const amountCents = Number.isFinite(amountInput)
+      ? Math.round(amountInput)
+      : null;
+    if (!amountCents || amountCents <= 0) {
+      res.status(400).json({
+        error: {
+          code: "invalid-argument",
+          message: "amountCents must be greater than zero.",
+        },
+      });
+      return;
+    }
+
+    try {
+      const stripeClient = getStripeClient();
+      const { uid, email } = await maybeResolveUserFromAuthHeader(req);
+      const description = sanitizeCheckoutDescription(payload.description);
+
+      const session = await stripeClient.checkout.sessions.create({
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: description,
+              },
+              unit_amount: amountCents,
+            },
+            quantity: 1,
+          },
+        ],
+        success_url:
+          "https://ride-sync-nwa.web.app/payment-success?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url: "https://ride-sync-nwa.web.app/payment-cancelled",
+        customer_email: email || undefined,
+        metadata: {
+          firebaseUid: uid || undefined,
+          purpose: "ride",
+        },
+      });
+
+      res.status(200).json({ url: session.url });
+    } catch (err) {
+      console.error(
+        "[RideSync][Stripe] createRideCheckoutSession error",
+        err
+      );
+      res.status(500).json({
+        error: {
+          code: "internal",
+          message: "Unable to start checkout. Try again shortly.",
+        },
+      });
+    }
+  });
+
 // === RIDE SYNC STRIPE: START createRidePaymentIntent ===
 exports.createRidePaymentIntent = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
