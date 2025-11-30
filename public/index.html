@@ -6082,113 +6082,8 @@
       });
     }
 
-    let checkoutFinalizationPromise = null;
-
-    async function waitForAuthUserForCheckout() {
-      if (auth.currentUser) {
-        return auth.currentUser;
-      }
-      return new Promise((resolve) => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-          unsubscribe();
-          resolve(user || null);
-        });
-      });
-    }
-
-    async function finalizeRideCheckoutSessionRequest(sessionId, pendingId) {
-      if (!sessionId || !pendingId) {
-        throw new Error("Missing checkout confirmation details.");
-      }
-      let user = auth.currentUser;
-      if (!user) {
-        user = await waitForAuthUserForCheckout();
-      }
-      if (!user) {
-        throw new Error("Sign back in to finish syncing your ride.");
-      }
-      let idToken = null;
-      try {
-        idToken = await user.getIdToken();
-      } catch (err) {
-        console.warn(
-          "Failed to read auth token for finalizeRideCheckoutSession",
-          err
-        );
-      }
-      const headers = {
-        "Content-Type": "application/json",
-      };
-      if (idToken) {
-        headers.Authorization = `Bearer ${idToken}`;
-      }
-      const response = await fetch("/finalizeRideCheckoutSession", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          sessionId,
-          pendingId,
-        }),
-      });
-      let data = null;
-      try {
-        data = await response.json();
-      } catch (_) {
-        data = null;
-      }
-      if (!response.ok) {
-        const message =
-          data?.error?.message ||
-          "We received your payment but could not sync your ride. Contact RideSync support.";
-        throw new Error(message);
-      }
-      if (!data?.rideId) {
-        throw new Error("Ride creation completed without a ride reference.");
-      }
-      activateRideAfterCreation(data.rideId);
-      return data.rideId;
-    }
-
     async function showPaymentResultFromLocation() {
-      const path = window.location.pathname.replace(/\/+$/, "") || "/";
-      if (path === "/payment-success") {
-        const params = new URLSearchParams(window.location.search || "");
-        const sessionId = params.get("session_id");
-        const pendingId = params.get("pending_id");
-        const hasFinalizeContext = Boolean(sessionId && pendingId);
-        const message = hasFinalizeContext
-          ? "Payment successful! Finalizing your ride…"
-          : "Payment successful! We're verifying your ride on our servers.";
-        openPaymentStatusOverlay("Payment successful!", message);
-        if (!hasFinalizeContext) {
-          return;
-        }
-        try {
-          checkoutFinalizationPromise =
-            checkoutFinalizationPromise ||
-            finalizeRideCheckoutSessionRequest(sessionId, pendingId);
-          await checkoutFinalizationPromise;
-          if (paymentStatusMessage) {
-            paymentStatusMessage.textContent =
-              "Ride created! Watch the RideSync overlay for driver updates.";
-          }
-        } catch (err) {
-          const errorMessage =
-            err?.message ||
-            "Payment received, but we could not create your ride automatically. Contact RideSync support.";
-          if (paymentStatusMessage) {
-            paymentStatusMessage.textContent = errorMessage;
-          }
-          showErrorBanner(errorMessage);
-        } finally {
-          checkoutFinalizationPromise = null;
-        }
-      } else if (path === "/payment-cancelled") {
-        openPaymentStatusOverlay(
-          "Payment cancelled",
-          "No charges were made. You can return to RideSync anytime."
-        );
-      }
+      // Ride fares now complete entirely inside the PWA; no redirect handling required.
     }
 
     function setMembershipTermsAcknowledged(value) {
@@ -7091,29 +6986,21 @@
         );
       }
       const formattedTotal = formatCurrencyFromCents(amountCents, "usd");
-      let subtitle = `Pay ${formattedTotal} to request this ride.`;
-      if (sanitizedRidePayload.fare?.membershipLabel) {
-        subtitle = `${sanitizedRidePayload.fare.membershipLabel}. Pay ${formattedTotal} to sync this destination.`;
-      }
-      await openPaymentOverlay({
-        title: "Confirm ride payment",
-        subtitle,
-        confirmLabel: `Sync & pay ${formattedTotal}`,
-        useStripePaymentElement: false,
-        context: {
-          type: "ride",
-          mode: "checkoutRedirect",
-          ridePayload: sanitizedRidePayload,
-        },
-        checkoutAmountCents: amountCents,
-        checkoutDescription:
-          sanitizedRidePayload.description ||
-          sanitizedRidePayload.toDestination ||
-          "RideSync ride fare",
-      });
-      profileMessage.textContent =
-        "Complete the payment to finish syncing your ride.";
+      const suffix = sanitizedRidePayload.fare?.membershipLabel
+        ? `${sanitizedRidePayload.fare.membershipLabel}.`
+        : "Ride synced.";
+      profileMessage.textContent = `${suffix} Pay ${formattedTotal} when the ride ends.`;
       profileError.textContent = "";
+      logStripeDebug(
+        "startRidePaymentFlow: checkout redirect disabled, fare will be collected post-ride.",
+        {
+          amountCents,
+        }
+      );
+      return {
+        amountCents,
+        ridePayload: sanitizedRidePayload,
+      };
     }
 
     async function handleNewRide() {
@@ -7138,6 +7025,7 @@
       const plan = normalizePlanKey(
         currentUserProfile?.membershipType || currentUserProfile?.membership || "basic"
       );
+      const planIsBasic = plan === "basic";
       const membershipStatus = currentUserProfile?.membershipStatus || "none";
       const isStudent = !!currentUserProfile?.isStudent;
       const uofaVerified = !!currentUserProfile?.uofaVerified;
@@ -7256,7 +7144,11 @@
       }
 
       const requiresPayment = totalCents > 0;
-      const paymentStatus = requiresPayment ? "preauthorized" : "included";
+      const paymentStatus = requiresPayment
+        ? planIsBasic
+          ? "pending"
+          : "preauthorized"
+        : "included";
       const paymentMethod = requiresPayment ? "stripe" : "included";
       const rideRef = doc(collection(db, "rideRequests"));
       const rideDoc = {
@@ -7317,6 +7209,7 @@
             currentUserProfile?.membership ||
             "basic"
         );
+        const planIsBasic = plan === "basic";
         const riderGender = normalizePoolGender(currentUserProfile?.gender);
         if (!riderGender) {
           profileError.textContent =
@@ -7381,7 +7274,7 @@
           const minutes = host.estimatedDurationMinutes || 0;
           const fare = computeFareForMembership(plan, minutes, inHomeZone);
           const total = Number.isFinite(fare.total) ? fare.total : 0;
-          const paymentIsIncluded = plan !== "basic" && inHomeZone;
+          const paymentIsIncluded = !planIsBasic && inHomeZone;
 
           const riderName =
             currentUserProfile?.fullName ||
@@ -7405,7 +7298,11 @@
               ? "included_pool"
               : "included"
             : "stripe";
-          const paymentStatus = paymentIsIncluded ? "included" : "preauthorized";
+          const paymentStatus = paymentIsIncluded
+            ? "included"
+            : planIsBasic
+              ? "pending"
+              : "preauthorized";
 
           const driverFields = {};
           if (host.driverId) {
