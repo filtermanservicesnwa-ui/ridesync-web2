@@ -2965,10 +2965,26 @@ exports.createRidePaymentIntent = functions
       );
     }
 
-    const fareAmountCents = Math.max(
+    const clientFareAmountInput =
+      data?.fareAmountCents ??
+      data?.fareAmount ??
+      data?.amountCents ??
+      data?.amount ??
+      null;
+    const parsedClientFareAmount = Number(clientFareAmountInput);
+    const normalizedClientFareAmountCents = Number.isFinite(parsedClientFareAmount)
+      ? Math.max(0, Math.round(parsedClientFareAmount))
+      : 0;
+    const rideFareAmountCents = Math.max(
       0,
-      Math.round(rideData.stripeAmountCents || resolveRideFareAmountCents(rideData))
+      Math.round(
+        rideData.stripeAmountCents ||
+          rideData.fareBaseAmountCents ||
+          resolveRideFareAmountCents(rideData)
+      )
     );
+    const fareAmountCents =
+      rideFareAmountCents || normalizedClientFareAmountCents;
     if (!fareAmountCents) {
       throw new functions.https.HttpsError(
         "failed-precondition",
@@ -3004,6 +3020,12 @@ exports.createRidePaymentIntent = functions
       fareAmountCents,
       maxTipAmountCents
     );
+    if (!Number.isFinite(authAmountCents) || authAmountCents <= 0) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Unable to calculate a valid authorization amount for this ride."
+      );
+    }
 
     const stripeClient = getStripeClient("createRidePaymentIntent");
     const existingIntentId = rideData.stripePaymentIntentId || null;

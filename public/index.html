@@ -6556,11 +6556,22 @@
       tipAmountCents,
     }) {
       try {
+        const normalizedAmountCents = Number.isFinite(Number(amountCents))
+          ? Math.max(0, Math.round(Number(amountCents)))
+          : 0;
+        const normalizedTipAmountCents = Number.isFinite(Number(tipAmountCents))
+          ? Math.max(0, Math.round(Number(tipAmountCents)))
+          : 0;
+        const normalizedFareAmountCents = Math.max(
+          0,
+          normalizedAmountCents - normalizedTipAmountCents
+        );
         const response = await createRidePaymentIntentFn({
-          amount: Math.round(amountCents),
+          amount: normalizedAmountCents,
           currency: "usd",
           rideId: rideId || null,
-          tipAmountCents: Math.max(0, Math.round(tipAmountCents || 0)),
+          tipAmountCents: normalizedTipAmountCents,
+          fareAmountCents: normalizedFareAmountCents,
         });
         const clientSecret = response?.data?.clientSecret;
         if (typeof clientSecret !== "string" || !clientSecret) {
@@ -8052,6 +8063,7 @@
             rideId,
             maxTipAmountCents: ridePreauthState.maxTipAmountCents,
             initialTipAmountCents: ridePreauthState.selectedTipCents,
+            fareAmountCents: Math.max(0, Math.round(fareAmountCents || 0)),
           });
           const payload = response?.data || response || {};
           ridePreauthState.maxTipAmountCents = Math.max(
