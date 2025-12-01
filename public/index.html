@@ -36,6 +36,19 @@
       gap: 12px;
       padding: 10px;
     }
+    .site-footer {
+      width: 100%;
+      max-width: 520px;
+      margin-top: auto;
+      text-align: center;
+      font-size: 0.75rem;
+      color: #94a3b8;
+      padding: 8px 0 calc(var(--safe-bottom) + 6px);
+    }
+    .site-footer p {
+      margin: 0;
+      color: inherit;
+    }
     @supports (height: 100dvh) {
       body {
         min-height: 100dvh;
@@ -2161,6 +2174,10 @@
     </div>
   </div>
   <!-- === RIDE SYNC STRIPE: END membership terms overlay === -->
+
+  <footer class="site-footer" aria-label="Copyright notice">
+    <p>&copy; 2025 RideSync. All rights reserved.</p>
+  </footer>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
