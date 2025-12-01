@@ -53,7 +53,7 @@
   },
   "fares": {
     "basicRatePerMin": 0.6,
-    "basicPlatformFee": 0.5,
+    "basicPlatformFee": 1.5,
     "basicProcessingFeeRate": 0.03,
     "unlimitedOutRate": 0.35,
     "unlimitedProcessingFeeRate": 0.04

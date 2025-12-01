@@ -181,18 +181,27 @@ const UOFA_PENDING_STATUSES = [
 ];
 
 const MEMBERSHIP_PLAN_DEFAULTS = {
-  basic: { amountCents: 0, currency: "usd", label: "Basic (pay per ride)" },
+  basic: {
+    amountCents: 0,
+    currency: "usd",
+    label: "Basic (pay per ride)",
+    durationDays: 0,
+  },
   uofa_unlimited: {
     amountCents: 8000,
     currency: "usd",
     label: "U of A Unlimited ($80/mo)",
+    durationDays: 30,
   },
   nwa_unlimited: {
     amountCents: 12000,
     currency: "usd",
     label: "NWA Unlimited ($120/mo)",
+    durationDays: 30,
   },
 };
+
+const MEMBERSHIP_DEFAULT_DURATION_DAYS = 30;
 
 const MEMBERSHIP_PLAN_ALIASES = {
   basic: new Set(["basic", "basic (pay per ride)", "basic plan", "plan: basic"]),
@@ -223,7 +232,7 @@ const SURGE_COOLDOWN_MINUTES =
 
 const DEFAULT_FARE_CONSTANTS = {
   BASIC_RATE_PER_MIN: 0.6,
-  BASIC_PLATFORM_FEE: 0.5,
+  BASIC_PLATFORM_FEE: 1.5,
   BASIC_PROCESSING_FEE_RATE: 0.03,
   UNLIMITED_OUT_RATE: 0.35,
   UNLIMITED_PROCESSING_FEE_RATE: 0.04,
@@ -397,11 +406,64 @@ function resolveMembershipPlan(planRaw = "") {
     ? Number(envAmount)
     : defaults.amountCents;
 
+  const durationDays =
+    Number.isFinite(Number(defaults.durationDays)) && defaults.durationDays > 0
+      ? Number(defaults.durationDays)
+      : MEMBERSHIP_DEFAULT_DURATION_DAYS;
+
   return {
     ...defaults,
     amountCents,
     plan,
+    durationDays,
   };
+}
+
+function computeMembershipExpirationTimestamp(durationDays = MEMBERSHIP_DEFAULT_DURATION_DAYS) {
+  const days = Number(durationDays);
+  if (!Number.isFinite(days) || days <= 0) {
+    return null;
+  }
+  const durationMs = days * 24 * 60 * 60 * 1000;
+  return Timestamp.fromMillis(Date.now() + durationMs);
+}
+
+async function maybeDowngradeExpiredMembership(userRef, profileData = {}) {
+  if (!userRef) {
+    return profileData || {};
+  }
+  const profile = profileData || {};
+  const normalizedPlan = normalizeMembershipPlan(
+    profile.membershipType || profile.membership || "basic"
+  );
+  if (normalizedPlan === "basic") {
+    return profile;
+  }
+  const expiresAt = profile.membershipExpiresAt;
+  if (!expiresAt || typeof expiresAt.toMillis !== "function") {
+    return profile;
+  }
+  if (expiresAt.toMillis() > Date.now()) {
+    return profile;
+  }
+
+  await userRef.set(
+    {
+      membershipType: "basic",
+      membershipStatus: "expired",
+      membershipExpiresAt: FieldValue.delete(),
+      membershipExpiredAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  functions.logger.info("[RideSync][membership] auto-downgraded expired plan", {
+    uid: userRef.id,
+    previousPlan: normalizedPlan,
+  });
+
+  const refreshedSnap = await userRef.get();
+  return refreshedSnap.exists ? refreshedSnap.data() || {} : {};
 }
 
 function computeFareForMembership(planRaw, minutesRaw, inHomeZone) {
@@ -1445,12 +1507,22 @@ async function applyMembershipPlanHandler(data = {}, uid) {
   }
 
   const userRef = db.collection("users").doc(uid);
+  const membershipDurationDays =
+    Number.isFinite(Number(planConfig.durationDays)) && planConfig.durationDays > 0
+      ? Number(planConfig.durationDays)
+      : MEMBERSHIP_DEFAULT_DURATION_DAYS;
+  const membershipExpiresAt =
+    planKey === "basic"
+      ? null
+      : computeMembershipExpirationTimestamp(membershipDurationDays);
 
   if (planKey === "basic") {
     await userRef.set(
       {
         membershipType: "basic",
         membershipStatus: "none",
+        membershipExpiresAt: FieldValue.delete(),
+        membershipExpiredAt: FieldValue.delete(),
         stripeSubscriptionId: FieldValue.delete(),
         pendingMembershipPlanId: FieldValue.delete(),
         pendingSubscriptionId: FieldValue.delete(),
@@ -1472,8 +1544,9 @@ async function applyMembershipPlanHandler(data = {}, uid) {
         membershipType: planKey || "basic",
         membershipStatus,
         membershipRenewedAt: FieldValue.serverTimestamp(),
-        membershipExpiresAt: null,
+        membershipExpiresAt: membershipExpiresAt || FieldValue.delete(),
         membershipApprovalRequired: needsApproval || FieldValue.delete(),
+        membershipExpiredAt: FieldValue.delete(),
       },
       { merge: true }
     );
@@ -1526,10 +1599,12 @@ async function applyMembershipPlanHandler(data = {}, uid) {
       membershipType: planKey,
       membershipStatus,
       membershipRenewedAt: FieldValue.serverTimestamp(),
+      membershipExpiresAt: membershipExpiresAt || FieldValue.delete(),
       membershipPaidAmountCents: pending.amountCents,
       membershipPaidCurrency: pending.currency,
       membershipStripePaymentIntentId: paymentIntentId,
       membershipApprovalRequired: needsApproval || FieldValue.delete(),
+      membershipExpiredAt: FieldValue.delete(),
     },
     { merge: true }
   );
@@ -1763,6 +1838,14 @@ exports.finalizeMembershipSubscription = functions
       subscriptionPlan === "uofa_unlimited"
         ? "pending_verification"
         : "active";
+    const subscriptionPeriodEnd =
+      typeof subscription.current_period_end === "number"
+        ? subscription.current_period_end
+        : Number(subscription.current_period_end);
+    const membershipExpiresAt =
+      Number.isFinite(subscriptionPeriodEnd) && subscriptionPeriodEnd > 0
+        ? Timestamp.fromMillis(subscriptionPeriodEnd * 1000)
+        : computeMembershipExpirationTimestamp();
     const customerId =
       typeof subscription.customer === "string"
         ? subscription.customer
@@ -1782,6 +1865,8 @@ exports.finalizeMembershipSubscription = functions
           pendingMembershipPlanId: FieldValue.delete(),
           pendingSubscriptionId: FieldValue.delete(),
           membershipRenewedAt: FieldValue.serverTimestamp(),
+          membershipExpiresAt: membershipExpiresAt || FieldValue.delete(),
+          membershipExpiredAt: FieldValue.delete(),
         },
         { merge: true }
       ),
@@ -1947,7 +2032,8 @@ async function createRideCheckoutSessionInternal({
   const stripeClient = getStripeClient("createRideCheckoutSessionInternal");
   const userRef = db.collection("users").doc(uid);
   const userSnap = await userRef.get();
-  const profile = userSnap.exists ? userSnap.data() : {};
+  let profile = userSnap.exists ? userSnap.data() : {};
+  profile = await maybeDowngradeExpiredMembership(userRef, profile);
   const membershipType = normalizeMembershipPlan(
     profile?.membershipType || profile?.membership || "basic"
   );
@@ -2710,7 +2796,9 @@ async function loadUserProfileOrThrow(uid) {
       "Complete your rider profile before requesting a ride."
     );
   }
-  return { userRef, profile: snap.data() || {} };
+  const initialProfile = snap.data() || {};
+  const profile = await maybeDowngradeExpiredMembership(userRef, initialProfile);
+  return { userRef, profile };
 }
 
 async function enforceRideCooldown(uid, planKey) {
@@ -2807,7 +2895,8 @@ exports.saveUserProfile = functions.https.onCall(async (data, context) => {
   const payload = typeof data === "object" && data !== null ? data : {};
   const userRef = db.collection("users").doc(uid);
   const snap = await userRef.get();
-  const existing = snap.exists ? snap.data() || {} : {};
+  const existingRaw = snap.exists ? snap.data() || {} : {};
+  const existing = await maybeDowngradeExpiredMembership(userRef, existingRaw);
 
   const profileUpdates = {
     fullName: sanitizeProfileString(payload.fullName, 80) || existing.fullName || "",
@@ -3410,3 +3499,15 @@ exports.getDriverAvailabilityStats = functions.https.onCall(async (_data, contex
     );
   }
 });
+
+exports.__testables = {
+  computeFareForMembership,
+  calculateRideChargeContext,
+  resolveMembershipPlan,
+  computeMembershipExpirationTimestamp,
+  normalizePoolGender,
+  gendersCompatible,
+  extractUofaRideDetails,
+  isUofaEligibleRide,
+  isRideAvailableForPooling,
+};
