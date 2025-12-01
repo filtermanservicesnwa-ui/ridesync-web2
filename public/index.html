@@ -2006,20 +2006,19 @@
         placeholder="Custom tip"
         style="display:none;"
       />
-      <div class="section-title" style="margin-top:18px;">Pay with Apple Pay or Google Pay</div>
-      <div id="rideFarePaymentRequest" class="ride-payment-button"></div>
-      <p id="rideFareUnavailable" class="small"></p>
-      <div class="section-title" style="margin-top:18px;">Pay with card</div>
-      <div id="rideCardElement" class="ride-card-element"></div>
+      <div class="section-title" style="margin-top:18px;">Pay securely</div>
+      <p class="small" id="rideCheckoutDetails">
+        Stripe Checkout opens in a secure window so you can use any saved payment method.
+      </p>
       <button
-        id="rideCardSubmit"
+        id="rideCheckoutButton"
         type="button"
         class="btn-primary"
         disabled
       >
-        Pay with card
+        Continue to Stripe Checkout
       </button>
-      <div id="rideCardMessage" class="error"></div>
+      <div id="rideCheckoutMessage" class="error"></div>
       <div id="rideFareStatus" class="ride-payment-status"></div>
     </div>
   </div>
@@ -2462,6 +2461,10 @@
       functionsClient,
       "finalizeMembershipSubscription"
     );
+    const createMembershipCheckoutSessionFn = httpsCallable(
+      functionsClient,
+      "createMembershipCheckoutSession"
+    );
     const getDriverAvailabilityStatsFn = httpsCallable(
       functionsClient,
       "getDriverAvailabilityStats"
@@ -2482,6 +2485,10 @@
     const createRidePaymentIntentFn = httpsCallable(
       functionsClient,
       "createRidePaymentIntent"
+    );
+    const createRideFareCheckoutSessionFn = httpsCallable(
+      functionsClient,
+      "createRideFareCheckoutSession"
     );
 
     const NWA_CENTER = geoConfig.nwaCenter || { lat: 36.334, lng: -94.118 };
@@ -2587,6 +2594,25 @@
     };
     if (checkoutReturnState.pendingId && checkoutReturnState.sessionId) {
       checkoutReturnState.status = "waiting";
+    }
+
+    const membershipCheckoutReturnState = {
+      pendingId:
+        urlParams.get("membership_pending_id") ||
+        urlParams.get("membershipPendingId") ||
+        null,
+      sessionId:
+        urlParams.get("membership_session_id") ||
+        urlParams.get("membershipSessionId") ||
+        null,
+      status: "idle",
+      attempts: 0,
+    };
+    if (
+      membershipCheckoutReturnState.pendingId &&
+      membershipCheckoutReturnState.sessionId
+    ) {
+      membershipCheckoutReturnState.status = "waiting";
     }
 
     let joinMode = false;
@@ -2854,6 +2880,8 @@
     const rideCardElement = document.getElementById("rideCardElement");
     const rideCardSubmit = document.getElementById("rideCardSubmit");
     const rideCardMessage = document.getElementById("rideCardMessage");
+    const rideCheckoutButton = document.getElementById("rideCheckoutButton");
+    const rideCheckoutMessage = document.getElementById("rideCheckoutMessage");
 
     let latestRideForOverlay = null;
     const stripeInstancesByKey = new Map();
@@ -4322,10 +4350,12 @@
         currentUserProfile = null;
         loginStatusEl.textContent = "";
         showAuthView();
-        if (hasPendingCheckoutReturn()) {
+        if (hasPendingCheckoutReturn() || hasPendingMembershipCheckoutReturn()) {
           openPaymentStatusOverlay(
             "Sign in to finish payment",
-            "Stripe approved your payment. Log in so we can finalize your ride."
+            hasPendingMembershipCheckoutReturn()
+              ? "Stripe approved your membership payment. Log in so we can finalize it."
+              : "Stripe approved your payment. Log in so we can finalize your ride."
           );
         } else {
           closePaymentStatusOverlay();
@@ -4340,7 +4370,14 @@
       startDriverAvailabilityWatchers();
       if (hasPendingCheckoutReturn()) {
         await finalizeCheckoutSessionIfNeeded(user);
-      } else {
+      }
+      if (hasPendingMembershipCheckoutReturn()) {
+        await finalizeMembershipCheckoutSessionIfNeeded(user);
+      }
+      if (
+        !hasPendingCheckoutReturn() &&
+        !hasPendingMembershipCheckoutReturn()
+      ) {
         closePaymentStatusOverlay();
       }
 
@@ -5669,6 +5706,9 @@
     if (rideTipCustomInput) {
       rideTipCustomInput.addEventListener("input", handleRideTipCustomInput);
     }
+    if (rideCheckoutButton) {
+      rideCheckoutButton.addEventListener("click", handleRideCheckoutSubmit);
+    }
     if (rideCardSubmit) {
       rideCardSubmit.addEventListener("click", handleRideCardSubmit);
     }
@@ -5763,6 +5803,14 @@
       );
     }
 
+    function hasPendingMembershipCheckoutReturn() {
+      return (
+        membershipCheckoutReturnState.pendingId &&
+        membershipCheckoutReturnState.sessionId &&
+        membershipCheckoutReturnState.status !== "completed"
+      );
+    }
+
     function stripCheckoutParamsFromUrl() {
       const params = new URLSearchParams(window.location.search);
       let changed = false;
@@ -5774,6 +5822,32 @@
           }
         }
       );
+      if (!changed) {
+        return;
+      }
+      const query = params.toString();
+      const hash = window.location.hash || "";
+      const newUrl =
+        `${window.location.origin}${window.location.pathname}` +
+        (query ? `?${query}` : "") +
+        hash;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+
+    function stripMembershipCheckoutParamsFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      let changed = false;
+      [
+        "membership_pending_id",
+        "membershipPendingId",
+        "membership_session_id",
+        "membershipSessionId",
+      ].forEach((key) => {
+        if (params.has(key)) {
+          params.delete(key);
+          changed = true;
+        }
+      });
       if (!changed) {
         return;
       }
@@ -5844,6 +5918,79 @@
         checkoutReturnState.status = "error";
         openPaymentStatusOverlay(
           "Payment finalized later",
+          err?.message ||
+            "We received your payment but still need to finish processing. Contact RideSync support if this persists."
+        );
+      }
+    }
+
+    async function finalizeMembershipCheckoutSessionIfNeeded(user) {
+      if (!hasPendingMembershipCheckoutReturn()) {
+        return;
+      }
+      if (!user) {
+        openPaymentStatusOverlay(
+          "Sign in to finish payment",
+          "Stripe approved your membership payment. Sign in so we can finalize it."
+        );
+        return;
+      }
+      if (membershipCheckoutReturnState.status === "processing") {
+        return;
+      }
+      membershipCheckoutReturnState.status = "processing";
+      membershipCheckoutReturnState.attempts += 1;
+      openPaymentStatusOverlay(
+        "Finalizing membership…",
+        "Hang tight while we confirm your Stripe checkout."
+      );
+
+      try {
+        const idToken = await user.getIdToken(true);
+        const response = await fetch("/finalizeMembershipCheckoutSession", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            membership_pending_id: membershipCheckoutReturnState.pendingId,
+            membershipPendingId: membershipCheckoutReturnState.pendingId,
+            membership_session_id: membershipCheckoutReturnState.sessionId,
+            membershipSessionId: membershipCheckoutReturnState.sessionId,
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message =
+            payload?.error?.message ||
+            "We received your payment but could not finalize the membership yet.";
+          throw new Error(message);
+        }
+        membershipCheckoutReturnState.status = "completed";
+        membershipCheckoutReturnState.resultStatus = payload?.status || "updated";
+        stripMembershipCheckoutParamsFromUrl();
+        openPaymentStatusOverlay(
+          "Membership updated",
+          payload?.status === "active"
+            ? "Stripe confirmed your membership payment."
+            : "Stripe updated your membership."
+        );
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          await loadUserProfile(currentUser.uid, currentUser.email);
+        }
+        setTimeout(() => {
+          closePaymentStatusOverlay();
+        }, 4000);
+      } catch (err) {
+        console.error(
+          "[RideSync][Stripe] finalize membership checkout failed",
+          err
+        );
+        membershipCheckoutReturnState.status = "error";
+        openPaymentStatusOverlay(
+          "Membership pending",
           err?.message ||
             "We received your payment but still need to finish processing. Contact RideSync support if this persists."
         );
@@ -5925,30 +6072,29 @@
           "usd"
         );
       }
-      if (rideCardSubmit) {
-        rideCardSubmit.textContent =
-          ridePaymentState.totalAmountCents > 0
-            ? `Pay ${formatCurrencyFromCents(
-                ridePaymentState.totalAmountCents,
-                "usd"
-              )} with card`
-            : "Pay with card";
-        if (ridePaymentState.totalAmountCents <= 0) {
-          rideCardSubmit.disabled = true;
-        }
-      }
+      updateRideCheckoutButtonState();
     }
 
-    function scheduleRidePaymentIntentRefresh() {
-      if (!ridePaymentState.showing) return;
-      if (rideTipRefreshTimer) {
-        clearTimeout(rideTipRefreshTimer);
-        rideTipRefreshTimer = null;
+    function updateRideCheckoutButtonState() {
+      if (!rideCheckoutButton) return;
+      if (!ridePaymentState.showing) {
+        rideCheckoutButton.disabled = true;
+        rideCheckoutButton.textContent = "Continue to Stripe Checkout";
+        return;
       }
-      rideTipRefreshTimer = setTimeout(() => {
-        rideTipRefreshTimer = null;
-        refreshRidePaymentIntent();
-      }, 350);
+      if (!ridePaymentState.totalAmountCents) {
+        rideCheckoutButton.disabled = true;
+        rideCheckoutButton.textContent = "Stripe Checkout unavailable";
+        return;
+      }
+      const amountLabel = formatCurrencyFromCents(
+        ridePaymentState.totalAmountCents,
+        "usd"
+      );
+      rideCheckoutButton.textContent = ridePaymentState.processing
+        ? "Preparing Stripe Checkout…"
+        : `Pay ${amountLabel} with Stripe`;
+      rideCheckoutButton.disabled = ridePaymentState.processing;
     }
 
     function handleRideTipButtonClick(event) {
@@ -5967,7 +6113,6 @@
         }
         ridePaymentState.tipAmountCents = 0;
         updateRidePaymentTotalsDisplay();
-        scheduleRidePaymentIntentRefresh();
         return;
       }
       if (rideTipCustomInput) {
@@ -5979,7 +6124,6 @@
         ? Math.max(0, Math.round(dollars * 100))
         : 0;
       updateRidePaymentTotalsDisplay();
-      scheduleRidePaymentIntentRefresh();
     }
 
     function handleRideTipCustomInput() {
@@ -5991,7 +6135,55 @@
         ridePaymentState.tipAmountCents = Math.round(dollars * 100);
       }
       updateRidePaymentTotalsDisplay();
-      scheduleRidePaymentIntentRefresh();
+    }
+
+    async function handleRideCheckoutSubmit() {
+      if (ridePaymentState.processing) {
+        return;
+      }
+      if (!ridePaymentState.rideId) {
+        updateRideFareStatus("Ride reference missing for payment.", true);
+        return;
+      }
+      if (!ridePaymentState.totalAmountCents) {
+        updateRideFareStatus("Fare total unavailable. Contact support.", true);
+        return;
+      }
+      ridePaymentState.processing = true;
+      updateRideCheckoutButtonState();
+      if (rideCheckoutMessage) {
+        rideCheckoutMessage.textContent = "";
+      }
+      updateRideFareStatus("Redirecting to Stripe Checkout…", false);
+      showPaymentRedirectOverlay("Redirecting you to Stripe Checkout…");
+      try {
+        const redirectBaseUrl =
+          typeof window !== "undefined" && window.location?.origin
+            ? window.location.origin
+            : null;
+        const response = await createRideFareCheckoutSessionFn({
+          rideId: ridePaymentState.rideId,
+          tipAmountCents: Math.max(
+            0,
+            Math.round(ridePaymentState.tipAmountCents || 0)
+          ),
+          redirectBaseUrl,
+        });
+        const url = response?.data?.url;
+        if (typeof url !== "string" || !url) {
+          throw new Error("Unable to start Stripe Checkout.");
+        }
+        window.location.href = url;
+      } catch (err) {
+        ridePaymentState.processing = false;
+        hidePaymentRedirectOverlay();
+        updateRideCheckoutButtonState();
+        const message = err?.message || PAYMENT_ERROR_FALLBACK;
+        updateRideFareStatus(message, true);
+        if (rideCheckoutMessage) {
+          rideCheckoutMessage.textContent = message;
+        }
+      }
     }
 
     function teardownRidePaymentResources() {
@@ -6017,6 +6209,13 @@
       }
       if (rideCardMessage) {
         rideCardMessage.textContent = "";
+      }
+      if (rideCheckoutButton) {
+        rideCheckoutButton.disabled = true;
+        rideCheckoutButton.textContent = "Continue to Stripe Checkout";
+      }
+      if (rideCheckoutMessage) {
+        rideCheckoutMessage.textContent = "";
       }
     }
 
@@ -6059,6 +6258,7 @@
       }
       toggleOverlay(rideFareOverlay, false);
       ridePaymentState.showing = false;
+      updateRideCheckoutButtonState();
       if (force || ridePaymentState.completed) {
         resetRidePaymentState();
       }
@@ -6090,8 +6290,15 @@
         rideFareClose.disabled = true;
       }
       toggleOverlay(rideFareOverlay, true, rideFareClose);
-      await refreshRidePaymentIntent();
       ridePaymentState.processing = false;
+      if (rideFareClose) {
+        rideFareClose.disabled = false;
+      }
+      updateRideCheckoutButtonState();
+      updateRideFareStatus(
+        "Tap the button below to finish in Stripe Checkout.",
+        false
+      );
     }
 
     async function createRidePaymentClientSecret({
@@ -6627,82 +6834,41 @@
     }
 
     async function startMembershipPaymentFlow(planId) {
-      if (!STRIPE_ENABLED) {
-        throw new Error("Stripe payments are not available right now.");
-      }
-      let data;
-      try {
-        const response = await createMembershipPaymentIntentFn({ plan: planId });
-        data = response?.data || {};
-      } catch (err) {
-        throw handleCallableError("createMembershipPaymentIntent", err);
-      }
-      const clientSecret = resolveClientSecret(data);
-      if (!clientSecret || !data.paymentIntentId) {
-        throw new Error("Unable to start Stripe payment.");
-      }
-      const planLabel = formatMembershipPlanLabel(planId);
-      const amountLabel = formatCurrencyFromCents(
-        data.amountCents,
-        data.currency
-      );
-      const paymentLivemode =
-        typeof data.livemode === "boolean"
-          ? data.livemode
-          : typeof data.liveMode === "boolean"
-          ? data.liveMode
-          : null;
-      await openPaymentOverlay({
-        title: `Activate ${planLabel}`,
-        subtitle: `Pay ${amountLabel} to activate this membership.`,
-        confirmLabel: `Pay ${amountLabel}`,
-        clientSecret,
-        livemode: paymentLivemode,
-        context: {
-          type: "membership",
-          plan: planId,
-          paymentIntentId: data.paymentIntentId,
-        },
-      });
-      setMembershipMessage("Complete the payment to finish upgrading.");
+      await startMembershipCheckoutSession(planId, "payment");
     }
 
     async function startMembershipSubscriptionFlow(planId) {
+      await startMembershipCheckoutSession(planId, "subscription");
+    }
+
+    async function startMembershipCheckoutSession(planId, mode) {
       if (!STRIPE_ENABLED) {
         throw new Error("Stripe payments are not available right now.");
       }
-      let data;
-      try {
-        const response = await createMembershipSubscriptionIntentFn({ planId });
-        data = response?.data || {};
-      } catch (err) {
-        throw handleCallableError("createMembershipSubscriptionIntent", err);
-      }
-      const clientSecret = resolveClientSecret(data);
-      if (!clientSecret || !data.subscriptionId) {
-        throw new Error("Unable to start Stripe subscription.");
-      }
-      const planLabel =
-        MEMBERSHIP_PLAN_COPY[planId]?.label || formatMembershipPlanLabel(planId);
-      const paymentLivemode =
-        typeof data.livemode === "boolean"
-          ? data.livemode
-          : typeof data.liveMode === "boolean"
-          ? data.liveMode
+      const redirectBaseUrl =
+        typeof window !== "undefined" && window.location?.origin
+          ? window.location.origin
           : null;
-      await openPaymentOverlay({
-        title: `Activate ${planLabel}`,
-        subtitle: "Enter payment details to start your subscription.",
-        confirmLabel: "Start subscription",
-        clientSecret,
-        livemode: paymentLivemode,
-        context: {
-          type: "membershipSubscription",
-          subscriptionId: data.subscriptionId,
-          planId,
-        },
-      });
-      setMembershipMessage("Complete the payment to finish upgrading.");
+      showPaymentRedirectOverlay("Redirecting you to Stripe Checkout…");
+      try {
+        const response = await createMembershipCheckoutSessionFn({
+          plan: planId,
+          mode,
+          redirectBaseUrl,
+        });
+        const url = response?.data?.url;
+        if (typeof url !== "string" || !url) {
+          throw new Error("Unable to start Stripe Checkout.");
+        }
+        window.location.href = url;
+      } catch (err) {
+        hidePaymentRedirectOverlay();
+        throw handleCallableError(
+          "createMembershipCheckoutSession",
+          err,
+          PAYMENT_ERROR_FALLBACK
+        );
+      }
     }
 
     async function handleMembershipAcceptAndPay() {
@@ -6727,8 +6893,10 @@
         await recordMembershipTermsAcceptance();
         const planMode = getMembershipPlanMode(planId);
         if (planMode === "subscription") {
+          setMembershipMessage("Redirecting you to Stripe Checkout…");
           await startMembershipSubscriptionFlow(planId);
         } else if (planMode === "payment") {
+          setMembershipMessage("Redirecting you to Stripe Checkout…");
           await startMembershipPaymentFlow(planId);
         } else {
           await callApplyMembershipPlan({ plan: planId });

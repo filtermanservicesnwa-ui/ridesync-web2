@@ -275,6 +275,8 @@ const DEFAULT_FARE_CONSTANTS = {
   UNLIMITED_PROCESSING_FEE_RATE: 0.04,
 };
 
+const MAX_TIP_AMOUNT_CENTS = 20000;
+
 function coercePositiveNumber(value) {
   if (value === null || value === undefined) {
     return null;
@@ -331,6 +333,49 @@ function resolveFareConstants() {
 }
 
 const FARE_CONSTANTS = resolveFareConstants();
+
+function sanitizeTipAmountInput(value) {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  const cents = Math.round(parsed);
+  return Math.min(Math.max(cents, 0), MAX_TIP_AMOUNT_CENTS);
+}
+
+function resolveRideFareAmountCents(ride = {}) {
+  const centCandidates = [
+    ride.stripeAmountCents,
+    ride.totalCents,
+    ride.totalFareCents,
+    ride.estimatedFareCents,
+    ride.totalFareEstimateCents,
+    ride.fare?.totalCents,
+  ];
+  for (const candidate of centCandidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value > 0) {
+      return Math.round(value);
+    }
+  }
+  const dollarCandidates = [
+    ride.total,
+    ride.totalFare,
+    ride.estimatedFare,
+    ride.fare?.total,
+    ride.fare?.totalFare,
+  ];
+  for (const candidate of dollarCandidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value > 0) {
+      return Math.round(value * 100);
+    }
+  }
+  return 0;
+}
 
 const RIDE_STATUS_ALLOWLIST = new Set([
   "pending_driver",
@@ -454,6 +499,14 @@ function resolveMembershipPlan(planRaw = "") {
     plan,
     durationDays,
   };
+}
+
+function resolveMembershipPlanMode(planRaw = "") {
+  const plan = normalizeMembershipPlan(planRaw || "basic");
+  if (plan === "uofa_unlimited" || plan === "nwa_unlimited") {
+    return "subscription";
+  }
+  return "payment";
 }
 
 function computeMembershipExpirationTimestamp(durationDays = MEMBERSHIP_DEFAULT_DURATION_DAYS) {
@@ -1745,6 +1798,394 @@ exports.applyMembershipPlanHttp = functions
     }
   });
 
+exports.createMembershipCheckoutSession = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data = {}, context) => {
+    const uid = requireAuth(context);
+    const requestedPlan = data.planId || data.plan;
+    const planKey = normalizeMembershipPlan(requestedPlan || "basic");
+    const planConfig = resolveMembershipPlan(planKey);
+    if (!planConfig) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Unknown membership plan."
+      );
+    }
+    if (planKey === "basic") {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Basic plan does not require payment."
+      );
+    }
+
+    const requestedMode =
+      typeof data.mode === "string"
+        ? data.mode.trim().toLowerCase()
+        : null;
+    const planMode = ["payment", "subscription"].includes(requestedMode)
+      ? requestedMode
+      : resolveMembershipPlanMode(planKey);
+
+    if (planMode === "payment" && (!planConfig.amountCents || planConfig.amountCents <= 0)) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This membership plan does not have a payable amount configured."
+      );
+    }
+
+    const redirectBaseUrl = resolveCheckoutRedirectBaseUrl({
+      payload: data,
+    });
+
+    const pendingRef = db.collection("pendingMembershipCheckouts").doc();
+    const pendingPayload = {
+      userId: uid,
+      pendingId: pendingRef.id,
+      plan: planKey,
+      mode: planMode,
+      createdAt: FieldValue.serverTimestamp(),
+    };
+    if (planMode === "payment") {
+      pendingPayload.amountCents = planConfig.amountCents;
+      pendingPayload.currency = planConfig.currency || "usd";
+    }
+    await pendingRef.set(pendingPayload);
+
+    const stripeClient = getStripeClient("createMembershipCheckoutSession");
+    let session = null;
+    try {
+      if (planMode === "payment") {
+        session = await stripeClient.checkout.sessions.create({
+          mode: "payment",
+          line_items: [
+            {
+              price_data: {
+                currency: planConfig.currency || "usd",
+                product_data: {
+                  name: planConfig.label || "RideSync membership",
+                },
+                unit_amount: planConfig.amountCents,
+              },
+              quantity: 1,
+            },
+          ],
+          success_url: `${redirectBaseUrl}/membership-success?membership_pending_id=${pendingRef.id}&membership_session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${redirectBaseUrl}/membership-cancelled?membership_pending_id=${pendingRef.id}`,
+          customer_email: context?.auth?.token?.email || undefined,
+          client_reference_id: pendingRef.id,
+          metadata: {
+            firebaseUid: uid,
+            pendingMembershipId: pendingRef.id,
+            membershipPlan: planKey,
+            mode: planMode,
+          },
+          payment_intent_data: {
+            metadata: {
+              firebaseUid: uid,
+              pendingMembershipId: pendingRef.id,
+              membershipPlan: planKey,
+              mode: planMode,
+            },
+          },
+        });
+      } else {
+        const priceId = planKey === "uofa_unlimited" ? uofaPriceId : nwaPriceId;
+        if (!priceId) {
+          throw new functions.https.HttpsError(
+            "failed-precondition",
+            "Membership billing is temporarily unavailable for this plan."
+          );
+        }
+        session = await stripeClient.checkout.sessions.create({
+          mode: "subscription",
+          line_items: [
+            {
+              price: priceId,
+              quantity: 1,
+            },
+          ],
+          success_url: `${redirectBaseUrl}/membership-success?membership_pending_id=${pendingRef.id}&membership_session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${redirectBaseUrl}/membership-cancelled?membership_pending_id=${pendingRef.id}`,
+          customer_email: context?.auth?.token?.email || undefined,
+          client_reference_id: pendingRef.id,
+          metadata: {
+            firebaseUid: uid,
+            pendingMembershipId: pendingRef.id,
+            membershipPlan: planKey,
+            mode: planMode,
+          },
+          subscription_data: {
+            metadata: {
+              firebaseUid: uid,
+              pendingMembershipId: pendingRef.id,
+              membershipPlan: planKey,
+              mode: planMode,
+            },
+          },
+        });
+      }
+
+      await pendingRef.update({
+        stripeCheckoutSessionId: session.id,
+      });
+    } catch (err) {
+      console.error("[RideSync][Stripe] createMembershipCheckoutSession", err);
+      try {
+        await pendingRef.delete();
+      } catch (_) {
+        // ignore
+      }
+      throw err instanceof functions.https.HttpsError
+        ? err
+        : new functions.https.HttpsError(
+            "internal",
+            "Unable to start Stripe Checkout. Try again shortly."
+          );
+    }
+
+    return {
+      url: session.url,
+      pendingId: pendingRef.id,
+      mode: planMode,
+    };
+  });
+
+exports.finalizeMembershipCheckoutSession = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onRequest(async (req, res) => {
+    setApplyMembershipCorsHeaders(req, res);
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "POST") {
+      res.status(405).json({
+        error: {
+          code: "method-not-allowed",
+          message: "Use POST for this endpoint.",
+        },
+      });
+      return;
+    }
+
+    const payload =
+      typeof req.body === "object" && req.body !== null ? req.body : {};
+    const pendingId =
+      payload.membership_pending_id ||
+      payload.membershipPendingId ||
+      payload.pendingId ||
+      payload.pending_id ||
+      null;
+    const sessionId =
+      payload.membership_session_id ||
+      payload.membershipSessionId ||
+      payload.sessionId ||
+      payload.session_id ||
+      null;
+
+    const { uid } = await maybeResolveUserFromAuthHeader(req);
+    if (!uid) {
+      res.status(401).json({
+        error: {
+          code: "unauthenticated",
+          message: "Sign in to finish membership checkout.",
+        },
+      });
+      return;
+    }
+    if (!pendingId || !sessionId) {
+      res.status(400).json({
+        error: {
+          code: "invalid-argument",
+          message: "pendingId and sessionId are required.",
+        },
+      });
+      return;
+    }
+
+    try {
+      const pendingRef = db
+        .collection("pendingMembershipCheckouts")
+        .doc(pendingId);
+      const pendingSnap = await pendingRef.get();
+      if (!pendingSnap.exists) {
+        res.status(404).json({
+          error: {
+            code: "not-found",
+            message: "Pending membership checkout not found.",
+          },
+        });
+        return;
+      }
+
+      const pending = pendingSnap.data();
+      if (pending.userId !== uid) {
+        res.status(403).json({
+          error: {
+            code: "permission-denied",
+            message: "Cannot finalize another rider's membership.",
+          },
+        });
+        return;
+      }
+
+      const checkoutMode =
+        typeof pending.mode === "string"
+          ? pending.mode.toLowerCase()
+          : "payment";
+      const planConfig = resolveMembershipPlan(pending.plan);
+
+      if (pending.processedAt && pending.resultStatus) {
+        res.status(200).json({
+          status: pending.resultStatus,
+          membershipType: pending.membershipType || pending.plan || null,
+        });
+        return;
+      }
+
+      const stripeClient = getStripeClient(
+        "finalizeMembershipCheckoutSession"
+      );
+      const session = await stripeClient.checkout.sessions.retrieve(
+        sessionId,
+        {
+          expand: ["payment_intent", "subscription"],
+        }
+      );
+
+      if (!session) {
+        res.status(404).json({
+          error: {
+            code: "not-found",
+            message: "Stripe checkout session not found.",
+          },
+        });
+        return;
+      }
+      if (session.client_reference_id && session.client_reference_id !== pendingId) {
+        res.status(409).json({
+          error: {
+            code: "failed-precondition",
+            message: "Checkout session does not match the pending membership.",
+          },
+        });
+        return;
+      }
+
+      let resultPayload = null;
+      if (checkoutMode === "subscription") {
+        const subscriptionId =
+          typeof session.subscription === "string"
+            ? session.subscription
+            : session.subscription?.id;
+        if (!subscriptionId) {
+          res.status(409).json({
+            error: {
+              code: "failed-precondition",
+              message: "Subscription was not created for this checkout session.",
+            },
+          });
+          return;
+        }
+        resultPayload = await finalizeMembershipSubscriptionInternal({
+          uid,
+          subscriptionId,
+          stripeContextLabel: "finalizeMembershipCheckoutSession",
+        });
+        await pendingRef.update({
+          processedAt: FieldValue.serverTimestamp(),
+          stripeCheckoutSessionId: session.id,
+          stripeSubscriptionId: subscriptionId,
+          resultStatus: resultPayload?.status || "active",
+          membershipType: resultPayload?.membershipType || pending.plan,
+        });
+      } else {
+        const paymentIntentId =
+          typeof session.payment_intent === "string"
+            ? session.payment_intent
+            : session.payment_intent?.id;
+        if (!paymentIntentId) {
+          res.status(409).json({
+            error: {
+              code: "failed-precondition",
+              message: "Checkout session has not created a payment intent yet.",
+            },
+          });
+          return;
+        }
+        const paymentIntent =
+          typeof session.payment_intent === "object"
+            ? session.payment_intent
+            : await stripeClient.paymentIntents.retrieve(paymentIntentId);
+        if (paymentIntent.status !== "succeeded") {
+          res.status(409).json({
+            error: {
+              code: "failed-precondition",
+              message: "Stripe has not confirmed this membership payment yet.",
+            },
+          });
+          return;
+        }
+        await db
+          .collection("pendingMembershipPayments")
+          .doc(paymentIntent.id)
+          .set(
+            {
+              userId: uid,
+              plan: pending.plan,
+              amountCents: pending.amountCents,
+              currency:
+                pending.currency ||
+                planConfig?.currency ||
+                paymentIntent.currency ||
+                "usd",
+              createdAt: pending.createdAt || FieldValue.serverTimestamp(),
+              checkoutPendingId: pendingId,
+            },
+            { merge: true }
+          );
+        resultPayload = await applyMembershipPlanHandler(
+          {
+            plan: pending.plan,
+            paymentIntentId,
+          },
+          uid
+        );
+        await pendingRef.update({
+          processedAt: FieldValue.serverTimestamp(),
+          stripeCheckoutSessionId: session.id,
+          stripePaymentIntentId: paymentIntentId,
+          resultStatus: resultPayload?.status || "updated",
+          membershipType: pending.plan,
+        });
+      }
+
+      res.status(200).json({
+        status: resultPayload?.status || "updated",
+        membershipType: resultPayload?.membershipType || pending.plan,
+      });
+    } catch (err) {
+      console.error(
+        "[RideSync][Stripe] finalizeMembershipCheckoutSession error",
+        err
+      );
+      if (err instanceof functions.https.HttpsError) {
+        res.status(err.httpErrorCode.status).json({
+          error: { code: err.code, message: err.message },
+        });
+        return;
+      }
+      res.status(500).json({
+        error: {
+          code: "internal",
+          message:
+            err?.message ||
+            "We received your payment but could not finalize the membership yet.",
+        },
+      });
+    }
+  });
+
 // === RIDE SYNC STRIPE: START createMembershipSubscriptionIntent ===
 exports.createMembershipSubscriptionIntent = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
@@ -1818,6 +2259,103 @@ exports.createMembershipSubscriptionIntent = functions
 // === RIDE SYNC STRIPE: END createMembershipSubscriptionIntent ===
 
 // === RIDE SYNC STRIPE: START finalizeMembershipSubscription ===
+async function finalizeMembershipSubscriptionInternal({
+  uid,
+  subscriptionId,
+  stripeContextLabel = "finalizeMembershipSubscription",
+}) {
+  const stripeClient = getStripeClient(stripeContextLabel);
+  const subscription = await stripeClient.subscriptions.retrieve(
+    subscriptionId,
+    {
+      expand: ["latest_invoice.payment_intent", "items.data.price.product"],
+    }
+  );
+  if (!subscription) {
+    throw new functions.https.HttpsError(
+      "not-found",
+      "Subscription not found."
+    );
+  }
+  if (
+    subscription.metadata?.firebaseUid &&
+    subscription.metadata.firebaseUid !== uid
+  ) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "This subscription belongs to another user."
+    );
+  }
+
+  const status = subscription.status;
+  if (status !== "active" && status !== "trialing") {
+    return { status };
+  }
+
+  const subscriptionPlan =
+    normalizeMembershipPlan(subscription.metadata?.planId) ||
+    normalizeMembershipPlan(
+      subscription.items?.data?.[0]?.price?.lookup_key ||
+        subscription.items?.data?.[0]?.price?.nickname
+    );
+  if (!["uofa_unlimited", "nwa_unlimited"].includes(subscriptionPlan)) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Subscription is missing a supported plan."
+    );
+  }
+
+  const membershipStatus =
+    subscriptionPlan === "uofa_unlimited"
+      ? "pending_verification"
+      : "active";
+  const subscriptionPeriodEnd =
+    typeof subscription.current_period_end === "number"
+      ? subscription.current_period_end
+      : Number(subscription.current_period_end);
+  const membershipExpiresAt =
+    Number.isFinite(subscriptionPeriodEnd) && subscriptionPeriodEnd > 0
+      ? Timestamp.fromMillis(subscriptionPeriodEnd * 1000)
+      : computeMembershipExpirationTimestamp();
+  const customerId =
+    typeof subscription.customer === "string"
+      ? subscription.customer
+      : subscription.customer?.id;
+  const userRef = db.collection("users").doc(uid);
+  const membershipHistoryRef = userRef
+    .collection("membershipHistory")
+    .doc(subscription.id);
+
+  await Promise.all([
+    userRef.set(
+      {
+        membershipType: subscriptionPlan,
+        membershipStatus,
+        stripeSubscriptionId: subscription.id,
+        stripeCustomerId: customerId || FieldValue.delete(),
+        pendingMembershipPlanId: FieldValue.delete(),
+        pendingSubscriptionId: FieldValue.delete(),
+        membershipRenewedAt: FieldValue.serverTimestamp(),
+        membershipExpiresAt: membershipExpiresAt || FieldValue.delete(),
+        membershipExpiredAt: FieldValue.delete(),
+      },
+      { merge: true }
+    ),
+    membershipHistoryRef.set(
+      {
+        processedAt: FieldValue.serverTimestamp(),
+        planId: subscriptionPlan,
+        subscriptionId,
+        status,
+        invoiceId: subscription.latest_invoice?.id || null,
+      },
+      { merge: true }
+    ),
+  ]);
+
+  return { status: "active", membershipType: subscriptionPlan };
+}
+
 exports.finalizeMembershipSubscription = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
   .https.onCall(async (data, context) => {
@@ -1829,97 +2367,10 @@ exports.finalizeMembershipSubscription = functions
         "Stripe subscription ID is required."
       );
     }
-
-    const stripeClient = getStripeClient("finalizeMembershipSubscription");
-    const subscription = await stripeClient.subscriptions.retrieve(
+    return finalizeMembershipSubscriptionInternal({
+      uid,
       subscriptionId,
-      {
-        expand: ["latest_invoice.payment_intent", "items.data.price.product"],
-      }
-    );
-    if (!subscription) {
-      throw new functions.https.HttpsError(
-        "not-found",
-        "Subscription not found."
-      );
-    }
-    if (
-      subscription.metadata?.firebaseUid &&
-      subscription.metadata.firebaseUid !== uid
-    ) {
-      throw new functions.https.HttpsError(
-        "permission-denied",
-        "This subscription belongs to another user."
-      );
-    }
-
-    const status = subscription.status;
-    if (status !== "active" && status !== "trialing") {
-      return { status };
-    }
-
-    const subscriptionPlan =
-      normalizeMembershipPlan(subscription.metadata?.planId) ||
-      normalizeMembershipPlan(
-        subscription.items?.data?.[0]?.price?.lookup_key ||
-          subscription.items?.data?.[0]?.price?.nickname
-      );
-    if (!["uofa_unlimited", "nwa_unlimited"].includes(subscriptionPlan)) {
-      throw new functions.https.HttpsError(
-        "failed-precondition",
-        "Subscription is missing a supported plan."
-      );
-    }
-
-    const membershipStatus =
-      subscriptionPlan === "uofa_unlimited"
-        ? "pending_verification"
-        : "active";
-    const subscriptionPeriodEnd =
-      typeof subscription.current_period_end === "number"
-        ? subscription.current_period_end
-        : Number(subscription.current_period_end);
-    const membershipExpiresAt =
-      Number.isFinite(subscriptionPeriodEnd) && subscriptionPeriodEnd > 0
-        ? Timestamp.fromMillis(subscriptionPeriodEnd * 1000)
-        : computeMembershipExpirationTimestamp();
-    const customerId =
-      typeof subscription.customer === "string"
-        ? subscription.customer
-        : subscription.customer?.id;
-    const userRef = db.collection("users").doc(uid);
-    const membershipHistoryRef = userRef
-      .collection("membershipHistory")
-      .doc(subscription.id);
-
-    await Promise.all([
-      userRef.set(
-        {
-          membershipType: subscriptionPlan,
-          membershipStatus,
-          stripeSubscriptionId: subscription.id,
-          stripeCustomerId: customerId || FieldValue.delete(),
-          pendingMembershipPlanId: FieldValue.delete(),
-          pendingSubscriptionId: FieldValue.delete(),
-          membershipRenewedAt: FieldValue.serverTimestamp(),
-          membershipExpiresAt: membershipExpiresAt || FieldValue.delete(),
-          membershipExpiredAt: FieldValue.delete(),
-        },
-        { merge: true }
-      ),
-      membershipHistoryRef.set(
-        {
-          processedAt: FieldValue.serverTimestamp(),
-          planId: subscriptionPlan,
-          subscriptionId,
-          status,
-          invoiceId: subscription.latest_invoice?.id || null,
-        },
-        { merge: true }
-      ),
-    ]);
-
-    return { status: "active", membershipType: subscriptionPlan };
+    });
   });
 // === RIDE SYNC STRIPE: END finalizeMembershipSubscription ===
 
@@ -2439,6 +2890,164 @@ exports.createRidePaymentIntent = functions
   });
 // === RIDE SYNC STRIPE: END createRidePaymentIntent ===
 
+exports.createRideFareCheckoutSession = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data = {}, context) => {
+    const uid = requireAuth(context);
+    const rideId =
+      typeof data.rideId === "string"
+        ? data.rideId
+        : typeof data.ride_id === "string"
+        ? data.ride_id
+        : null;
+    if (!rideId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "rideId is required."
+      );
+    }
+
+    const tipInput =
+      data.tipAmountCents ??
+      data.tipAmount ??
+      data.tip_cents ??
+      data.tip ??
+      0;
+    const tipAmountCents = sanitizeTipAmountInput(tipInput);
+
+    const rideRef = db.collection("rideRequests").doc(rideId);
+    const rideSnap = await rideRef.get();
+    if (!rideSnap.exists) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Ride not found for checkout."
+      );
+    }
+    const ride = rideSnap.data() || {};
+    if (ride.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "You can only pay for your own rides."
+      );
+    }
+    if ((ride.paymentStatus || "").toLowerCase() === "paid") {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This ride is already paid."
+      );
+    }
+
+    const baseAmountCents = resolveRideFareAmountCents(ride);
+    if (!baseAmountCents && !tipAmountCents) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "No charges are due for this ride."
+      );
+    }
+
+    const redirectBaseUrl = resolveCheckoutRedirectBaseUrl({
+      payload: data,
+    });
+
+    const totalAmountCents = baseAmountCents + tipAmountCents;
+    const description = sanitizeCheckoutDescription(
+      data.description ||
+        ride.toDestination ||
+        ride.dropoffAddress ||
+        "RideSync ride fare"
+    );
+
+    const pendingRef = db.collection("pendingRidePayments").doc();
+    await pendingRef.set({
+      userId: uid,
+      pendingId: pendingRef.id,
+      rideId,
+      amountCents: totalAmountCents,
+      baseAmountCents,
+      tipAmountCents,
+      currency: "usd",
+      checkoutMode: "stripe_checkout_existing_ride",
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    const stripeClient = getStripeClient("createRideFareCheckoutSession");
+    let session = null;
+    try {
+      const lineItems = [];
+      if (baseAmountCents > 0) {
+        lineItems.push({
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: description,
+            },
+            unit_amount: baseAmountCents,
+          },
+          quantity: 1,
+        });
+      }
+      if (tipAmountCents > 0) {
+        lineItems.push({
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: "Driver tip",
+            },
+            unit_amount: tipAmountCents,
+          },
+          quantity: 1,
+        });
+      }
+
+      session = await stripeClient.checkout.sessions.create({
+        mode: "payment",
+        line_items: lineItems,
+        success_url: `${redirectBaseUrl}/payment-success?pending_id=${pendingRef.id}&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${redirectBaseUrl}/payment-cancelled?pending_id=${pendingRef.id}`,
+        customer_email: context?.auth?.token?.email || undefined,
+        client_reference_id: pendingRef.id,
+        metadata: {
+          firebaseUid: uid,
+          pendingRideId: pendingRef.id,
+          rideId,
+          purpose: "ride_payment",
+        },
+        payment_intent_data: {
+          metadata: {
+            firebaseUid: uid,
+            pendingRideId: pendingRef.id,
+            rideId,
+            purpose: "ride_payment",
+            base_amount_cents: baseAmountCents,
+            tip_amount_cents: tipAmountCents,
+          },
+        },
+      });
+
+      await pendingRef.update({
+        stripeCheckoutSessionId: session.id,
+      });
+    } catch (err) {
+      console.error("[RideSync][Stripe] createRideFareCheckoutSession", err);
+      try {
+        await pendingRef.delete();
+      } catch (_) {
+        // best effort cleanup
+      }
+      throw err instanceof functions.https.HttpsError
+        ? err
+        : new functions.https.HttpsError(
+            "internal",
+            "Unable to start Stripe Checkout. Try again shortly."
+          );
+    }
+
+    return {
+      url: session.url,
+      pendingId: pendingRef.id,
+    };
+  });
+
 async function finalizePendingRide({
   pendingRef,
   pending,
@@ -2496,6 +3105,81 @@ async function finalizePendingRide({
   });
 
   return rideRef.id;
+}
+
+async function finalizeExistingRideCheckout({
+  pendingRef,
+  pending,
+  uid,
+  paymentIntent,
+}) {
+  const rideId = pending?.rideId;
+  if (!rideId) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Ride reference missing for checkout finalization."
+    );
+  }
+
+  const rideRef = db.collection("rideRequests").doc(rideId);
+  await db.runTransaction(async (tx) => {
+    const rideSnap = await tx.get(rideRef);
+    if (!rideSnap.exists) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Ride not found while finalizing payment."
+      );
+    }
+    const ride = rideSnap.data() || {};
+    if (ride.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Cannot finalize another rider's payment."
+      );
+    }
+
+    const amountReceived =
+      Number(paymentIntent.amount_received ?? paymentIntent.amount ?? 0) || 0;
+    const baseAmountCents =
+      Number(paymentIntent.metadata?.base_amount_cents) ||
+      Number(pending.baseAmountCents) ||
+      resolveRideFareAmountCents(ride) ||
+      amountReceived;
+    const tipAmountCents =
+      Number(paymentIntent.metadata?.tip_amount_cents) ||
+      Number(pending.tipAmountCents) ||
+      0;
+
+    const normalizedBaseAmountCents = Math.max(
+      0,
+      Math.round(baseAmountCents || 0)
+    );
+    const normalizedTipAmountCents = Math.max(
+      0,
+      Math.round(tipAmountCents || 0)
+    );
+
+    tx.update(rideRef, {
+      paymentStatus: "paid",
+      paymentMethod: "stripe",
+      stripePaymentIntentId: paymentIntent.id,
+      stripeAmountCents: amountReceived,
+      stripeAmount: amountReceived / 100,
+      stripeCurrency: paymentIntent.currency || "usd",
+      fareBaseAmountCents: normalizedBaseAmountCents,
+      tipAmountCents: normalizedTipAmountCents,
+      tipAmount: normalizedTipAmountCents / 100,
+      tipCurrency: paymentIntent.currency || "usd",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    tx.update(pendingRef, {
+      processedAt: FieldValue.serverTimestamp(),
+      stripePaymentIntentId: paymentIntent.id,
+    });
+  });
+
+  return rideId;
 }
 
 exports.finalizeRidePayment = functions
@@ -2748,14 +3432,24 @@ exports.finalizeRideCheckoutSession = functions
         });
       }
 
-      const rideId = await finalizePendingRide({
-        pendingRef,
-        pending,
-        uid,
-        paymentIntentId: intent.id,
-      });
+      let rideIdResult = null;
+      if (pending.rideId) {
+        rideIdResult = await finalizeExistingRideCheckout({
+          pendingRef,
+          pending,
+          uid,
+          paymentIntent: intent,
+        });
+      } else {
+        rideIdResult = await finalizePendingRide({
+          pendingRef,
+          pending,
+          uid,
+          paymentIntentId: intent.id,
+        });
+      }
 
-      res.status(200).json({ rideId });
+      res.status(200).json({ rideId: rideIdResult });
     } catch (err) {
       console.error(
         "[RideSync][Stripe] finalizeRideCheckoutSession error",
