@@ -46,12 +46,20 @@ const runtimeConfig = (() => {
 
 // Never log secrets in cold start snapshots—this block intentionally removed.
 
+function sanitizeSecretString(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+}
+
 function readEnvValue(envKey) {
   if (!envKey) {
     return null;
   }
   const env = process.env || {};
-  return env[envKey] || null;
+  return sanitizeSecretString(env[envKey]);
 }
 
 function pickRuntimeStripeValue(stripeConfig, ...keys) {
@@ -60,7 +68,10 @@ function pickRuntimeStripeValue(stripeConfig, ...keys) {
   }
   for (const key of keys) {
     if (key in stripeConfig && stripeConfig[key]) {
-      return stripeConfig[key];
+      const sanitized = sanitizeSecretString(stripeConfig[key]);
+      if (sanitized) {
+        return sanitized;
+      }
     }
   }
   return null;
@@ -428,7 +439,7 @@ function getSecretValue(secretParam) {
     return null;
   }
   try {
-    return secretParam.value() || null;
+    return sanitizeSecretString(secretParam.value());
   } catch (err) {
     return null;
   }
