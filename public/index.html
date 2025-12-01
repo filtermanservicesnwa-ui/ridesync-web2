@@ -5400,6 +5400,8 @@
       latestRideForOverlay = { rideId, data };
       const status = normalizeRiderStatus(data);
       rememberRideCompletionContext(status, data);
+      // Re-evaluate fare overlay on every ride update so basic-plan rides prompt immediately.
+      maybePromptRideFareOverlay(rideId, data);
       const destinationLabel =
         data.toDestination || data.toAddress || data.destAddress || "Destination";
 
@@ -5449,7 +5451,6 @@
           break;
         case "dropoff_code_verified":
         case "completed":
-          maybePromptRideFareOverlay(rideId, data);
           if (rideRequiresFarePayment(data) > 0) {
             setOverlayCopy(
               "Payment required",
