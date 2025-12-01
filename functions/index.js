@@ -44,25 +44,7 @@ const runtimeConfig = (() => {
   }
 })();
 
-// TEMP: log runtime Stripe config and env vars on cold start to verify wiring.
-(function logTempStripeColdStartSnapshot() {
-  try {
-    const env = process.env || {};
-    logStripeDebug("TEMP Stripe config cold start snapshot", {
-      "functions.config().stripe": runtimeConfig?.stripe || null,
-      "process.env.STRIPE_SECRET_KEY": env?.[STRIPE_SECRET_ENV_NAMES.secretKey] || null,
-      "process.env.STRIPE_UOFA_PRICE_ID":
-        env?.[STRIPE_SECRET_ENV_NAMES.uofaPriceId] || null,
-      "process.env.STRIPE_NWA_PRICE_ID":
-        env?.[STRIPE_SECRET_ENV_NAMES.nwaPriceId] || null,
-    });
-  } catch (err) {
-    console.warn(
-      "[RideSync][Stripe] Failed to emit TEMP Stripe config debug snapshot",
-      err
-    );
-  }
-})();
+// Never log secrets in cold start snapshots—this block intentionally removed.
 
 function readEnvValue(envKey) {
   if (!envKey) {
