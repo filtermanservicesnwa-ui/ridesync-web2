@@ -6268,6 +6268,41 @@
       }
     }
 
+    async function handleRideFareDismiss() {
+      const rideId = ridePaymentState.rideId || currentRideId;
+      const normalizedStatus = (currentRideStatus || "").toLowerCase();
+      const shouldCancelRide =
+        rideId &&
+        !ridePaymentState.completed &&
+        riderCancelableStatuses.has(normalizedStatus);
+
+      if (rideFareClose) {
+        rideFareClose.disabled = true;
+      }
+
+      if (shouldCancelRide) {
+        try {
+          await cancelRideRequestFn({ rideId });
+        } catch (err) {
+          const message = err?.message || PAYMENT_ERROR_FALLBACK;
+          updateRideFareStatus(message, true);
+          if (cancelError) {
+            cancelError.textContent = message;
+          }
+          if (rideFareClose) {
+            rideFareClose.disabled = false;
+          }
+          return;
+        }
+      }
+
+      returnToHomeAfterRide(
+        shouldCancelRide
+          ? "Ride checkout canceled. Choose your destination to request another ride."
+          : "Ride checkout closed."
+      );
+    }
+
     async function openRideFareOverlay({ rideId, amountCents, summary }) {
       if (!rideFareOverlay) return;
       resetRidePaymentState();
@@ -7001,14 +7036,12 @@
     }
 
     if (rideFareClose) {
-      rideFareClose.addEventListener("click", () => {
-        closeRideFareOverlay();
-      });
+      rideFareClose.addEventListener("click", handleRideFareDismiss);
     }
     if (rideFareOverlay) {
       rideFareOverlay.addEventListener("click", (event) => {
         if (event.target === rideFareOverlay) {
-          closeRideFareOverlay();
+          handleRideFareDismiss();
         }
       });
     }
