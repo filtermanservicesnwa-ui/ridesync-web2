@@ -6163,6 +6163,10 @@
             : null;
         const response = await createRideFareCheckoutSessionFn({
           rideId: ridePaymentState.rideId,
+          amount: Math.max(
+            0,
+            Math.round(ridePaymentState.totalAmountCents || 0)
+          ),
           tipAmountCents: Math.max(
             0,
             Math.round(ridePaymentState.tipAmountCents || 0)
