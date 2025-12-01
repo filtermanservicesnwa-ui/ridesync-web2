@@ -543,7 +543,7 @@ function buildInlineMembershipSubscriptionLineItem(planConfig = {}) {
       },
       recurring: {
         interval: "month",
-        interval_count,
+        interval_count: intervalCount,
       },
     },
     quantity: 1,
