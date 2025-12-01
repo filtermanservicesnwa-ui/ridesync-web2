@@ -568,6 +568,18 @@ function cloneData(input) {
   return JSON.parse(JSON.stringify(input ?? {}));
 }
 
+function removeUndefinedFields(target) {
+  if (!target || typeof target !== "object") {
+    return target;
+  }
+  Object.keys(target).forEach((key) => {
+    if (target[key] === undefined) {
+      delete target[key];
+    }
+  });
+  return target;
+}
+
 function extractRideInput(data) {
   if (!data) return null;
   if (data.ride && typeof data.ride === "object") {
@@ -2857,161 +2869,184 @@ exports.saveUserProfile = functions.https.onCall(async (data, context) => {
 exports.createRideRequest = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
   .https.onCall(async (data, context) => {
-    const uid = requireAuth(context);
-    const rideInput = extractRideInput(data?.ride || data);
-    if (!rideInput) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Ride payload is required."
+    let uid = null;
+    let rideRef = null;
+    let rideDoc = null;
+
+    try {
+      uid = requireAuth(context);
+      const rideInput = extractRideInput(data?.ride || data);
+      if (!rideInput) {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "Ride payload is required."
+        );
+      }
+      const pickupLocation =
+        coerceLatLng(rideInput.pickupLocation) ||
+        coerceLatLng(rideInput.fromLocation) ||
+        null;
+      const dropoffLocation =
+        coerceLatLng(rideInput.dropoffLocation) ||
+        coerceLatLng(rideInput.toLocation) ||
+        null;
+      if (!pickupLocation || !dropoffLocation) {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "Pickup and dropoff coordinates are required."
+        );
+      }
+      const estimatedMinutes = Number(rideInput.estimatedDurationMinutes);
+      if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "Estimated ride duration is required."
+        );
+      }
+
+      const { profile, userRef } = await loadUserProfileOrThrow(uid);
+      const membershipType = normalizeMembershipPlan(profile.membershipType || "basic");
+      const membershipStatus = profile.membershipStatus || "none";
+      await enforceRideCooldown(uid, membershipType);
+
+      const extraStops = normalizeExtraStopsInput(rideInput.extraStops);
+      const numRiders = Math.max(1, Math.min(6, Number(rideInput.numRiders) || 1));
+      const maxRiders = Math.max(numRiders, Math.min(6, Number(rideInput.maxRiders) || numRiders));
+      const isGroupRide = Boolean(rideInput.isGroupRide) || maxRiders > 1;
+      const poolType = rideInput.poolType === "uofa" ? "uofa" : null;
+      const normalizedStatus = normalizeRideStatus(rideInput.status, poolType);
+
+      const fareBreakdown = computeFareForMembership(
+        membershipType,
+        estimatedMinutes,
+        Boolean(rideInput.inHomeZone)
       );
-    }
-    const pickupLocation =
-      coerceLatLng(rideInput.pickupLocation) ||
-      coerceLatLng(rideInput.fromLocation) ||
-      null;
-    const dropoffLocation =
-      coerceLatLng(rideInput.dropoffLocation) ||
-      coerceLatLng(rideInput.toLocation) ||
-      null;
-    if (!pickupLocation || !dropoffLocation) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Pickup and dropoff coordinates are required."
+      const totalCents = Math.max(
+        0,
+        Math.round(
+          Number.isFinite(fareBreakdown.total) ? fareBreakdown.total * 100 : rideInput.totalCents
+        )
       );
-    }
-    const estimatedMinutes = Number(rideInput.estimatedDurationMinutes);
-    if (!Number.isFinite(estimatedMinutes) || estimatedMinutes <= 0) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Estimated ride duration is required."
-      );
-    }
 
-    const { profile, userRef } = await loadUserProfileOrThrow(uid);
-    const membershipType = normalizeMembershipPlan(profile.membershipType || "basic");
-    const membershipStatus = profile.membershipStatus || "none";
-    await enforceRideCooldown(uid, membershipType);
-
-    const extraStops = normalizeExtraStopsInput(rideInput.extraStops);
-    const numRiders = Math.max(1, Math.min(6, Number(rideInput.numRiders) || 1));
-    const maxRiders = Math.max(numRiders, Math.min(6, Number(rideInput.maxRiders) || numRiders));
-    const isGroupRide = Boolean(rideInput.isGroupRide) || maxRiders > 1;
-    const poolType = rideInput.poolType === "uofa" ? "uofa" : null;
-    const normalizedStatus = normalizeRideStatus(rideInput.status, poolType);
-
-    const fareBreakdown = computeFareForMembership(
-      membershipType,
-      estimatedMinutes,
-      Boolean(rideInput.inHomeZone)
-    );
-    const totalCents = Math.max(
-      0,
-      Math.round(
-        Number.isFinite(fareBreakdown.total) ? fareBreakdown.total * 100 : rideInput.totalCents
-      )
-    );
-
-    const chargeContext = calculateRideChargeContext({
-      membershipType,
-      membershipStatus,
-      pickupLocation,
-      dropoffLocation,
-      totalCents,
-    });
-    const amountCents = Math.max(0, Math.round(chargeContext.amountCents || 0));
-    const paymentMeta = resolveRidePaymentStatus(membershipType, amountCents);
-
-    const rideDoc = buildRidePayload(
-      {
-        ...rideInput,
-        extraStops,
-        pickupLocation,
-        dropoffLocation,
-        fare: fareBreakdown,
-        estimatedDurationMinutes: estimatedMinutes,
-        numRiders,
-        maxRiders,
-      },
-      {
-        uid,
+      const chargeContext = calculateRideChargeContext({
         membershipType,
         membershipStatus,
         pickupLocation,
         dropoffLocation,
-        amountCents,
         totalCents,
-        chargeContext,
+      });
+      const amountCents = Math.max(0, Math.round(chargeContext.amountCents || 0));
+      const paymentMeta = resolveRidePaymentStatus(membershipType, amountCents);
+
+      rideDoc = buildRidePayload(
+        {
+          ...rideInput,
+          extraStops,
+          pickupLocation,
+          dropoffLocation,
+          fare: fareBreakdown,
+          estimatedDurationMinutes: estimatedMinutes,
+          numRiders,
+          maxRiders,
+        },
+        {
+          uid,
+          membershipType,
+          membershipStatus,
+          pickupLocation,
+          dropoffLocation,
+          amountCents,
+          totalCents,
+          chargeContext,
+        }
+      );
+
+      rideDoc.userId = uid;
+      rideDoc.startedByUserId = uid;
+      rideDoc.status = normalizedStatus;
+      rideDoc.paymentStatus = paymentMeta.paymentStatus;
+      rideDoc.paymentMethod = paymentMeta.paymentMethod;
+      rideDoc.stripeAmountCents = amountCents;
+      rideDoc.stripeAmount = amountCents / 100;
+      rideDoc.stripeCurrency = "usd";
+      rideDoc.totalCents = totalCents;
+      rideDoc.fare = fareBreakdown;
+      rideDoc.extraStops = extraStops.length ? extraStops : [];
+      rideDoc.maxRiders = maxRiders;
+      rideDoc.currentRiderCount = Math.min(numRiders, maxRiders);
+      rideDoc.isGroupRide = isGroupRide;
+      rideDoc.poolType = poolType;
+      rideDoc.gender =
+        normalizePoolGender(profile.gender) ||
+        rideDoc.gender ||
+        null;
+      rideDoc.isStudent = Boolean(profile.isStudent);
+      rideDoc.uofaVerified = Boolean(profile.uofaVerified);
+      rideDoc.uofaPoolEligible =
+        membershipType === "uofa_unlimited" &&
+        Boolean(profile.isStudent) &&
+        Boolean(profile.uofaVerified) &&
+        Boolean(rideDoc.gender) &&
+        Boolean(chargeContext.pickupInside && chargeContext.dropoffInside);
+      const riderName =
+        sanitizeProfileString(
+          profile.fullName ||
+            profile.name ||
+            profile.displayName ||
+            (profile.email ? profile.email.split("@")[0] : ""),
+          80
+        ) || "Rider";
+      const riderPhone =
+        sanitizePhoneNumber(profile.phone || profile.phoneNumber || "") || "";
+      const riderPhotoUrl =
+        sanitizeProfileString(profile.profilePicUrl || profile.photoURL || "", 500) || null;
+      rideDoc.riderName = riderName;
+      rideDoc.riderPhone = riderPhone;
+      rideDoc.riderProfilePicUrl = riderPhotoUrl;
+      rideDoc.riderPhotoUrl = riderPhotoUrl;
+      rideDoc.riderAvatarUrl = riderPhotoUrl;
+      rideDoc.riderImageUrl = riderPhotoUrl;
+      rideDoc.membershipStatus = membershipStatus;
+      rideDoc.createdAt = FieldValue.serverTimestamp();
+      rideDoc.updatedAt = FieldValue.serverTimestamp();
+
+      const pinUpdates = ensurePinUpdates(rideDoc);
+      if (pinUpdates) {
+        Object.assign(rideDoc, pinUpdates);
       }
-    );
 
-    rideDoc.userId = uid;
-    rideDoc.startedByUserId = uid;
-    rideDoc.status = normalizedStatus;
-    rideDoc.paymentStatus = paymentMeta.paymentStatus;
-    rideDoc.paymentMethod = paymentMeta.paymentMethod;
-    rideDoc.stripeAmountCents = amountCents;
-    rideDoc.stripeAmount = amountCents / 100;
-    rideDoc.stripeCurrency = "usd";
-    rideDoc.totalCents = totalCents;
-    rideDoc.fare = fareBreakdown;
-    rideDoc.extraStops = extraStops.length ? extraStops : undefined;
-    rideDoc.maxRiders = maxRiders;
-    rideDoc.currentRiderCount = Math.min(numRiders, maxRiders);
-    rideDoc.isGroupRide = isGroupRide;
-    rideDoc.poolType = poolType;
-    rideDoc.gender =
-      normalizePoolGender(profile.gender) ||
-      rideDoc.gender ||
-      null;
-    rideDoc.isStudent = Boolean(profile.isStudent);
-    rideDoc.uofaVerified = Boolean(profile.uofaVerified);
-    rideDoc.uofaPoolEligible =
-      membershipType === "uofa_unlimited" &&
-      Boolean(profile.isStudent) &&
-      Boolean(profile.uofaVerified) &&
-      Boolean(rideDoc.gender) &&
-      Boolean(chargeContext.pickupInside && chargeContext.dropoffInside);
-    const riderName =
-      sanitizeProfileString(
-        profile.fullName ||
-          profile.name ||
-          profile.displayName ||
-          (profile.email ? profile.email.split("@")[0] : ""),
-        80
-      ) || "Rider";
-    const riderPhone =
-      sanitizePhoneNumber(profile.phone || profile.phoneNumber || "") || "";
-    const riderPhotoUrl =
-      sanitizeProfileString(profile.profilePicUrl || profile.photoURL || "", 500) || null;
-    rideDoc.riderName = riderName;
-    rideDoc.riderPhone = riderPhone;
-    rideDoc.riderProfilePicUrl = riderPhotoUrl;
-    rideDoc.riderPhotoUrl = riderPhotoUrl;
-    rideDoc.riderAvatarUrl = riderPhotoUrl;
-    rideDoc.riderImageUrl = riderPhotoUrl;
-    rideDoc.membershipStatus = membershipStatus;
-    rideDoc.createdAt = FieldValue.serverTimestamp();
-    rideDoc.updatedAt = FieldValue.serverTimestamp();
+      rideRef = db.collection("rideRequests").doc();
+      if (rideDoc.isGroupRide && !rideDoc.groupId) {
+        rideDoc.groupId = rideRef.id;
+      }
 
-    const pinUpdates = ensurePinUpdates(rideDoc);
-    if (pinUpdates) {
-      Object.assign(rideDoc, pinUpdates);
+      removeUndefinedFields(rideDoc);
+
+      await rideRef.set(rideDoc);
+      await userRef.set({ lastRideRequestedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+      functions.logger.info("[createRideRequest] ride created", {
+        uid,
+        rideId: rideRef.id,
+        paymentStatus: rideDoc.paymentStatus,
+        extraStopsCount: rideDoc.extraStops?.length || 0,
+      });
+
+      return {
+        rideId: rideRef.id,
+        paymentStatus: rideDoc.paymentStatus,
+        amountCents,
+        ride: serializeRideForClient(rideDoc),
+      };
+    } catch (error) {
+      functions.logger.error("[createRideRequest] failed", {
+        uid: uid || context?.auth?.uid || null,
+        rideId: rideRef?.id || null,
+        code: error?.code || null,
+        message: error?.message || "Unknown error",
+      });
+      throw error;
     }
-
-    const rideRef = db.collection("rideRequests").doc();
-    if (rideDoc.isGroupRide && !rideDoc.groupId) {
-      rideDoc.groupId = rideRef.id;
-    }
-
-    await rideRef.set(rideDoc);
-    await userRef.set({ lastRideRequestedAt: FieldValue.serverTimestamp() }, { merge: true });
-
-    return {
-      rideId: rideRef.id,
-      paymentStatus: rideDoc.paymentStatus,
-      amountCents,
-      ride: serializeRideForClient(rideDoc),
-    };
   });
 
 exports.joinRideGroup = functions.https.onCall(async (data, context) => {
