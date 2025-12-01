@@ -512,6 +512,61 @@ function resolveMembershipPlan(planRaw = "") {
   };
 }
 
+function resolveStripePriceIdForPlan(planKey) {
+  if (!planKey) {
+    return null;
+  }
+  if (planKey === "uofa_unlimited") {
+    return uofaPriceId || null;
+  }
+  if (planKey === "nwa_unlimited") {
+    return nwaPriceId || null;
+  }
+  return null;
+}
+
+function buildInlineMembershipSubscriptionLineItem(planConfig = {}) {
+  const amountCents = Number(planConfig.amountCents);
+  if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    return null;
+  }
+  const durationDays = Number(planConfig.durationDays || MEMBERSHIP_DEFAULT_DURATION_DAYS);
+  const intervalCount = Number.isFinite(durationDays) && durationDays > 0
+    ? Math.max(1, Math.min(12, Math.round(durationDays / 30) || 1))
+    : 1;
+  return {
+    price_data: {
+      currency: planConfig.currency || "usd",
+      unit_amount: Math.round(amountCents),
+      product_data: {
+        name: planConfig.label || "RideSync membership",
+      },
+      recurring: {
+        interval: "month",
+        interval_count,
+      },
+    },
+    quantity: 1,
+  };
+}
+
+function shouldRetrySubscriptionWithInlinePrice(err) {
+  if (!err) {
+    return false;
+  }
+  const raw = err.raw || {};
+  const code = err.code || raw.code || null;
+  const param = err.param || raw.param || "";
+  const message = (err.message || raw.message || "").toLowerCase();
+  if (message.includes("no such price")) {
+    return true;
+  }
+  if (code === "resource_missing" && (!param || param.includes("price"))) {
+    return true;
+  }
+  return false;
+}
+
 function resolveMembershipPlanMode(planRaw = "") {
   const plan = normalizeMembershipPlan(planRaw || "basic");
   if (plan === "uofa_unlimited" || plan === "nwa_unlimited") {
@@ -1864,6 +1919,8 @@ exports.createMembershipCheckoutSession = functions
 
     const stripeClient = getStripeClient("createMembershipCheckoutSession");
     let session = null;
+    let priceStrategy =
+      planMode === "payment" ? "one_time_payment" : "configured_price";
     try {
       if (planMode === "payment") {
         session = await stripeClient.checkout.sessions.create({
@@ -1900,44 +1957,78 @@ exports.createMembershipCheckoutSession = functions
           },
         });
       } else {
-        const priceId = planKey === "uofa_unlimited" ? uofaPriceId : nwaPriceId;
-        if (!priceId) {
-          throw new functions.https.HttpsError(
-            "failed-precondition",
-            "Membership billing is temporarily unavailable for this plan."
-          );
+        const configuredPriceId = resolveStripePriceIdForPlan(planKey);
+        if (!configuredPriceId) {
+          priceStrategy = "inline_price";
         }
-        session = await stripeClient.checkout.sessions.create({
+        const subscriptionMetadata = {
+          firebaseUid: uid,
+          pendingMembershipId: pendingRef.id,
+          membershipPlan: planKey,
+          mode: planMode,
+        };
+        const subscriptionPayload = {
           mode: "subscription",
-          line_items: [
-            {
-              price: priceId,
-              quantity: 1,
-            },
-          ],
           success_url: `${redirectBaseUrl}/membership-success?membership_pending_id=${pendingRef.id}&membership_session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${redirectBaseUrl}/membership-cancelled?membership_pending_id=${pendingRef.id}`,
           customer_email: context?.auth?.token?.email || undefined,
           client_reference_id: pendingRef.id,
-          metadata: {
-            firebaseUid: uid,
-            pendingMembershipId: pendingRef.id,
-            membershipPlan: planKey,
-            mode: planMode,
-          },
+          metadata: subscriptionMetadata,
           subscription_data: {
-            metadata: {
-              firebaseUid: uid,
-              pendingMembershipId: pendingRef.id,
-              membershipPlan: planKey,
-              mode: planMode,
-            },
+            metadata: subscriptionMetadata,
           },
-        });
+        };
+
+        if (configuredPriceId) {
+          try {
+            session = await stripeClient.checkout.sessions.create({
+              ...subscriptionPayload,
+              line_items: [
+                {
+                  price: configuredPriceId,
+                  quantity: 1,
+                },
+              ],
+            });
+          } catch (err) {
+            if (!shouldRetrySubscriptionWithInlinePrice(err)) {
+              throw err;
+            }
+            priceStrategy = "inline_fallback";
+            logStripeDebug(
+              "createMembershipCheckoutSession: retrying subscription with inline price",
+              {
+                planKey,
+                priceIdTail: configuredPriceId.slice(-6),
+                stripeErrorCode: err.code || err?.raw?.code || null,
+              }
+            );
+          }
+        } else {
+          logStripeDebug(
+            "createMembershipCheckoutSession: no configured price id, using inline subscription price",
+            { planKey }
+          );
+        }
+
+        if (!session) {
+          const inlineLineItem = buildInlineMembershipSubscriptionLineItem(planConfig);
+          if (!inlineLineItem) {
+            throw new functions.https.HttpsError(
+              "failed-precondition",
+              "Membership billing is temporarily unavailable for this plan."
+            );
+          }
+          session = await stripeClient.checkout.sessions.create({
+            ...subscriptionPayload,
+            line_items: [inlineLineItem],
+          });
+        }
       }
 
       await pendingRef.update({
         stripeCheckoutSessionId: session.id,
+        stripeCheckoutPriceStrategy: priceStrategy,
       });
     } catch (err) {
       console.error("[RideSync][Stripe] createMembershipCheckoutSession", err);
