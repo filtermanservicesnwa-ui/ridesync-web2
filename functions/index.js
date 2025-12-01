@@ -44,6 +44,8 @@ const runtimeConfig = (() => {
   }
 })();
 
+// Never log secrets in cold start snapshots—this block intentionally removed.
+
 function readEnvValue(envKey) {
   if (!envKey) {
     return null;
@@ -66,16 +68,38 @@ function pickRuntimeStripeValue(stripeConfig, ...keys) {
 
 function resolveStripeSettings() {
   const stripeConfig = runtimeConfig?.stripe || {};
+  const configSecretKey = pickRuntimeStripeValue(stripeConfig, "secret_key", "secretKey");
+  const configUofaPriceId = pickRuntimeStripeValue(
+    stripeConfig,
+    "uofa_price_id",
+    "uofaPriceId"
+  );
+  const configNwaPriceId = pickRuntimeStripeValue(
+    stripeConfig,
+    "nwa_price_id",
+    "nwaPriceId"
+  );
+  const envSecretKey = readEnvValue(STRIPE_SECRET_ENV_NAMES.secretKey);
+  const envUofaPriceId = readEnvValue(STRIPE_SECRET_ENV_NAMES.uofaPriceId);
+  const envNwaPriceId = readEnvValue(STRIPE_SECRET_ENV_NAMES.nwaPriceId);
   return {
-    secretKey:
-      readEnvValue(STRIPE_SECRET_ENV_NAMES.secretKey) ||
-      pickRuntimeStripeValue(stripeConfig, "secret_key", "secretKey"),
-    uofaPriceId:
-      readEnvValue(STRIPE_SECRET_ENV_NAMES.uofaPriceId) ||
-      pickRuntimeStripeValue(stripeConfig, "uofa_price_id", "uofaPriceId"),
-    nwaPriceId:
-      readEnvValue(STRIPE_SECRET_ENV_NAMES.nwaPriceId) ||
-      pickRuntimeStripeValue(stripeConfig, "nwa_price_id", "nwaPriceId"),
+    secretKey: configSecretKey || envSecretKey || null,
+    uofaPriceId: configUofaPriceId || envUofaPriceId || null,
+    nwaPriceId: configNwaPriceId || envNwaPriceId || null,
+    sources: {
+      secretKey: {
+        config: configSecretKey || null,
+        env: envSecretKey || null,
+      },
+      uofaPriceId: {
+        config: configUofaPriceId || null,
+        env: envUofaPriceId || null,
+      },
+      nwaPriceId: {
+        config: configNwaPriceId || null,
+        env: envNwaPriceId || null,
+      },
+    },
   };
 }
 
@@ -127,6 +151,7 @@ function logStripeConfigState(context, options = {}) {
 // * After pulling these changes run `firebase deploy --only functions` to ship them.
 
 const stripeSettings = resolveStripeSettings();
+const stripeSettingSources = stripeSettings.sources || {};
 let stripe = null;
 let stripeSecretKey = stripeSettings.secretKey || null;
 let uofaPriceId = stripeSettings.uofaPriceId || null;
@@ -135,33 +160,45 @@ if (stripeSettings.secretKey) {
   stripe = Stripe(stripeSettings.secretKey);
   stripeSecretKey = stripeSettings.secretKey;
 } else {
-  console.warn(
-    "[RideSync][Stripe] Missing Stripe secret key. Set stripe.secret_key runtime config or STRIPE_SECRET_KEY env to enable billing."
-  );
-  logStripeConfigState("init_missing_secret_key", {
-    severity: "error",
-    includeEnvKeys: true,
-  });
+  const configPresent = !!stripeSettingSources.secretKey?.config;
+  const envPresent = !!stripeSettingSources.secretKey?.env;
+  if (!configPresent && !envPresent) {
+    console.warn(
+      "[RideSync][Stripe] Missing Stripe secret key. Set stripe.secret_key runtime config or STRIPE_SECRET_KEY env to enable billing."
+    );
+    logStripeConfigState("init_missing_secret_key", {
+      severity: "error",
+      includeEnvKeys: true,
+    });
+  }
 }
 if (!uofaPriceId) {
-  console.warn(
-    "[RideSync][Stripe] Missing U of A Stripe price ID. Set stripe.uofa_price_id or STRIPE_UOFA_PRICE_ID."
-  );
-  logStripeConfigState("init_missing_uofa_price", {
-    severity: "error",
-    includeEnvKeys: true,
-    extra: { plan: "uofa_unlimited" },
-  });
+  const configPresent = !!stripeSettingSources.uofaPriceId?.config;
+  const envPresent = !!stripeSettingSources.uofaPriceId?.env;
+  if (!configPresent && !envPresent) {
+    console.warn(
+      "[RideSync][Stripe] Missing U of A Stripe price ID. Set stripe.uofa_price_id or STRIPE_UOFA_PRICE_ID."
+    );
+    logStripeConfigState("init_missing_uofa_price", {
+      severity: "error",
+      includeEnvKeys: true,
+      extra: { plan: "uofa_unlimited" },
+    });
+  }
 }
 if (!nwaPriceId) {
-  console.warn(
-    "[RideSync][Stripe] Missing NWA Stripe price ID. Set stripe.nwa_price_id or STRIPE_NWA_PRICE_ID."
-  );
-  logStripeConfigState("init_missing_nwa_price", {
-    severity: "error",
-    includeEnvKeys: true,
-    extra: { plan: "nwa_unlimited" },
-  });
+  const configPresent = !!stripeSettingSources.nwaPriceId?.config;
+  const envPresent = !!stripeSettingSources.nwaPriceId?.env;
+  if (!configPresent && !envPresent) {
+    console.warn(
+      "[RideSync][Stripe] Missing NWA Stripe price ID. Set stripe.nwa_price_id or STRIPE_NWA_PRICE_ID."
+    );
+    logStripeConfigState("init_missing_nwa_price", {
+      severity: "error",
+      includeEnvKeys: true,
+      extra: { plan: "nwa_unlimited" },
+    });
+  }
 }
 // === RIDE SYNC STRIPE: END config ===
 

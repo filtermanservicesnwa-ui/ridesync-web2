@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "deploy": "npm --prefix functions run deploy"
+  },
   "devDependencies": {
     "firebase-tools": "^13.35.1"
   }
