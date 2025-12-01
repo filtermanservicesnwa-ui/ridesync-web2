@@ -2991,107 +2991,109 @@ exports.createRidePaymentIntent = functions
 exports.createRideFareCheckoutSession = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
   .https.onCall(async (data = {}, context) => {
-    const { amount, rideId } = data || {};
     const uid = requireAuth(context);
-    const normalizedRideId =
-      typeof rideId === "string" && rideId.trim() ? rideId.trim() : null;
-    if (!normalizedRideId) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "rideId is required."
-      );
-    }
+    let pendingRef = null;
 
-    const amountInput =
-      amount ??
-      data?.amountCents ??
-      data?.amount_cents ??
-      data?.totalAmountCents ??
-      data?.total_amount_cents ??
-      null;
-    const normalizedAmountCents = Number.isFinite(Number(amountInput))
-      ? Math.max(0, Math.round(Number(amountInput)))
-      : 0;
-    if (normalizedAmountCents <= 0) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "A positive amount (in cents) is required."
-      );
-    }
-
-    const tipInput =
-      data.tipAmountCents ??
-      data.tipAmount ??
-      data.tip_cents ??
-      data.tip ??
-      0;
-    const tipAmountCents = sanitizeTipAmountInput(tipInput);
-
-    const rideRef = db.collection("rideRequests").doc(normalizedRideId);
-    const rideSnap = await rideRef.get();
-    if (!rideSnap.exists) {
-      throw new functions.https.HttpsError(
-        "not-found",
-        "Ride not found for checkout."
-      );
-    }
-    const ride = rideSnap.data() || {};
-    if (ride.userId !== uid) {
-      throw new functions.https.HttpsError(
-        "permission-denied",
-        "You can only pay for your own rides."
-      );
-    }
-    if ((ride.paymentStatus || "").toLowerCase() === "paid") {
-      throw new functions.https.HttpsError(
-        "failed-precondition",
-        "This ride is already paid."
-      );
-    }
-
-    const rideBaseAmountCents = resolveRideFareAmountCents(ride);
-    const clientBaseAmountCents = Math.max(
-      0,
-      normalizedAmountCents - tipAmountCents
-    );
-    const resolvedBaseAmountCents =
-      rideBaseAmountCents > 0 &&
-      rideBaseAmountCents === clientBaseAmountCents
-        ? rideBaseAmountCents
-        : clientBaseAmountCents;
-    const totalAmountCents = normalizedAmountCents;
-    if (totalAmountCents <= 0) {
-      throw new functions.https.HttpsError(
-        "failed-precondition",
-        "No charges are due for this ride."
-      );
-    }
-
-    const redirectBaseUrl = resolveCheckoutRedirectBaseUrl({
-      payload: data,
-    });
-    const description = sanitizeCheckoutDescription(
-      data.description ||
-        ride.toDestination ||
-        ride.dropoffAddress ||
-        "RideSync ride fare"
-    );
-
-    const pendingRef = db.collection("pendingRidePayments").doc();
-    await pendingRef.set({
-      userId: uid,
-      pendingId: pendingRef.id,
-      rideId: normalizedRideId,
-      amountCents: totalAmountCents,
-      baseAmountCents: resolvedBaseAmountCents,
-      tipAmountCents,
-      currency: "usd",
-      checkoutMode: "stripe_checkout_existing_ride",
-      createdAt: FieldValue.serverTimestamp(),
-    });
-
-    const stripeClient = getStripeClient("createRideFareCheckoutSession");
     try {
+      const { amount, rideId } = data || {};
+      const normalizedRideId =
+        typeof rideId === "string" && rideId.trim() ? rideId.trim() : null;
+      if (!normalizedRideId) {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "rideId is required."
+        );
+      }
+
+      const amountInput =
+        amount ??
+        data?.amountCents ??
+        data?.amount_cents ??
+        data?.totalAmountCents ??
+        data?.total_amount_cents ??
+        null;
+      const normalizedAmountCents = Number.isFinite(Number(amountInput))
+        ? Math.max(0, Math.round(Number(amountInput)))
+        : 0;
+      if (normalizedAmountCents <= 0) {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "A positive amount (in cents) is required."
+        );
+      }
+
+      const tipInput =
+        data.tipAmountCents ??
+        data.tipAmount ??
+        data.tip_cents ??
+        data.tip ??
+        0;
+      const tipAmountCents = sanitizeTipAmountInput(tipInput);
+
+      const rideRef = db.collection("rideRequests").doc(normalizedRideId);
+      const rideSnap = await rideRef.get();
+      if (!rideSnap.exists) {
+        throw new functions.https.HttpsError(
+          "not-found",
+          "Ride not found for checkout."
+        );
+      }
+      const ride = rideSnap.data() || {};
+      if (ride.userId !== uid) {
+        throw new functions.https.HttpsError(
+          "permission-denied",
+          "You can only pay for your own rides."
+        );
+      }
+      if ((ride.paymentStatus || "").toLowerCase() === "paid") {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "This ride is already paid."
+        );
+      }
+
+      const rideBaseAmountCents = resolveRideFareAmountCents(ride);
+      const clientBaseAmountCents = Math.max(
+        0,
+        normalizedAmountCents - tipAmountCents
+      );
+      const resolvedBaseAmountCents =
+        rideBaseAmountCents > 0 &&
+        rideBaseAmountCents === clientBaseAmountCents
+          ? rideBaseAmountCents
+          : clientBaseAmountCents;
+      const totalAmountCents = normalizedAmountCents;
+      if (totalAmountCents <= 0) {
+        throw new functions.https.HttpsError(
+          "failed-precondition",
+          "No charges are due for this ride."
+        );
+      }
+
+      const redirectBaseUrl = resolveCheckoutRedirectBaseUrl({
+        payload: data,
+      });
+      const description = sanitizeCheckoutDescription(
+        data.description ||
+          ride.toDestination ||
+          ride.dropoffAddress ||
+          "RideSync ride fare"
+      );
+
+      pendingRef = db.collection("pendingRidePayments").doc();
+      await pendingRef.set({
+        userId: uid,
+        pendingId: pendingRef.id,
+        rideId: normalizedRideId,
+        amountCents: totalAmountCents,
+        baseAmountCents: resolvedBaseAmountCents,
+        tipAmountCents,
+        currency: "usd",
+        checkoutMode: "stripe_checkout_existing_ride",
+        createdAt: FieldValue.serverTimestamp(),
+      });
+
+      const stripeClient = getStripeClient("createRideFareCheckoutSession");
       const session = await stripeClient.checkout.sessions.create({
         mode: "payment",
         line_items: [
@@ -3134,12 +3136,17 @@ exports.createRideFareCheckoutSession = functions
 
       return { url: session.url };
     } catch (err) {
-      console.error("[RideSync][Stripe] createRideFareCheckoutSession", err);
-      try {
-        await pendingRef.delete();
-      } catch (_) {
-        // best effort cleanup
+      if (pendingRef) {
+        try {
+          await pendingRef.delete();
+        } catch (_) {
+          // best effort cleanup
+        }
       }
+      if (err instanceof functions.https.HttpsError) {
+        throw err;
+      }
+      console.error("[RideSync][Stripe] createRideFareCheckoutSession", err);
       throw new functions.https.HttpsError(
         "internal",
         "Unable to create checkout session"
