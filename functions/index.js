@@ -2952,10 +2952,15 @@ exports.createRideFareCheckoutSession = functions
     }
 
     const rideBaseAmountCents = resolveRideFareAmountCents(ride);
+    const clientBaseAmountCents = Math.max(
+      0,
+      normalizedAmountCents - tipAmountCents
+    );
     const resolvedBaseAmountCents =
-      rideBaseAmountCents > 0
+      rideBaseAmountCents > 0 &&
+      rideBaseAmountCents === clientBaseAmountCents
         ? rideBaseAmountCents
-        : Math.max(0, normalizedAmountCents - tipAmountCents);
+        : clientBaseAmountCents;
     const totalAmountCents = normalizedAmountCents;
     if (totalAmountCents <= 0) {
       throw new functions.https.HttpsError(
