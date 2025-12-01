@@ -2920,6 +2920,9 @@ exports.createRidePaymentIntent = functions
           await stripeClient.paymentIntents.cancel(existingIntentId);
         }
       } catch (err) {
+        if (err instanceof functions.https.HttpsError) {
+          throw err;
+        }
         functions.logger.warn("Failed to cancel prior payment intent", {
           rideId,
           paymentIntentId: existingIntentId,
