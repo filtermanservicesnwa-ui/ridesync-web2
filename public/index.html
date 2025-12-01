@@ -6465,6 +6465,13 @@
       }
     }
 
+    function sanitizeDestinationLabel(value) {
+      if (typeof value !== "string") {
+        return "";
+      }
+      return value.trim().slice(0, 140);
+    }
+
     function buildRideFareSummary(ride = {}) {
       const pickupCandidate =
         ride.pickupAddress ||
