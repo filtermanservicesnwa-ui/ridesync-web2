@@ -56,6 +56,9 @@ const {
   extractUofaRideDetails,
   isUofaEligibleRide,
   isRideAvailableForPooling,
+  clampTipAmountCents,
+  validateTipBounds,
+  computeRideHoldAmountCents,
 } = require("../index").__testables;
 
 describe("fare calculation", () => {
@@ -142,5 +145,31 @@ describe("pooling logic", () => {
         driverId: "driver-123",
       })
     ).toBe(false);
+  });
+});
+
+describe("manual capture helpers", () => {
+  it("clamps tip amounts within provided bounds", () => {
+    expect(clampTipAmountCents(150, { min: 200, max: 1200 })).toBe(200);
+    expect(clampTipAmountCents(1800, { min: 200, max: 1200 })).toBe(1200);
+    expect(clampTipAmountCents(600, { min: 200, max: 1200 })).toBe(600);
+  });
+
+  it("validates tip selection with descriptive reasons", () => {
+    const valid = validateTipBounds(500, { min: 200, max: 1200 });
+    expect(valid.ok).toBe(true);
+    expect(valid.value).toBe(500);
+
+    const below = validateTipBounds(100, { min: 200, max: 1200 });
+    expect(below.ok).toBe(false);
+    expect(below.reason).toBe("below_min");
+
+    const above = validateTipBounds(1800, { min: 200, max: 1200 });
+    expect(above.ok).toBe(false);
+    expect(above.reason).toBe("above_max");
+  });
+
+  it("computes the hold amount using fare plus max tip", () => {
+    expect(computeRideHoldAmountCents(1500, 1200)).toBe(2700);
   });
 });

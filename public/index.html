@@ -1215,6 +1215,32 @@
       margin-top: 6px;
       display: none;
     }
+    .tip-adjust-card {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(148,163,184,0.4);
+      background: rgba(15,23,42,0.7);
+    }
+    .tip-adjust-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .tip-adjust-row input {
+      width: 90px;
+      padding: 6px;
+      text-align: center;
+    }
+    .tip-adjust-row button {
+      flex: 1 1 auto;
+    }
+    .tip-hint {
+      font-size: 12px;
+      color: rgba(226,232,240,0.85);
+      margin-top: 4px;
+    }
     .hidden {
       display: none !important;
     }
@@ -1758,6 +1784,32 @@
             <textarea id="riderFeedbackInput" placeholder="Anything we should know?"></textarea>
             <button id="submitRatingButton" class="btn-primary" type="button">Submit</button>
             <div id="ratingError" class="error"></div>
+          <div id="finalTipSection" class="tip-adjust-card" style="display:none;">
+            <div class="section-title" style="margin-top:0;">Adjust your tip</div>
+            <div class="tip-adjust-row">
+              <button id="finalTipDecrease" type="button" class="btn-secondary btn-small" aria-label="Decrease tip">
+                –
+              </button>
+              <input
+                id="finalTipInput"
+                type="number"
+                min="2"
+                step="1"
+                value="2"
+                aria-label="Tip amount in dollars"
+              />
+              <button id="finalTipIncrease" type="button" class="btn-secondary btn-small" aria-label="Increase tip">
+                +
+              </button>
+            </div>
+            <p id="finalTipHint" class="tip-hint">
+              Minimum $2.00 tip. You can increase it up to $12.00.
+            </p>
+            <button id="finalizeTipButton" class="btn-primary" type="button" style="margin-top:12px;">
+              Confirm tip & finish payment
+            </button>
+            <div id="finalizeTipMessage" class="small"></div>
+          </div>
           </div>
 
           <div id="riderStateThanks" class="rider-state">
@@ -1909,6 +1961,36 @@
           </div>
         </div>
       </div>
+      <div id="preauthTipSection" class="payment-tip-section" aria-live="polite">
+        <div class="section-title" style="margin-top:18px;">
+          Add a tip (you can change it after the ride)
+        </div>
+        <div id="preauthTipOptions" class="tip-options">
+          <button type="button" class="tip-button" data-tip="2">$2</button>
+          <button type="button" class="tip-button" data-tip="5">$5</button>
+          <button type="button" class="tip-button" data-tip="10">$10</button>
+          <button type="button" class="tip-button tip-custom" data-tip="custom">
+            Custom
+          </button>
+        </div>
+        <input
+          id="preauthTipCustomInput"
+          type="number"
+          min="2"
+          step="1"
+          placeholder="Custom tip"
+          style="display:none;"
+        />
+        <p id="preauthTipMessage" class="tip-hint">
+          We'll place a temporary hold for your fare plus up to $12.00 in tip.
+        </p>
+      </div>
+      <div class="fare-box" id="preauthHoldSummary" style="margin-top:12px;">
+        <div class="fare-row">
+          <div class="fare-label">Temporary hold</div>
+          <div class="fare-value" id="preauthHoldAmount">$0.00</div>
+        </div>
+      </div>
       <div id="paymentElement"></div>
       <button
         id="paymentOverlayConfirm"
@@ -1990,22 +2072,6 @@
         </div>
         <div id="rideFareDetails" class="ride-fare-details"></div>
       </div>
-      <div class="section-title" style="margin-top:16px;">Add a tip (optional)</div>
-      <div id="rideTipOptions" class="tip-options">
-        <button type="button" class="tip-button active" data-tip="0">$0</button>
-        <button type="button" class="tip-button" data-tip="2">$2</button>
-        <button type="button" class="tip-button" data-tip="5">$5</button>
-        <button type="button" class="tip-button" data-tip="10">$10</button>
-        <button type="button" class="tip-button tip-custom" data-tip="custom">Custom</button>
-      </div>
-      <input
-        id="rideTipCustomInput"
-        type="number"
-        min="0"
-        step="1"
-        placeholder="Custom tip"
-        style="display:none;"
-      />
       <div class="section-title" style="margin-top:18px;">Pay securely</div>
       <p class="small" id="rideCheckoutDetails">
         Stripe Checkout opens in a secure window so you can use any saved payment method.
@@ -2333,6 +2399,12 @@
 
     const stripeConfig = APP_CONFIG.stripe || {};
     const fareConfig = APP_CONFIG.fares || {};
+    const paymentConfig = APP_CONFIG.payments || {};
+    const MIN_RIDE_TIP_CENTS = 200;
+    const DEFAULT_MAX_TIP_CENTS = Math.max(
+      MIN_RIDE_TIP_CENTS,
+      Math.round(paymentConfig.maxTipHoldCents || 1200)
+    );
 
     function normalizeStripeKeyForMode(key, mode) {
       const trimmed = typeof key === "string" ? key.trim() : "";
@@ -2481,6 +2553,10 @@
     const confirmRidePaymentIntentFn = httpsCallable(
       functionsClient,
       "confirmRidePaymentIntent"
+    );
+    const captureRidePaymentIntentFn = httpsCallable(
+      functionsClient,
+      "captureRidePaymentIntent"
     );
     const createRidePaymentIntentFn = httpsCallable(
       functionsClient,
@@ -2882,6 +2958,19 @@
     const rideCardMessage = document.getElementById("rideCardMessage");
     const rideCheckoutButton = document.getElementById("rideCheckoutButton");
     const rideCheckoutMessage = document.getElementById("rideCheckoutMessage");
+    const preauthTipSection = document.getElementById("preauthTipSection");
+    const preauthTipOptions = document.getElementById("preauthTipOptions");
+    const preauthTipCustomInput = document.getElementById("preauthTipCustomInput");
+    const preauthTipMessage = document.getElementById("preauthTipMessage");
+    const preauthHoldAmount = document.getElementById("preauthHoldAmount");
+    const preauthHoldSummary = document.getElementById("preauthHoldSummary");
+    const finalTipSection = document.getElementById("finalTipSection");
+    const finalTipInput = document.getElementById("finalTipInput");
+    const finalTipDecrease = document.getElementById("finalTipDecrease");
+    const finalTipIncrease = document.getElementById("finalTipIncrease");
+    const finalTipHint = document.getElementById("finalTipHint");
+    const finalizeTipButton = document.getElementById("finalizeTipButton");
+    const finalizeTipMessage = document.getElementById("finalizeTipMessage");
 
     let latestRideForOverlay = null;
     const stripeInstancesByKey = new Map();
@@ -2908,6 +2997,25 @@
       livemode: null,
       intentRequestId: 0,
       clientSecretContext: null,
+    };
+
+    const ridePreauthState = {
+      rideId: null,
+      fareAmountCents: 0,
+      maxTipAmountCents: DEFAULT_MAX_TIP_CENTS,
+      selectedTipCents: MIN_RIDE_TIP_CENTS,
+      authAmountCents: 0,
+      pendingResolve: null,
+      pendingReject: null,
+    };
+
+    const rideTipCaptureState = {
+      rideId: null,
+      paymentIntentId: null,
+      maxTipAmountCents: DEFAULT_MAX_TIP_CENTS,
+      baseFareAmountCents: 0,
+      selectedTipCents: MIN_RIDE_TIP_CENTS,
+      submitting: false,
     };
 
     const RIDER_STATES = {
@@ -3074,6 +3182,7 @@
         hideGroupQr();
         updateCancelButtonVisibility();
         closeRideFareOverlay(true);
+        resetFinalTipUi();
       }
 
       function resetJoinModeUi() {
@@ -3107,6 +3216,7 @@
           profileMessage.textContent = message || "";
           profileError.textContent = "";
         }
+      resetFinalTipUi();
       maybeShowPostRideCooldown();
     }
 
@@ -3733,6 +3843,20 @@
       } catch (err) {
         return `$${value.toFixed(2)}`;
       }
+    }
+
+    function clampTipAmount(valueCents, minCents = MIN_RIDE_TIP_CENTS, maxCents = DEFAULT_MAX_TIP_CENTS) {
+      const normalized = Number.isFinite(valueCents) ? Math.round(valueCents) : 0;
+      const safeMin = Math.max(MIN_RIDE_TIP_CENTS, Math.round(minCents));
+      const safeMax = Math.max(safeMin, Math.round(maxCents));
+      return Math.min(Math.max(normalized, safeMin), safeMax);
+    }
+
+    function dollarsToCents(value) {
+      if (!Number.isFinite(Number(value))) {
+        return 0;
+      }
+      return Math.round(Number(value) * 100);
     }
 
     function formatPlanPriceLabel(planKey) {
@@ -5456,6 +5580,7 @@
       rememberRideCompletionContext(status, data);
       const destinationLabel =
         data.toDestination || data.toAddress || data.destAddress || "Destination";
+      refreshRideTipCaptureState(rideId, data);
 
       if (status === "canceled_by_driver" || status === "driver_declined") {
         const declineCopy =
@@ -5470,9 +5595,6 @@
         returnToHomeAfterRide("Ride canceled.");
         return;
       }
-
-      // Re-evaluate fare overlay on every ride update so basic-plan rides prompt immediately.
-      maybePromptRideFareOverlay(rideId, data);
 
       switch (status) {
         case "pending_driver":
@@ -5505,13 +5627,12 @@
           setRiderOverlayState(RIDER_STATES.DROPOFF_PIN);
           break;
         case "dropoff_code_verified":
-        case "completed":
-          if (rideRequiresFarePayment(data) > 0) {
-            setOverlayCopy(
-              "Payment required",
-              "Complete the fare overlay to finish this ride."
-            );
-            setRiderOverlayState(RIDER_STATES.THANKS);
+        case "completed": {
+          const needsCapture = rideRequiresFarePayment(data) > 0;
+          if (needsCapture) {
+            resetRatingForm();
+            setOverlayCopy("Rate & finish payment", "Adjust your tip and leave feedback.");
+            setRiderOverlayState(RIDER_STATES.RATE_TIP);
             break;
           }
           if (hasRiderRating(data)) {
@@ -5524,6 +5645,7 @@
             setRiderOverlayState(RIDER_STATES.RATE_TIP);
           }
           break;
+        }
         default:
           updateDriverModules(data);
           setOverlayCopy("Ride update", destinationLabel);
@@ -5705,6 +5827,25 @@
     }
     if (rideTipCustomInput) {
       rideTipCustomInput.addEventListener("input", handleRideTipCustomInput);
+    }
+    if (preauthTipOptions) {
+      preauthTipOptions.addEventListener("click", handlePreauthTipButtonClick);
+    }
+    if (preauthTipCustomInput) {
+      preauthTipCustomInput.addEventListener("input", handlePreauthTipCustomInput);
+    }
+    if (finalTipDecrease) {
+      finalTipDecrease.addEventListener("click", () => adjustFinalTip(-100));
+    }
+    if (finalTipIncrease) {
+      finalTipIncrease.addEventListener("click", () => adjustFinalTip(100));
+    }
+    if (finalTipInput) {
+      finalTipInput.addEventListener("change", handleFinalTipInputChange);
+      finalTipInput.addEventListener("input", handleFinalTipInputChange);
+    }
+    if (finalizeTipButton) {
+      finalizeTipButton.addEventListener("click", handleFinalizeTipSubmit);
     }
     if (rideCheckoutButton) {
       rideCheckoutButton.addEventListener("click", handleRideCheckoutSubmit);
@@ -6252,6 +6393,75 @@
       }
     }
 
+    function updatePreauthTipUi() {
+      if (preauthTipOptions) {
+        preauthTipOptions.querySelectorAll(".tip-button").forEach((btn) => {
+          const value = Number(btn.dataset.tip);
+          const cents = Number.isFinite(value) ? Math.round(value * 100) : null;
+          btn.classList.toggle(
+            "active",
+            cents !== null && cents === ridePreauthState.selectedTipCents
+          );
+        });
+      }
+      if (preauthTipCustomInput) {
+        const presetValues = new Set([200, 500, 1000]);
+        const useCustom = !presetValues.has(ridePreauthState.selectedTipCents);
+        preauthTipCustomInput.style.display = useCustom ? "block" : "none";
+        preauthTipCustomInput.value = useCustom
+          ? (ridePreauthState.selectedTipCents / 100).toFixed(2)
+          : "";
+      }
+      if (preauthHoldAmount) {
+        const hold =
+          ridePreauthState.fareAmountCents + ridePreauthState.maxTipAmountCents;
+        preauthHoldAmount.textContent = formatCurrencyFromCents(hold, "usd");
+      }
+      if (preauthTipMessage) {
+        preauthTipMessage.textContent = `We’ll place a temporary hold for your fare plus up to ${formatCurrencyFromCents(
+          ridePreauthState.maxTipAmountCents,
+          "usd"
+        )}. Minimum tip after the ride is $${(MIN_RIDE_TIP_CENTS / 100).toFixed(
+          2
+        )}.`;
+      }
+    }
+
+    function handlePreauthTipButtonClick(event) {
+      const button = event.target.closest(".tip-button");
+      if (!button) return;
+      const value = button.dataset.tip;
+      if (value === "custom") {
+        if (preauthTipCustomInput) {
+          preauthTipCustomInput.style.display = "block";
+          preauthTipCustomInput.focus();
+          preauthTipCustomInput.value = "";
+        }
+        return;
+      }
+      const dollars = Number(value);
+      if (!Number.isFinite(dollars)) {
+        return;
+      }
+      ridePreauthState.selectedTipCents = clampTipAmount(
+        Math.round(dollars * 100),
+        MIN_RIDE_TIP_CENTS,
+        ridePreauthState.maxTipAmountCents
+      );
+      updatePreauthTipUi();
+    }
+
+    function handlePreauthTipCustomInput() {
+      if (!preauthTipCustomInput) return;
+      const cents = dollarsToCents(preauthTipCustomInput.value);
+      ridePreauthState.selectedTipCents = clampTipAmount(
+        cents,
+        MIN_RIDE_TIP_CENTS,
+        ridePreauthState.maxTipAmountCents
+      );
+      updatePreauthTipUi();
+    }
+
     function closeRideFareOverlay(force = false) {
       if (!rideFareOverlay) return;
       const hasActivePayment =
@@ -6549,6 +6759,7 @@
     const PAYMENT_STATUSES_REQUIRING_COLLECTION = new Set([
       "fare_due",
       "preauthorized",
+      "preauth_pending",
       "pending", // basic plan rides start as pending until paid
       "pending_payment",
     ]);
@@ -6711,6 +6922,142 @@
       } catch (err) {
         console.warn("Failed to update ride payment status", err);
         showErrorBanner(err.message || PAYMENT_ERROR_FALLBACK);
+      }
+    }
+
+    function refreshRideTipCaptureState(rideId, rideData = {}) {
+      const paymentStatus = (rideData.paymentStatus || "").toLowerCase();
+      const rideStatus = (rideData.status || "").toLowerCase();
+      const needsCapture =
+        PAYMENT_STATUSES_REQUIRING_COLLECTION.has(paymentStatus) &&
+        typeof rideData.stripePaymentIntentId === "string" &&
+        ["dropoff_code_verified", "completed"].includes(rideStatus);
+      if (!needsCapture) {
+        resetFinalTipUi();
+        return;
+      }
+      rideTipCaptureState.rideId = rideId;
+      rideTipCaptureState.paymentIntentId = rideData.stripePaymentIntentId;
+      rideTipCaptureState.maxTipAmountCents = Math.max(
+        MIN_RIDE_TIP_CENTS,
+        Math.round(rideData.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS)
+      );
+      rideTipCaptureState.baseFareAmountCents = Math.max(
+        0,
+        Math.round(
+          rideData.fareBaseAmountCents ||
+            rideData.stripeAmountCents ||
+            resolveRideCheckoutAmountCents(rideData) ||
+            0
+        )
+      );
+      rideTipCaptureState.selectedTipCents = clampTipAmount(
+        Math.round(rideData.tipAmountCents || MIN_RIDE_TIP_CENTS),
+        MIN_RIDE_TIP_CENTS,
+        rideTipCaptureState.maxTipAmountCents
+      );
+      updateFinalTipUi();
+    }
+
+    function resetFinalTipUi() {
+      rideTipCaptureState.rideId = null;
+      rideTipCaptureState.paymentIntentId = null;
+      rideTipCaptureState.baseFareAmountCents = 0;
+      if (finalTipSection) {
+        finalTipSection.style.display = "none";
+      }
+      if (finalizeTipMessage) {
+        finalizeTipMessage.textContent = "";
+      }
+      if (finalizeTipButton) {
+        finalizeTipButton.disabled = false;
+      }
+    }
+
+    function updateFinalTipUi() {
+      if (!finalTipSection) return;
+      const shouldShow =
+        rideTipCaptureState.rideId &&
+        rideTipCaptureState.paymentIntentId &&
+        rideTipCaptureState.baseFareAmountCents > 0;
+      finalTipSection.style.display = shouldShow ? "block" : "none";
+      if (!shouldShow) {
+        if (finalizeTipMessage) finalizeTipMessage.textContent = "";
+        return;
+      }
+      if (finalTipInput) {
+        finalTipInput.value = (rideTipCaptureState.selectedTipCents / 100).toFixed(2);
+      }
+      if (finalTipHint) {
+        finalTipHint.textContent = `Minimum $${(MIN_RIDE_TIP_CENTS / 100).toFixed(
+          2
+        )}. You can tip up to ${formatCurrencyFromCents(
+          rideTipCaptureState.maxTipAmountCents,
+          "usd"
+        )}.`;
+      }
+      if (finalizeTipMessage) {
+        finalizeTipMessage.textContent = "";
+      }
+      if (finalizeTipButton) {
+        finalizeTipButton.disabled = false;
+      }
+    }
+
+    function adjustFinalTip(deltaCents) {
+      const nextValue = rideTipCaptureState.selectedTipCents + deltaCents;
+      rideTipCaptureState.selectedTipCents = clampTipAmount(
+        nextValue,
+        MIN_RIDE_TIP_CENTS,
+        rideTipCaptureState.maxTipAmountCents
+      );
+      updateFinalTipUi();
+    }
+
+    function handleFinalTipInputChange() {
+      if (!finalTipInput) return;
+      rideTipCaptureState.selectedTipCents = clampTipAmount(
+        dollarsToCents(finalTipInput.value),
+        MIN_RIDE_TIP_CENTS,
+        rideTipCaptureState.maxTipAmountCents
+      );
+      updateFinalTipUi();
+    }
+
+    async function handleFinalizeTipSubmit() {
+      if (rideTipCaptureState.submitting) return;
+      if (!rideTipCaptureState.rideId || !rideTipCaptureState.paymentIntentId) {
+        if (finalizeTipMessage) {
+          finalizeTipMessage.textContent = "Payment hold not found.";
+        }
+        return;
+      }
+      rideTipCaptureState.submitting = true;
+      if (finalizeTipButton) {
+        finalizeTipButton.disabled = true;
+      }
+      if (finalizeTipMessage) {
+        finalizeTipMessage.textContent = "Finishing payment…";
+      }
+      try {
+        await captureRidePaymentIntentFn({
+          rideId: rideTipCaptureState.rideId,
+          paymentIntentId: rideTipCaptureState.paymentIntentId,
+          finalTipAmount: rideTipCaptureState.selectedTipCents,
+          finalFareAmount: rideTipCaptureState.baseFareAmountCents,
+        });
+        if (finalizeTipMessage) {
+          finalizeTipMessage.textContent = "Payment complete. Thank you!";
+        }
+      } catch (err) {
+        if (finalizeTipMessage) {
+          finalizeTipMessage.textContent = err?.message || PAYMENT_ERROR_FALLBACK;
+        }
+        if (finalizeTipButton) {
+          finalizeTipButton.disabled = false;
+        }
+      } finally {
+        rideTipCaptureState.submitting = false;
       }
     }
 
@@ -7008,6 +7355,10 @@
         const context = activePaymentContext;
         hidePaymentRedirectOverlay();
         closePaymentOverlay();
+        if (context?.type === "ride_preauth") {
+          rejectRidePreauthFlow(new Error("Payment hold canceled."));
+          return;
+        }
         if (context?.type === "ride") {
           profileMessage.textContent = "Ride payment canceled. Ride not requested.";
         } else if (context?.type === "membership" && membershipCardMessage) {
@@ -7026,6 +7377,10 @@
           const context = activePaymentContext;
           hidePaymentRedirectOverlay();
           closePaymentOverlay();
+          if (context?.type === "ride_preauth") {
+            rejectRidePreauthFlow(new Error("Payment hold canceled."));
+            return;
+          }
           if (context?.type === "ride") {
             profileMessage.textContent = "Ride payment canceled. Ride not requested.";
           } else if (context?.type === "membership" && membershipCardMessage) {
@@ -7124,6 +7479,7 @@
       if (useStripePaymentElement && !options.clientSecret) {
         throw new Error("Stripe client secret missing.");
       }
+      const isRidePreauth = options.context?.type === "ride_preauth";
       logStripeDebug("openPaymentOverlay", {
         title: options.title,
         contextType: options.context?.type,
@@ -7166,7 +7522,9 @@
         paymentOverlaySubtitle.textContent = options.subtitle || "";
       }
       if (paymentOverlayConfirm) {
-        paymentOverlayConfirm.textContent = options.confirmLabel || "Pay now";
+        paymentOverlayConfirm.textContent =
+          options.confirmLabel ||
+          (isRidePreauth ? "Authorize hold" : "Pay now");
         paymentOverlayConfirm.disabled = false;
       }
       if (paymentOverlayMessage) {
@@ -7174,6 +7532,15 @@
       }
       paymentOverlay?.classList.add("active");
       paymentOverlay?.setAttribute("aria-hidden", "false");
+      if (paymentFareSummary) {
+        paymentFareSummary.style.display = isRidePreauth ? "" : "none";
+      }
+      if (preauthTipSection) {
+        preauthTipSection.style.display = isRidePreauth ? "" : "none";
+      }
+      if (preauthHoldSummary) {
+        preauthHoldSummary.style.display = isRidePreauth ? "" : "none";
+      }
       if (paymentFareSummary) {
         paymentFareSummary.style.display =
           options.context?.type === "ride" ? "" : "none";
@@ -7287,10 +7654,30 @@
         if (result.error) {
           throw new Error(result.error.message || "Payment failed.");
         }
-        if (!result.paymentIntent || result.paymentIntent.status !== "succeeded") {
+        const paymentIntent = result.paymentIntent;
+        if (!paymentIntent) {
           throw new Error("Payment did not complete.");
         }
-        await handlePaymentSuccess(result.paymentIntent, activePaymentContext);
+        const paymentIntentStatus = paymentIntent.status;
+        const isRidePreauth = activePaymentContext?.type === "ride_preauth";
+        if (isRidePreauth) {
+          if (
+            paymentIntentStatus !== "requires_capture" &&
+            paymentIntentStatus !== "succeeded"
+          ) {
+            throw new Error("Payment did not complete.");
+          }
+          await handleRidePreauthConfirmation(
+            paymentIntent,
+            activePaymentContext
+          );
+          closePaymentOverlay();
+          return;
+        }
+        if (paymentIntentStatus !== "succeeded") {
+          throw new Error("Payment did not complete.");
+        }
+        await handlePaymentSuccess(paymentIntent, activePaymentContext);
         closePaymentOverlay();
       } catch (err) {
         console.error("confirmActivePayment", err);
@@ -7614,6 +8001,92 @@
       };
     }
 
+    function resolveRidePreauthFlow(value) {
+      if (ridePreauthState.pendingResolve) {
+        ridePreauthState.pendingResolve(value);
+        ridePreauthState.pendingResolve = null;
+      }
+      ridePreauthState.pendingReject = null;
+    }
+
+    function rejectRidePreauthFlow(error) {
+      if (ridePreauthState.pendingReject) {
+        ridePreauthState.pendingReject(error);
+        ridePreauthState.pendingReject = null;
+      }
+      ridePreauthState.pendingResolve = null;
+    }
+
+    async function handleRidePreauthConfirmation(paymentIntent, context = {}) {
+      if (!context.rideId || !paymentIntent?.id) {
+        throw new Error("Ride reference missing for payment confirmation.");
+      }
+      await confirmRidePaymentIntentFn({
+        rideId: context.rideId,
+        paymentIntentId: paymentIntent.id,
+      });
+      profileMessage.textContent = "Payment method saved. Syncing your ride.";
+      profileError.textContent = "";
+      resolveRidePreauthFlow(paymentIntent);
+    }
+
+    async function runRidePreauthFlow({ rideId, fareAmountCents }) {
+      if (!rideId || !fareAmountCents) {
+        return;
+      }
+      ridePreauthState.rideId = rideId;
+      ridePreauthState.fareAmountCents = fareAmountCents;
+      ridePreauthState.maxTipAmountCents = DEFAULT_MAX_TIP_CENTS;
+      ridePreauthState.selectedTipCents = clampTipAmount(
+        ridePreauthState.selectedTipCents,
+        MIN_RIDE_TIP_CENTS,
+        ridePreauthState.maxTipAmountCents
+      );
+      updatePreauthTipUi();
+
+      return new Promise(async (resolve, reject) => {
+        ridePreauthState.pendingResolve = resolve;
+        ridePreauthState.pendingReject = reject;
+        try {
+          const response = await createRidePaymentIntentFn({
+            rideId,
+            maxTipAmountCents: ridePreauthState.maxTipAmountCents,
+            initialTipAmountCents: ridePreauthState.selectedTipCents,
+          });
+          const payload = response?.data || response || {};
+          ridePreauthState.maxTipAmountCents = Math.max(
+            MIN_RIDE_TIP_CENTS,
+            Math.round(payload.maxTipAmountCents || ridePreauthState.maxTipAmountCents)
+          );
+          ridePreauthState.selectedTipCents = clampTipAmount(
+            payload.initialTipAmountCents ?? ridePreauthState.selectedTipCents,
+            MIN_RIDE_TIP_CENTS,
+            ridePreauthState.maxTipAmountCents
+          );
+          ridePreauthState.authAmountCents =
+            Math.max(
+              0,
+              Math.round(payload.authAmountCents || 0)
+            ) || fareAmountCents + ridePreauthState.maxTipAmountCents;
+          updatePreauthTipUi();
+          await openPaymentOverlay({
+            title: "Save your payment method",
+            subtitle: "We’ll place a temporary hold for your fare plus tip.",
+            clientSecret: payload.clientSecret,
+            livemode: payload.livemode ?? null,
+            context: {
+              type: "ride_preauth",
+              rideId,
+            },
+          });
+        } catch (err) {
+          ridePreauthState.pendingResolve = null;
+          ridePreauthState.pendingReject = null;
+          reject(err);
+        }
+      });
+    }
+
     async function handleNewRide() {
       const user = auth.currentUser;
       if (!user) return;
@@ -7728,6 +8201,7 @@
         extraStops: extraStopsPayload,
         status
       };
+      let rideCreationResult = null;
       try {
         if (syncButton) {
           syncButton.disabled = true;
@@ -7746,18 +8220,32 @@
           }
         });
         const result = response?.data || {};
+        rideCreationResult = result;
         if (!result.rideId) {
           throw new Error(result?.message || "Ride was not created.");
         }
         const requiresPayment = Number(result.amountCents || 0) > 0;
-        profileMessage.textContent = requiresPayment
-          ? "Ride synced! Pay when the ride ends."
-          : "Ride synced! Your membership covers this fare.";
-        profileError.textContent = "";
+        if (requiresPayment) {
+          await runRidePreauthFlow({
+            rideId: result.rideId,
+            fareAmountCents: Math.max(0, Math.round(result.amountCents || 0)),
+          });
+        } else {
+          profileMessage.textContent = "Ride synced! Your membership covers this fare.";
+          profileError.textContent = "";
+        }
         activateRideAfterCreation(result.rideId, result.ride || rideBase);
       } catch (err) {
         console.error("New ride error", err);
+        if (rideCreationResult?.rideId) {
+          try {
+            await cancelRideRequestFn({ rideId: rideCreationResult.rideId });
+          } catch (_) {
+            // best effort
+          }
+        }
         profileError.textContent = err.message || "Could not start this ride.";
+        profileMessage.textContent = "";
       } finally {
         if (syncButton) {
           syncButton.disabled = false;

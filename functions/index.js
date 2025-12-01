@@ -345,6 +345,67 @@ function resolveFareConstants() {
 
 const FARE_CONSTANTS = resolveFareConstants();
 
+const MIN_RIDE_TIP_CENTS = 200;
+const DEFAULT_MAX_TIP_CENTS = 1200;
+const MAX_ALLOWED_TIP_CENTS = 5000;
+
+function clampTipAmountCents(value, { min = 0, max = MAX_ALLOWED_TIP_CENTS } = {}) {
+  const normalized = sanitizeTipAmountInput(value);
+  const safeMin = Math.max(0, Math.round(min || 0));
+  const requestedMax = Number.isFinite(max) ? Math.round(max) : MAX_ALLOWED_TIP_CENTS;
+  const safeMax = Math.max(safeMin, Math.min(MAX_ALLOWED_TIP_CENTS, requestedMax));
+  return Math.min(Math.max(normalized, safeMin), safeMax);
+}
+
+function normalizeMaxTipAmountCents(value) {
+  return clampTipAmountCents(
+    value ?? DEFAULT_MAX_TIP_CENTS,
+    {
+      min: MIN_RIDE_TIP_CENTS,
+      max: MAX_ALLOWED_TIP_CENTS,
+    }
+  );
+}
+
+function validateTipBounds(tipAmountCents, bounds = {}) {
+  const min = Math.max(0, Math.round(bounds.min ?? MIN_RIDE_TIP_CENTS));
+  const max = Math.max(min, Math.round(bounds.max ?? DEFAULT_MAX_TIP_CENTS));
+  const value = sanitizeTipAmountInput(tipAmountCents);
+  if (value < min) {
+    return {
+      ok: false,
+      reason: "below_min",
+      value,
+      min,
+      max,
+    };
+  }
+  if (value > max) {
+    return {
+      ok: false,
+      reason: "above_max",
+      value,
+      min,
+      max,
+    };
+  }
+  return {
+    ok: true,
+    value,
+    min,
+    max,
+  };
+}
+
+function computeRideHoldAmountCents(fareAmountCents, maxTipAmountCents) {
+  const fare = Math.max(0, Math.round(fareAmountCents || 0));
+  const tip = clampTipAmountCents(maxTipAmountCents, {
+    min: MIN_RIDE_TIP_CENTS,
+    max: MAX_ALLOWED_TIP_CENTS,
+  });
+  return fare + tip;
+}
+
 function sanitizeTipAmountInput(value) {
   if (value === null || value === undefined || value === "") {
     return 0;
@@ -2777,52 +2838,13 @@ exports.createRideCheckoutSessionCallable = functions
     }
   });
 
-// === RIDE SYNC STRIPE: START createRidePaymentIntent ===
+// === RIDE SYNC STRIPE: START createRidePaymentIntent (manual capture) ===
 exports.createRidePaymentIntent = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
   .https.onCall(async (data = {}, context) => {
     const uid = requireAuth(context);
-    const amountRaw = data?.amount ?? data?.amountCents ?? data?.amount_cents;
-    const amount = Number(amountRaw);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "A positive amount (in cents) is required."
-      );
-    }
-    const normalizedAmount = Math.round(amount);
-
-    const tipRaw =
-      data?.tipAmountCents ??
-      data?.tipAmount ??
-      data?.tip_cents ??
-      data?.tip;
-    let tipAmountCents = 0;
-    if (
-      tipRaw !== undefined &&
-      tipRaw !== null &&
-      tipRaw !== "" &&
-      Number.isFinite(Number(tipRaw))
-    ) {
-      tipAmountCents = Math.max(0, Math.round(Number(tipRaw)));
-    }
-    if (tipAmountCents > 20000) {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Tip amount is too large."
-      );
-    }
-
-    const currencyInput =
-      typeof data?.currency === "string" && data.currency.trim()
-        ? data.currency.trim().toLowerCase()
-        : "usd";
-    const rideId =
-      typeof data?.rideId === "string"
-        ? data.rideId
-        : typeof data?.ride_id === "string"
-        ? data.ride_id
-        : "";
+    const rawRideId = data?.rideId || data?.ride_id || "";
+    const rideId = typeof rawRideId === "string" ? rawRideId.trim() : "";
     if (!rideId) {
       throw new functions.https.HttpsError(
         "invalid-argument",
@@ -2842,53 +2864,118 @@ exports.createRidePaymentIntent = functions
     if (rideData.userId && rideData.userId !== uid) {
       throw new functions.https.HttpsError(
         "permission-denied",
-        "Cannot pay for another rider's fare."
+        "Cannot create a payment intent for another rider."
+      );
+    }
+    if ((rideData.paymentStatus || "").toLowerCase() === "paid") {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This ride is already paid."
       );
     }
 
-    const expectedAmountRaw = Number(rideData.stripeAmountCents);
-    const expectedAmountCents = Math.round(expectedAmountRaw);
-    if (!Number.isFinite(expectedAmountCents) || expectedAmountCents <= 0) {
+    const fareAmountCents = Math.max(
+      0,
+      Math.round(rideData.stripeAmountCents || resolveRideFareAmountCents(rideData))
+    );
+    if (!fareAmountCents) {
       throw new functions.https.HttpsError(
         "failed-precondition",
-        "Unable to determine ride fare for payment."
-      );
-    }
-    const totalAmountCents = expectedAmountCents + tipAmountCents;
-    if (normalizedAmount !== totalAmountCents) {
-      throw new functions.https.HttpsError(
-        "failed-precondition",
-        "Ride fare mismatch. Refresh and try again."
+        "Ride fare is unavailable. Refresh and try again."
       );
     }
 
-    const currencyToCharge =
-      typeof rideData.stripeCurrency === "string" &&
-      rideData.stripeCurrency.trim()
-        ? rideData.stripeCurrency.trim().toLowerCase()
-        : currencyInput;
+    const maxTipAmountCents = normalizeMaxTipAmountCents(
+      data?.maxTipAmountCents ??
+        data?.maxTipAmount ??
+        data?.max_tip_amount_cents
+    );
+    const initialTipValidation = validateTipBounds(
+      data?.initialTipAmountCents ??
+        data?.initialTipAmount ??
+        data?.tipAmountCents ??
+        data?.tipAmount ??
+        MIN_RIDE_TIP_CENTS,
+      {
+        min: MIN_RIDE_TIP_CENTS,
+        max: maxTipAmountCents,
+      }
+    );
+    if (!initialTipValidation.ok) {
+      const reason =
+        initialTipValidation.reason === "below_min"
+          ? `Tip must be at least $${(initialTipValidation.min / 100).toFixed(2)}.`
+          : `Tip cannot exceed $${(initialTipValidation.max / 100).toFixed(2)}.`;
+      throw new functions.https.HttpsError("invalid-argument", reason);
+    }
+    const initialTipAmountCents = initialTipValidation.value;
+    const authAmountCents = computeRideHoldAmountCents(
+      fareAmountCents,
+      maxTipAmountCents
+    );
 
     const stripeClient = getStripeClient("createRidePaymentIntent");
+    const existingIntentId = rideData.stripePaymentIntentId || null;
+    if (existingIntentId) {
+      try {
+        const existingIntent = await stripeClient.paymentIntents.retrieve(
+          existingIntentId
+        );
+        if (existingIntent && existingIntent.status === "requires_capture") {
+          throw new functions.https.HttpsError(
+            "failed-precondition",
+            "Ride payment has already been preauthorized."
+          );
+        }
+        if (existingIntent && existingIntent.status !== "canceled") {
+          await stripeClient.paymentIntents.cancel(existingIntentId);
+        }
+      } catch (err) {
+        if (err instanceof functions.https.HttpsError) {
+          throw err;
+        }
+        functions.logger.warn("Failed to cancel prior payment intent", {
+          rideId,
+          paymentIntentId: existingIntentId,
+          error: err?.message || err,
+        });
+      }
+    }
 
     try {
       const paymentIntent = await stripeClient.paymentIntents.create({
-        amount: totalAmountCents,
-        currency: currencyToCharge,
+        amount: authAmountCents,
+        currency: "usd",
+        capture_method: "manual",
         automatic_payment_methods: { enabled: true },
         metadata: {
           rideId,
           userId: uid,
-          type: "ride_fare",
-          base_amount_cents: expectedAmountCents,
-          tip_amount_cents: tipAmountCents,
+          fareAmountCents,
+          maxTipAmountCents,
+          initialTipAmountCents,
+          purpose: "ride_manual_capture",
         },
+      });
+
+      await rideRef.update({
+        stripePaymentIntentId: paymentIntent.id,
+        paymentStatus: "preauth_pending",
+        paymentAuthAmountCents: authAmountCents,
+        fareBaseAmountCents: fareAmountCents,
+        maxTipAmountCents,
+        tipAmountCents: initialTipAmountCents,
+        tipAmount: initialTipAmountCents / 100,
+        updatedAt: FieldValue.serverTimestamp(),
       });
 
       return {
         clientSecret: paymentIntent.client_secret,
-        amountCents: totalAmountCents,
-        baseAmountCents: expectedAmountCents,
-        tipAmountCents,
+        paymentIntentId: paymentIntent.id,
+        authAmountCents,
+        fareAmountCents,
+        maxTipAmountCents,
+        initialTipAmountCents,
         livemode: paymentIntent?.livemode ?? null,
       };
     } catch (err) {
@@ -2899,7 +2986,7 @@ exports.createRidePaymentIntent = functions
       );
     }
   });
-// === RIDE SYNC STRIPE: END createRidePaymentIntent ===
+// === RIDE SYNC STRIPE: END createRidePaymentIntent (manual capture) ===
 
 exports.createRideFareCheckoutSession = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
@@ -4148,31 +4235,182 @@ exports.confirmRidePaymentIntent = functions
         "Payment intent is associated with another user."
       );
     }
+    const metadataFare = Number(intent.metadata?.fareAmountCents) ||
+      Number(intent.metadata?.base_amount_cents) ||
+      Math.max(0, Math.round(ride.stripeAmountCents || resolveRideFareAmountCents(ride)));
+    const metadataMaxTip =
+      Number(intent.metadata?.maxTipAmountCents) ||
+      Math.max(MIN_RIDE_TIP_CENTS, Math.round(ride.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS));
+    const metadataInitialTip =
+      Number(intent.metadata?.initialTipAmountCents) ||
+      Number(intent.metadata?.tip_amount_cents) ||
+      MIN_RIDE_TIP_CENTS;
+
+    if (intent.status === "requires_capture") {
+      const normalizedInitialTip = clampTipAmountCents(metadataInitialTip, {
+        min: MIN_RIDE_TIP_CENTS,
+        max: metadataMaxTip,
+      });
+      await rideRef.update({
+        paymentStatus: "preauthorized",
+        stripePaymentIntentId: intent.id,
+        stripeAmountCents: metadataFare,
+        stripeAmount: metadataFare / 100,
+        stripeCurrency: intent.currency || "usd",
+        fareBaseAmountCents: metadataFare,
+        maxTipAmountCents: metadataMaxTip,
+        tipAmountCents: normalizedInitialTip,
+        tipAmount: normalizedInitialTip / 100,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return { status: "preauthorized" };
+    }
+
     if (intent.status !== "succeeded") {
       throw new functions.https.HttpsError(
         "failed-precondition",
-        "Stripe has not confirmed this payment yet."
+        `Stripe payment is ${intent.status}.`
       );
     }
 
     const amountReceived = Number(intent.amount_received || intent.amount || 0);
-    const baseAmountCents = Number(intent.metadata?.base_amount_cents) || amountReceived;
-    const tipAmountCents = Number(intent.metadata?.tip_amount_cents) || 0;
+    const tipAmountCents =
+      amountReceived - metadataFare >= 0 ? amountReceived - metadataFare : 0;
 
     await rideRef.update({
       paymentStatus: "paid",
       stripePaymentIntentId: intent.id,
-      stripeAmountCents: amountReceived,
-      stripeAmount: amountReceived / 100,
+      stripeAmountCents: metadataFare,
+      stripeAmount: metadataFare / 100,
       stripeCurrency: intent.currency || "usd",
-      fareBaseAmountCents: baseAmountCents,
+      fareBaseAmountCents: metadataFare,
       tipAmountCents,
       tipAmount: tipAmountCents / 100,
       tipCurrency: intent.currency || "usd",
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    return { status: "updated" };
+    return { status: "paid" };
+  });
+
+exports.captureRidePaymentIntent = functions
+  .runWith({ secrets: STRIPE_SECRET_PARAMS })
+  .https.onCall(async (data = {}, context) => {
+    const uid = requireAuth(context);
+    const rideId = typeof data?.rideId === "string" ? data.rideId.trim() : "";
+    const paymentIntentId = typeof data?.paymentIntentId === "string"
+      ? data.paymentIntentId.trim()
+      : "";
+    const finalTipInput =
+      data?.finalTipAmount ??
+      data?.finalTipAmountCents ??
+      data?.tipAmount ??
+      data?.tipAmountCents;
+    if (!rideId || !paymentIntentId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Ride ID and payment intent ID are required."
+      );
+    }
+
+    const rideRef = db.collection("rideRequests").doc(rideId);
+    const rideSnap = await rideRef.get();
+    if (!rideSnap.exists) {
+      throw new functions.https.HttpsError("not-found", "Ride not found.");
+    }
+    const ride = rideSnap.data() || {};
+    if (ride.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "You can only capture payments for your own rides."
+      );
+    }
+
+    const stripeClient = getStripeClient("captureRidePaymentIntent");
+    const intent = await stripeClient.paymentIntents.retrieve(paymentIntentId);
+    if (intent.metadata?.rideId !== rideId) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Payment intent does not belong to this ride."
+      );
+    }
+    if (intent.metadata?.userId !== uid) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Payment intent is associated with another user."
+      );
+    }
+    if (intent.status !== "requires_capture") {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        `Payment intent is ${intent.status}, not ready for capture.`
+      );
+    }
+
+    const baseFareAmountCents = Math.max(
+      0,
+      Math.round(
+        ride.fareBaseAmountCents ||
+          ride.stripeAmountCents ||
+          Number(intent.metadata?.fareAmountCents) ||
+          resolveRideFareAmountCents(ride)
+      )
+    );
+    if (!baseFareAmountCents) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Ride fare is missing."
+      );
+    }
+
+    const maxTipFromMetadata =
+      Number(intent.metadata?.maxTipAmountCents) ||
+      Math.max(
+        MIN_RIDE_TIP_CENTS,
+        Math.round(ride.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS)
+      );
+    const tipValidation = validateTipBounds(finalTipInput, {
+      min: MIN_RIDE_TIP_CENTS,
+      max: maxTipFromMetadata,
+    });
+    if (!tipValidation.ok) {
+      const reason =
+        tipValidation.reason === "below_min"
+          ? `Tip must be at least $${(tipValidation.min / 100).toFixed(2)}.`
+          : `Tip cannot exceed $${(tipValidation.max / 100).toFixed(2)}.`;
+      throw new functions.https.HttpsError("invalid-argument", reason);
+    }
+    const finalTipAmountCents = tipValidation.value;
+    const amountToCapture = baseFareAmountCents + finalTipAmountCents;
+    if (amountToCapture > Number(intent.amount)) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Capture amount exceeds the authorized amount."
+      );
+    }
+
+    await stripeClient.paymentIntents.capture(paymentIntentId, {
+      amount_to_capture: amountToCapture,
+    });
+
+    await rideRef.update({
+      paymentStatus: "paid",
+      stripePaymentIntentId: paymentIntentId,
+      stripeAmountCents: baseFareAmountCents,
+      stripeAmount: baseFareAmountCents / 100,
+      stripeCurrency: intent.currency || "usd",
+      fareBaseAmountCents: baseFareAmountCents,
+      tipAmountCents: finalTipAmountCents,
+      tipAmount: finalTipAmountCents / 100,
+      tipCurrency: intent.currency || "usd",
+      stripeCapturedAmountCents: amountToCapture,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return {
+      status: "paid",
+      amountCents: amountToCapture,
+    };
   });
 
 exports.getDriverAvailabilityStats = functions.https.onCall(async (_data, context) => {
@@ -4253,4 +4491,7 @@ exports.__testables = {
   extractUofaRideDetails,
   isUofaEligibleRide,
   isRideAvailableForPooling,
+  clampTipAmountCents,
+  validateTipBounds,
+  computeRideHoldAmountCents,
 };
