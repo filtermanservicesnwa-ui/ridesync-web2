@@ -7621,18 +7621,24 @@
         if (result.error) {
           throw new Error(result.error.message || "Payment failed.");
         }
-        if (!result.paymentIntent || result.paymentIntent.status !== "succeeded") {
+        const paymentIntent = result.paymentIntent;
+        const isRidePreauth = activePaymentContext?.type === "ride_preauth";
+        if (
+          !paymentIntent ||
+          (paymentIntent.status !== "succeeded" &&
+            !(isRidePreauth && paymentIntent.status === "requires_capture"))
+        ) {
           throw new Error("Payment did not complete.");
         }
-        if (activePaymentContext?.type === "ride_preauth") {
+        if (isRidePreauth) {
           await handleRidePreauthConfirmation(
-            result.paymentIntent,
+            paymentIntent,
             activePaymentContext
           );
           closePaymentOverlay();
           return;
         }
-        await handlePaymentSuccess(result.paymentIntent, activePaymentContext);
+        await handlePaymentSuccess(paymentIntent, activePaymentContext);
         closePaymentOverlay();
       } catch (err) {
         console.error("confirmActivePayment", err);
