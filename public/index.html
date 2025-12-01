@@ -5434,6 +5434,9 @@
         return;
       }
 
+      // Re-evaluate fare overlay on every ride update so basic-plan rides prompt immediately.
+      maybePromptRideFareOverlay(rideId, data);
+
       switch (status) {
         case "pending_driver":
         case "pending":
@@ -5466,7 +5469,6 @@
           break;
         case "dropoff_code_verified":
         case "completed":
-          maybePromptRideFareOverlay(rideId, data);
           if (rideRequiresFarePayment(data) > 0) {
             setOverlayCopy(
               "Payment required",
