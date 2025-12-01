@@ -2893,17 +2893,31 @@ exports.createRidePaymentIntent = functions
 exports.createRideFareCheckoutSession = functions
   .runWith({ secrets: STRIPE_SECRET_PARAMS })
   .https.onCall(async (data = {}, context) => {
+    const { amount, rideId } = data || {};
     const uid = requireAuth(context);
-    const rideId =
-      typeof data.rideId === "string"
-        ? data.rideId
-        : typeof data.ride_id === "string"
-        ? data.ride_id
-        : null;
-    if (!rideId) {
+    const normalizedRideId =
+      typeof rideId === "string" && rideId.trim() ? rideId.trim() : null;
+    if (!normalizedRideId) {
       throw new functions.https.HttpsError(
         "invalid-argument",
         "rideId is required."
+      );
+    }
+
+    const amountInput =
+      amount ??
+      data?.amountCents ??
+      data?.amount_cents ??
+      data?.totalAmountCents ??
+      data?.total_amount_cents ??
+      null;
+    const normalizedAmountCents = Number.isFinite(Number(amountInput))
+      ? Math.max(0, Math.round(Number(amountInput)))
+      : 0;
+    if (normalizedAmountCents <= 0) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "A positive amount (in cents) is required."
       );
     }
 
@@ -2915,7 +2929,7 @@ exports.createRideFareCheckoutSession = functions
       0;
     const tipAmountCents = sanitizeTipAmountInput(tipInput);
 
-    const rideRef = db.collection("rideRequests").doc(rideId);
+    const rideRef = db.collection("rideRequests").doc(normalizedRideId);
     const rideSnap = await rideRef.get();
     if (!rideSnap.exists) {
       throw new functions.https.HttpsError(
@@ -2937,8 +2951,13 @@ exports.createRideFareCheckoutSession = functions
       );
     }
 
-    const baseAmountCents = resolveRideFareAmountCents(ride);
-    if (!baseAmountCents && !tipAmountCents) {
+    const rideBaseAmountCents = resolveRideFareAmountCents(ride);
+    const resolvedBaseAmountCents =
+      rideBaseAmountCents > 0
+        ? rideBaseAmountCents
+        : Math.max(0, normalizedAmountCents - tipAmountCents);
+    const totalAmountCents = normalizedAmountCents;
+    if (totalAmountCents <= 0) {
       throw new functions.https.HttpsError(
         "failed-precondition",
         "No charges are due for this ride."
@@ -2948,8 +2967,6 @@ exports.createRideFareCheckoutSession = functions
     const redirectBaseUrl = resolveCheckoutRedirectBaseUrl({
       payload: data,
     });
-
-    const totalAmountCents = baseAmountCents + tipAmountCents;
     const description = sanitizeCheckoutDescription(
       data.description ||
         ride.toDestination ||
@@ -2961,9 +2978,9 @@ exports.createRideFareCheckoutSession = functions
     await pendingRef.set({
       userId: uid,
       pendingId: pendingRef.id,
-      rideId,
+      rideId: normalizedRideId,
       amountCents: totalAmountCents,
-      baseAmountCents,
+      baseAmountCents: resolvedBaseAmountCents,
       tipAmountCents,
       currency: "usd",
       checkoutMode: "stripe_checkout_existing_ride",
@@ -2971,37 +2988,21 @@ exports.createRideFareCheckoutSession = functions
     });
 
     const stripeClient = getStripeClient("createRideFareCheckoutSession");
-    let session = null;
     try {
-      const lineItems = [];
-      if (baseAmountCents > 0) {
-        lineItems.push({
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: description,
-            },
-            unit_amount: baseAmountCents,
-          },
-          quantity: 1,
-        });
-      }
-      if (tipAmountCents > 0) {
-        lineItems.push({
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: "Driver tip",
-            },
-            unit_amount: tipAmountCents,
-          },
-          quantity: 1,
-        });
-      }
-
-      session = await stripeClient.checkout.sessions.create({
+      const session = await stripeClient.checkout.sessions.create({
         mode: "payment",
-        line_items: lineItems,
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: description,
+              },
+              unit_amount: totalAmountCents,
+            },
+            quantity: 1,
+          },
+        ],
         success_url: `${redirectBaseUrl}/payment-success?pending_id=${pendingRef.id}&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${redirectBaseUrl}/payment-cancelled?pending_id=${pendingRef.id}`,
         customer_email: context?.auth?.token?.email || undefined,
@@ -3009,16 +3010,16 @@ exports.createRideFareCheckoutSession = functions
         metadata: {
           firebaseUid: uid,
           pendingRideId: pendingRef.id,
-          rideId,
+          rideId: normalizedRideId,
           purpose: "ride_payment",
         },
         payment_intent_data: {
           metadata: {
             firebaseUid: uid,
             pendingRideId: pendingRef.id,
-            rideId,
+            rideId: normalizedRideId,
             purpose: "ride_payment",
-            base_amount_cents: baseAmountCents,
+            base_amount_cents: resolvedBaseAmountCents,
             tip_amount_cents: tipAmountCents,
           },
         },
@@ -3027,6 +3028,8 @@ exports.createRideFareCheckoutSession = functions
       await pendingRef.update({
         stripeCheckoutSessionId: session.id,
       });
+
+      return { url: session.url };
     } catch (err) {
       console.error("[RideSync][Stripe] createRideFareCheckoutSession", err);
       try {
@@ -3034,18 +3037,11 @@ exports.createRideFareCheckoutSession = functions
       } catch (_) {
         // best effort cleanup
       }
-      throw err instanceof functions.https.HttpsError
-        ? err
-        : new functions.https.HttpsError(
-            "internal",
-            "Unable to start Stripe Checkout. Try again shortly."
-          );
+      throw new functions.https.HttpsError(
+        "internal",
+        "Unable to create checkout session"
+      );
     }
-
-    return {
-      url: session.url,
-      pendingId: pendingRef.id,
-    };
   });
 
 async function finalizePendingRide({
