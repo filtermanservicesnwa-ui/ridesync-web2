@@ -1519,23 +1519,15 @@
             </div>
             <span id="membershipStatusBadge" class="membership-status-badge">—</span>
           </div>
-          <!-- === RIDE SYNC STRIPE: START membership summary === -->
           <div class="membership-card-summary">
             <p id="membershipCurrentLabel" class="membership-subtitle">
               Checking membership...
             </p>
-            <div class="rider-info-actions" style="margin-top:8px;">
-              <button
-                id="membershipChangeButton"
-                type="button"
-                class="btn-secondary btn-small"
-              >
-                Change membership
-              </button>
-            </div>
+            <p class="membership-subtitle membership-info-note">
+              Membership savings are bundled with your fare and tip. Contact RideSync support if you need to change plans.
+            </p>
           </div>
-          <!-- === RIDE SYNC STRIPE: END membership summary === -->
-          <div class="membership-plan-grid" style="display:none;">
+          <div class="membership-plan-grid info-only">
             <div class="membership-plan" data-plan="uofa_unlimited">
               <div class="membership-plan-title">U OF A STUDENT — UNLIMITED</div>
               <div
@@ -1545,15 +1537,8 @@
                 $80 / month
               </div>
               <p class="membership-plan-desc">
-                Unlimited Fayetteville rides with a 30-min cooldown (60 during surge). Only pay tip.
+                Unlimited Fayetteville rides with a 30-min cooldown (60 during surge). Only pay the tip after each trip.
               </p>
-              <button
-                class="btn-primary btn-small"
-                type="button"
-                data-plan-action="uofa_unlimited"
-              >
-                Upgrade to U of A Student — Unlimited
-              </button>
             </div>
             <div class="membership-plan" data-plan="nwa_unlimited">
               <div class="membership-plan-title">NORTHWEST ARKANSAS — UNLIMITED</div>
@@ -1564,18 +1549,13 @@
                 $120 / month
               </div>
               <p class="membership-plan-desc">
-                Unlimited rides within a 30-mile radius of Rogers. Only pay tip.
+                Unlimited rides within a 30-mile radius of Rogers with tips handled separately at checkout.
               </p>
-              <button
-                class="btn-primary btn-small"
-                type="button"
-                data-plan-action="nwa_unlimited"
-              >
-                Upgrade to Northwest Arkansas — Unlimited
-              </button>
             </div>
           </div>
-          <div id="membershipCardMessage" class="small"></div>
+          <div id="membershipCardMessage" class="small">
+            Membership charges are included with your fare payment.
+          </div>
         </div>
       </div>
 
@@ -1966,44 +1946,17 @@
         <p id="paymentMembershipCurrent" class="membership-subtitle">
           Checking your membership…
         </p>
-        <div class="membership-plan-grid payment-membership-grid" style="margin-top:12px;">
-          <button
-            type="button"
-            class="membership-plan membership-plan-card"
-            data-payment-tier-option="BASIC"
-          >
-            <div class="membership-plan-title">BASIC (default)</div>
-            <div class="membership-plan-price">
-              $0.60/min + $3.00 + 3%
-            </div>
+        <div class="membership-plan-grid payment-membership-grid info-only" style="margin-top:12px;">
+          <div class="membership-plan membership-plan-card">
+            <div class="membership-plan-title">Membership & tip summary</div>
             <p class="membership-plan-desc">
-              Standard RideSync coverage. Pay per ride with Stripe.
+              Membership savings are already reflected in the fare above. Tips remain optional and go directly to your driver.
             </p>
-          </button>
-          <button
-            type="button"
-            class="membership-plan membership-plan-card"
-            data-payment-tier-option="UOFA"
-          >
-            <div class="membership-plan-title">U OF A STUDENT — UNLIMITED</div>
-            <div class="membership-plan-price">$80 / month</div>
-            <p class="membership-plan-desc">
-              Unlimited Fayetteville rides. Only pay tip. 30-min cooldown (60 during surge).
-            </p>
-          </button>
-          <button
-            type="button"
-            class="membership-plan membership-plan-card"
-            data-payment-tier-option="NWA"
-          >
-            <div class="membership-plan-title">NORTHWEST ARKANSAS — UNLIMITED</div>
-            <div class="membership-plan-price">$120 / month</div>
-            <p class="membership-plan-desc">
-              Unlimited rides within 30 miles of Rogers. Only pay tip.
-            </p>
-          </button>
+          </div>
         </div>
-        <div id="paymentMembershipMessage" class="small" style="margin-top:8px;"></div>
+        <div id="paymentMembershipMessage" class="small" style="margin-top:8px;">
+          Need to adjust your plan? Contact RideSync support before your next ride.
+        </div>
       </div>
       <div id="preauthTipSection" class="payment-tip-section" aria-live="polite">
         <div class="section-title" style="margin-top:18px;">
@@ -2160,129 +2113,7 @@
     </div>
   </div>
 
-  <!-- === RIDE SYNC STRIPE: START membership selection overlay === -->
-  <div
-    id="membershipSelectionOverlay"
-    class="overlay"
-    aria-hidden="true"
-    inert
-  >
-    <div class="payment-panel">
-      <div class="payment-panel-header">
-        <h3>Select membership</h3>
-        <button
-          id="membershipSelectionClose"
-          type="button"
-          class="btn-secondary btn-small"
-          data-default-focus="true"
-        >
-          Close
-        </button>
-      </div>
-      <p class="membership-subtitle">
-        Choose the unlimited plan that matches your coverage zone.
-      </p>
-      <div class="membership-plan-grid" style="margin-top:12px;">
-        <button
-          class="membership-plan membership-plan-card"
-          type="button"
-          data-membership-option="nwa_unlimited"
-        >
-          <div class="membership-plan-title">NORTHWEST ARKANSAS — UNLIMITED</div>
-          <div class="membership-plan-price" data-plan-price="nwa_unlimited">
-            $120 / month
-          </div>
-          <p class="membership-plan-desc">
-            Unlimited rides within a 30-mile radius of Rogers. Only pay tip.
-          </p>
-        </button>
-        <button
-          class="membership-plan membership-plan-card"
-          type="button"
-          data-membership-option="uofa_unlimited"
-        >
-          <div class="membership-plan-title">U OF A STUDENT — UNLIMITED</div>
-          <div class="membership-plan-price" data-plan-price="uofa_unlimited">
-            $80 / month
-          </div>
-          <p class="membership-plan-desc">
-            Unlimited Fayetteville rides. Only pay tip. 30-min cooldown (60 during surge).
-          </p>
-        </button>
-      </div>
-      <div id="membershipSelectionError" class="error"></div>
-      <button
-        id="membershipTermsButton"
-        type="button"
-        class="btn-danger"
-        style="margin-top:18px;"
-        disabled
-      >
-        Terms of Agreement
-      </button>
-      <div id="membershipTermsError" class="error"></div>
-    </div>
-  </div>
-  <!-- === RIDE SYNC STRIPE: END membership selection overlay === -->
-
-  <!-- === RIDE SYNC STRIPE: START membership terms overlay === -->
-  <div id="membershipTermsOverlay" class="overlay" aria-hidden="true" inert>
-    <div class="payment-panel">
-      <div class="payment-panel-header">
-        <h3>Membership terms</h3>
-        <button
-          id="membershipTermsClose"
-          type="button"
-          class="btn-secondary btn-small"
-          data-default-focus="true"
-        >
-          Close
-        </button>
-      </div>
-      <div
-        id="membershipTermsContent"
-        class="membership-terms-content"
-        tabindex="0"
-        aria-label="Membership terms"
-      >
-        <h4 style="margin-top:0;">Unlimited Membership Terms</h4>
-        <p>
-          Unlimited plans provide predictable monthly billing and zone-based
-          ride coverage. Please review these terms in full before accepting.
-        </p>
-        <p>
-          Charges begin immediately when you activate a membership. Each
-          billing cycle renews on the same date monthly. Memberships can be
-          canceled at any time from the app; cancellation stops future billing
-          but does not refund the current cycle.
-        </p>
-        <p>
-          Unlimited coverage applies to the service zone for the plan you
-          select. Trips outside that zone incur the published per-minute
-          overage rate. Abuse, sharing rides with non-members, or fraudulent
-          disputes may lead to membership suspension.
-        </p>
-        <p>
-          By accepting you authorize Stripe to process the payment method
-          supplied. Data is handled under our Privacy Policy. Contact support
-          if you need accommodation before activation.
-        </p>
-        <p>
-          Scroll to the bottom of this panel to enable the acceptance checkbox.
-        </p>
-      </div>
-      <div class="membership-terms-footer">
-        <label style="display:flex;align-items:center;gap:8px;">
-          <input id="membershipTermsCheckbox" type="checkbox" disabled />
-          <span>I have read and agree to the Membership Terms.</span>
-        </label>
-        <p class="membership-subtitle" style="margin:0;">
-          The checkbox unlocks after you view the entire agreement.
-        </p>
-      </div>
-    </div>
-  </div>
-  <!-- === RIDE SYNC STRIPE: END membership terms overlay === -->
+  <!-- Membership overlays removed: rider view now provides information only. -->
 
   <footer class="site-footer" aria-label="Copyright notice">
     <p>&copy; 2025 RideSync. All rights reserved.</p>
@@ -2561,26 +2392,6 @@
     function resolveClientSecret(payload = {}) {
       return payload?.clientSecret || payload?.client_secret || null;
     }
-    const createMembershipPaymentIntentFn = httpsCallable(
-      functionsClient,
-      "createMembershipPaymentIntent"
-    );
-    const applyMembershipPlanFn = httpsCallable(
-      functionsClient,
-      "applyMembershipPlan"
-    );
-    const createMembershipSubscriptionIntentFn = httpsCallable(
-      functionsClient,
-      "createMembershipSubscriptionIntent"
-    );
-    const finalizeMembershipSubscriptionFn = httpsCallable(
-      functionsClient,
-      "finalizeMembershipSubscription"
-    );
-    const createMembershipCheckoutSessionFn = httpsCallable(
-      functionsClient,
-      "createMembershipCheckoutSession"
-    );
     const getDriverAvailabilityStatsFn = httpsCallable(
       functionsClient,
       "getDriverAvailabilityStats"
@@ -2808,25 +2619,6 @@
       checkoutReturnState.status = "waiting";
     }
 
-    const membershipCheckoutReturnState = {
-      pendingId:
-        urlParams.get("membership_pending_id") ||
-        urlParams.get("membershipPendingId") ||
-        null,
-      sessionId:
-        urlParams.get("membership_session_id") ||
-        urlParams.get("membershipSessionId") ||
-        null,
-      status: "idle",
-      attempts: 0,
-    };
-    if (
-      membershipCheckoutReturnState.pendingId &&
-      membershipCheckoutReturnState.sessionId
-    ) {
-      membershipCheckoutReturnState.status = "waiting";
-    }
-
     let joinMode = false;
     let joinTargetRide = null;
 
@@ -2895,25 +2687,9 @@
     const membershipStatusBadge = document.getElementById("membershipStatusBadge");
     const membershipCardMessage = document.getElementById("membershipCardMessage");
     const membershipCurrentLabel = document.getElementById("membershipCurrentLabel");
-    const membershipChangeButton = document.getElementById("membershipChangeButton");
     const membershipPriceEls = document.querySelectorAll("[data-plan-price]");
-    const membershipSelectionOverlay = document.getElementById("membershipSelectionOverlay");
-    const membershipSelectionClose = document.getElementById("membershipSelectionClose");
-    const membershipSelectionOptions = document.querySelectorAll(
-      "[data-membership-option]"
-    );
-    const membershipSelectionError = document.getElementById("membershipSelectionError");
-    const membershipTermsButton = document.getElementById("membershipTermsButton");
-    const membershipTermsOverlay = document.getElementById("membershipTermsOverlay");
-    const membershipTermsClose = document.getElementById("membershipTermsClose");
-    const membershipTermsContent = document.getElementById("membershipTermsContent");
-    const membershipTermsCheckbox = document.getElementById("membershipTermsCheckbox");
-    const membershipTermsError = document.getElementById("membershipTermsError");
     const paymentMembershipBox = document.getElementById("paymentMembershipBox");
     const paymentMembershipCurrent = document.getElementById("paymentMembershipCurrent");
-    const paymentMembershipOptions = document.querySelectorAll(
-      "[data-payment-tier-option]"
-    );
     const paymentMembershipMessage = document.getElementById("paymentMembershipMessage");
 
     const riderEmailDetailEl = document.getElementById("riderEmailDetail");
@@ -3176,14 +2952,9 @@
     let ratingSubmitting = false;
     let rideTipRefreshTimer = null;
     let lastPaymentOverlayOptions = null;
-    let pendingPaymentOverlayResume = null;
 
     let isSignupMode = false;
     let currentUserProfile = null;
-    let pendingMembershipPlanId = null;
-    let membershipTermsProcessing = false;
-    let membershipTermsAcknowledged = false;
-    let membershipTermsScrollComplete = false;
 
     let map;
     let directionsService;
@@ -3990,20 +3761,9 @@
       if (paymentMembershipCurrent) {
         paymentMembershipCurrent.textContent = tierDetail.summary;
       }
-      if (paymentMembershipOptions?.forEach) {
-        paymentMembershipOptions.forEach((node) => {
-          if (!node?.dataset?.paymentTierOption) return;
-          const optionTier = normalizeMembershipTierClient(node.dataset.paymentTierOption);
-          const isActive = optionTier === tier;
-          node.classList.toggle("active", isActive);
-          node.setAttribute("aria-pressed", isActive ? "true" : "false");
-        });
-      }
       if (paymentMembershipMessage) {
         paymentMembershipMessage.textContent =
-          tier === MEMBERSHIP_TIER_KEYS.BASIC
-            ? "Upgrade to unlock unlimited coverage in Fayetteville or Northwest Arkansas."
-            : "Unlimited plans cover pickups inside their radius. Outside the zone defaults to pay-per-ride.";
+          "Membership savings are already included with the fare above. Tips remain optional and separate.";
       }
     }
 
@@ -4161,23 +3921,11 @@
           !isActive && !isPending
         );
       }
-    }
-
-    async function callApplyMembershipPlan(payload = {}) {
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error("Log in to manage your membership.");
-      }
-      try {
-        const response = await applyMembershipPlanFn(payload || {});
-        return response?.data || { status: "updated" };
-      } catch (err) {
-        throw handleCallableError(
-          "applyMembershipPlan",
-          err,
-          "Unable to update membership right now. Try again."
-        );
-      }
+      const infoMessage =
+        plan === "basic"
+          ? "Membership charges are bundled with each fare. Contact RideSync support if you'd like information about unlimited plans."
+          : "Your unlimited coverage is active. Reach out to RideSync support if you need to update or pause it.";
+      setMembershipMessage(infoMessage);
     }
 
     function updateSyncButtonLabel() {
@@ -4638,12 +4386,10 @@
         currentUserProfile = null;
         loginStatusEl.textContent = "";
         showAuthView();
-        if (hasPendingCheckoutReturn() || hasPendingMembershipCheckoutReturn()) {
+        if (hasPendingCheckoutReturn()) {
           openPaymentStatusOverlay(
             "Sign in to finish payment",
-            hasPendingMembershipCheckoutReturn()
-              ? "Stripe approved your membership payment. Log in so we can finalize it."
-              : "Stripe approved your payment. Log in so we can finalize your ride."
+            "Stripe approved your payment. Log in so we can finalize your ride."
           );
         } else {
           closePaymentStatusOverlay();
@@ -4658,14 +4404,7 @@
       startDriverAvailabilityWatchers();
       if (hasPendingCheckoutReturn()) {
         await finalizeCheckoutSessionIfNeeded(user);
-      }
-      if (hasPendingMembershipCheckoutReturn()) {
-        await finalizeMembershipCheckoutSessionIfNeeded(user);
-      }
-      if (
-        !hasPendingCheckoutReturn() &&
-        !hasPendingMembershipCheckoutReturn()
-      ) {
+      } else {
         closePaymentStatusOverlay();
       }
 
@@ -6042,7 +5781,7 @@
       });
     }
 
-    // === RIDE SYNC STRIPE: START membership overlay logic ===
+    // === RIDE SYNC STRIPE: overlay + status helpers ===
     const overlayFocusMemory = new WeakMap();
     const focusableOverlaySelector =
       "[data-default-focus], button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
@@ -6098,14 +5837,6 @@
       );
     }
 
-    function hasPendingMembershipCheckoutReturn() {
-      return (
-        membershipCheckoutReturnState.pendingId &&
-        membershipCheckoutReturnState.sessionId &&
-        membershipCheckoutReturnState.status !== "completed"
-      );
-    }
-
     function stripCheckoutParamsFromUrl() {
       const params = new URLSearchParams(window.location.search);
       let changed = false;
@@ -6117,32 +5848,6 @@
           }
         }
       );
-      if (!changed) {
-        return;
-      }
-      const query = params.toString();
-      const hash = window.location.hash || "";
-      const newUrl =
-        `${window.location.origin}${window.location.pathname}` +
-        (query ? `?${query}` : "") +
-        hash;
-      window.history.replaceState({}, document.title, newUrl);
-    }
-
-    function stripMembershipCheckoutParamsFromUrl() {
-      const params = new URLSearchParams(window.location.search);
-      let changed = false;
-      [
-        "membership_pending_id",
-        "membershipPendingId",
-        "membership_session_id",
-        "membershipSessionId",
-      ].forEach((key) => {
-        if (params.has(key)) {
-          params.delete(key);
-          changed = true;
-        }
-      });
       if (!changed) {
         return;
       }
@@ -6213,80 +5918,6 @@
         checkoutReturnState.status = "error";
         openPaymentStatusOverlay(
           "Payment finalized later",
-          err?.message ||
-            "We received your payment but still need to finish processing. Contact RideSync support if this persists."
-        );
-      }
-    }
-
-    async function finalizeMembershipCheckoutSessionIfNeeded(user) {
-      if (!hasPendingMembershipCheckoutReturn()) {
-        return;
-      }
-      if (!user) {
-        openPaymentStatusOverlay(
-          "Sign in to finish payment",
-          "Stripe approved your membership payment. Sign in so we can finalize it."
-        );
-        return;
-      }
-      if (membershipCheckoutReturnState.status === "processing") {
-        return;
-      }
-      membershipCheckoutReturnState.status = "processing";
-      membershipCheckoutReturnState.attempts += 1;
-      openPaymentStatusOverlay(
-        "Finalizing membership…",
-        "Hang tight while we confirm your Stripe checkout."
-      );
-
-      try {
-        const idToken = await user.getIdToken(true);
-        const response = await fetch("/finalizeMembershipCheckoutSession", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            membership_pending_id: membershipCheckoutReturnState.pendingId,
-            membershipPendingId: membershipCheckoutReturnState.pendingId,
-            membership_session_id: membershipCheckoutReturnState.sessionId,
-            membershipSessionId: membershipCheckoutReturnState.sessionId,
-          }),
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          const message =
-            payload?.error?.message ||
-            "We received your payment but could not finalize the membership yet.";
-          throw new Error(message);
-        }
-        membershipCheckoutReturnState.status = "completed";
-        membershipCheckoutReturnState.resultStatus = payload?.status || "updated";
-        stripMembershipCheckoutParamsFromUrl();
-        openPaymentStatusOverlay(
-          "Membership updated",
-          payload?.status === "active"
-            ? "Stripe confirmed your membership payment."
-            : "Stripe updated your membership."
-        );
-        const currentUser = auth.currentUser;
-        if (currentUser) {
-          await loadUserProfile(currentUser.uid, currentUser.email);
-        }
-        resumePaymentOverlayIfNeeded();
-        setTimeout(() => {
-          closePaymentStatusOverlay();
-        }, 4000);
-      } catch (err) {
-        console.error(
-          "[RideSync][Stripe] finalize membership checkout failed",
-          err
-        );
-        membershipCheckoutReturnState.status = "error";
-        openPaymentStatusOverlay(
-          "Membership pending",
           err?.message ||
             "We received your payment but still need to finish processing. Contact RideSync support if this persists."
         );
@@ -7255,331 +6886,7 @@
       // Ride fares now complete entirely inside the PWA; no redirect handling required.
     }
 
-    function setMembershipTermsAcknowledged(value) {
-      membershipTermsAcknowledged = Boolean(value);
-      if (!membershipTermsAcknowledged) {
-        membershipTermsScrollComplete = false;
-      }
-      updateMembershipTermsButtonState();
-    }
-
-    function updateMembershipTermsButtonState() {
-      if (!membershipTermsButton) return;
-      const hasPlan = Boolean(pendingMembershipPlanId);
-      const nextLabel = membershipTermsAcknowledged ? "Accept & Pay" : "Terms of Agreement";
-      membershipTermsButton.textContent = nextLabel;
-      membershipTermsButton.disabled = !hasPlan || membershipTermsProcessing;
-      membershipTermsButton.classList.toggle("btn-success", membershipTermsAcknowledged);
-      membershipTermsButton.classList.toggle("btn-danger", !membershipTermsAcknowledged);
-    }
-
-    function resetMembershipTermsScrollState() {
-      membershipTermsScrollComplete = false;
-      if (membershipTermsCheckbox) {
-        membershipTermsCheckbox.checked = false;
-        membershipTermsCheckbox.disabled = true;
-      }
-      if (membershipTermsContent) {
-        membershipTermsContent.scrollTop = 0;
-      }
-    }
-
-    function maybeUnlockMembershipTermsCheckbox() {
-      if (!membershipTermsContent || !membershipTermsCheckbox) return;
-      if (membershipTermsScrollComplete) return;
-      const remaining =
-        membershipTermsContent.scrollHeight -
-        membershipTermsContent.scrollTop -
-        membershipTermsContent.clientHeight;
-      if (remaining <= 4 || membershipTermsContent.scrollHeight <= membershipTermsContent.clientHeight + 1) {
-        membershipTermsScrollComplete = true;
-        membershipTermsCheckbox.disabled = false;
-      }
-    }
-
-    updateMembershipTermsButtonState();
-
-    function resetMembershipSelectionState() {
-      membershipSelectionOptions?.forEach?.((node) => {
-        node.classList.remove("active");
-      });
-      pendingMembershipPlanId = null;
-      if (membershipSelectionError) {
-        membershipSelectionError.textContent = "";
-      }
-      if (membershipTermsError) {
-        membershipTermsError.textContent = "";
-      }
-      setMembershipTermsAcknowledged(false);
-    }
-
-    function handlePaymentMembershipOption(tierKey) {
-      if (!tierKey) return;
-      const normalizedTier = normalizeMembershipTierClient(tierKey);
-      const currentTier = resolveProfileTier(currentUserProfile);
-      if (normalizedTier === currentTier) {
-        if (paymentMembershipMessage) {
-          paymentMembershipMessage.textContent = "You're already on this membership.";
-        }
-        return;
-      }
-      if (normalizedTier === MEMBERSHIP_TIER_KEYS.BASIC) {
-        if (paymentMembershipMessage) {
-          paymentMembershipMessage.textContent =
-            "BASIC is your default per-ride plan for the standard RideSync area.";
-        }
-        return;
-      }
-      startMembershipUpgradeFromPayment(normalizedTier);
-    }
-
-    function startMembershipUpgradeFromPayment(tierKey) {
-      const planKey =
-        tierKey === MEMBERSHIP_TIER_KEYS.UOFA
-          ? "uofa_unlimited"
-          : tierKey === MEMBERSHIP_TIER_KEYS.NWA
-          ? "nwa_unlimited"
-          : null;
-      if (!planKey) {
-        return;
-      }
-      if (!auth.currentUser) {
-        setMembershipMessage("Log in to manage your membership.");
-        return;
-      }
-      pendingPaymentOverlayResume = lastPaymentOverlayOptions
-        ? {
-            ...lastPaymentOverlayOptions,
-            context: { ...(lastPaymentOverlayOptions.context || {}) },
-          }
-        : null;
-      closePaymentOverlay();
-      paymentMembershipMessage.textContent = "Opening membership checkout…";
-      openMembershipSelectionOverlayUI();
-      selectMembershipPlan(planKey);
-    }
-
-    function resumePaymentOverlayIfNeeded() {
-      if (!pendingPaymentOverlayResume) {
-        return;
-      }
-      const resumeOptions = pendingPaymentOverlayResume;
-      pendingPaymentOverlayResume = null;
-      try {
-        openPaymentOverlay(resumeOptions);
-      } catch (err) {
-        console.error("Failed to resume payment overlay", err);
-      }
-    }
-
-    function openMembershipSelectionOverlayUI() {
-      if (!auth.currentUser) {
-        setMembershipMessage("Log in to manage your membership.");
-        return;
-      }
-      resetMembershipSelectionState();
-      updateMembershipTermsButtonState();
-      toggleOverlay(membershipSelectionOverlay, true, membershipSelectionClose);
-    }
-
-    function closeMembershipSelectionOverlayUI() {
-      toggleOverlay(membershipSelectionOverlay, false);
-      if (membershipSelectionError) {
-        membershipSelectionError.textContent = "";
-      }
-    }
-
-    function selectMembershipPlan(planId) {
-      pendingMembershipPlanId = planId;
-      membershipSelectionOptions?.forEach?.((node) => {
-        const isActive = node.dataset.membershipOption === planId;
-        node.classList.toggle("active", isActive);
-      });
-      if (membershipSelectionError) {
-        membershipSelectionError.textContent = "";
-      }
-      if (membershipTermsError) {
-        membershipTermsError.textContent = "";
-      }
-      setMembershipTermsAcknowledged(false);
-    }
-
-    function openMembershipTermsOverlayUI() {
-      if (!pendingMembershipPlanId) return;
-      resetMembershipTermsScrollState();
-      if (membershipTermsError) {
-        membershipTermsError.textContent = "";
-      }
-      toggleOverlay(membershipTermsOverlay, true, membershipTermsClose);
-      requestAnimationFrame(() => {
-        maybeUnlockMembershipTermsCheckbox();
-      });
-    }
-
-    function closeMembershipTermsOverlayUI() {
-      toggleOverlay(membershipTermsOverlay, false);
-    }
-
-    function handleMembershipTermsScroll() {
-      maybeUnlockMembershipTermsCheckbox();
-    }
-
-    function handleMembershipTermsCheckboxChange(event) {
-      if (!event?.target?.checked) {
-        return;
-      }
-      setMembershipTermsAcknowledged(true);
-      if (membershipTermsError) {
-        membershipTermsError.textContent = "";
-      }
-      closeMembershipTermsOverlayUI();
-      requestAnimationFrame(() => {
-        membershipTermsButton?.focus?.();
-      });
-    }
-
-    async function recordMembershipTermsAcceptance() {
-      // Record that the user has viewed and accepted the membership terms.
-      const user = auth.currentUser;
-      if (!user) {
-        throw new Error("Log in to continue.");
-      }
-      await saveUserProfileFn({
-        email: user.email || null,
-        membershipTermsAccepted: true,
-        membershipTermsVersion: "v1"
-      });
-    }
-
-    async function startMembershipPaymentFlow(planId) {
-      await startMembershipCheckoutSession(planId, "payment");
-    }
-
-    async function startMembershipSubscriptionFlow(planId) {
-      await startMembershipCheckoutSession(planId, "subscription");
-    }
-
-    async function startMembershipCheckoutSession(planId, mode) {
-      if (!STRIPE_ENABLED) {
-        throw new Error("Stripe payments are not available right now.");
-      }
-      const redirectBaseUrl =
-        typeof window !== "undefined" && window.location?.origin
-          ? window.location.origin
-          : null;
-      showPaymentRedirectOverlay("Redirecting you to Stripe Checkout…");
-      try {
-        const response = await createMembershipCheckoutSessionFn({
-          plan: planId,
-          mode,
-          redirectBaseUrl,
-        });
-        const url = response?.data?.url;
-        if (typeof url !== "string" || !url) {
-          throw new Error("Unable to start Stripe Checkout.");
-        }
-        window.location.href = url;
-      } catch (err) {
-        hidePaymentRedirectOverlay();
-        throw handleCallableError(
-          "createMembershipCheckoutSession",
-          err,
-          PAYMENT_ERROR_FALLBACK
-        );
-      }
-    }
-
-    async function handleMembershipAcceptAndPay() {
-      if (!pendingMembershipPlanId) {
-        if (membershipSelectionError) {
-          membershipSelectionError.textContent = "Choose a membership first.";
-        }
-        return;
-      }
-      if (!membershipTermsAcknowledged) {
-        openMembershipTermsOverlayUI();
-        return;
-      }
-      if (membershipTermsProcessing) return;
-      membershipTermsProcessing = true;
-      updateMembershipTermsButtonState();
-      if (membershipTermsError) {
-        membershipTermsError.textContent = "";
-      }
-      try {
-        const planId = pendingMembershipPlanId;
-        await recordMembershipTermsAcceptance();
-        const planMode = getMembershipPlanMode(planId);
-        if (planMode === "subscription") {
-          setMembershipMessage("Redirecting you to Stripe Checkout…");
-          await startMembershipSubscriptionFlow(planId);
-        } else if (planMode === "payment") {
-          setMembershipMessage("Redirecting you to Stripe Checkout…");
-          await startMembershipPaymentFlow(planId);
-        } else {
-          await callApplyMembershipPlan({ plan: planId });
-          setMembershipMessage("Membership updated!");
-          const user = auth.currentUser;
-          if (user) {
-            await loadUserProfile(user.uid, user.email);
-          }
-        }
-        closeMembershipSelectionOverlayUI();
-      } catch (err) {
-        console.error("Membership accept & pay", err);
-        if (membershipTermsError) {
-          membershipTermsError.textContent =
-            err.message || "Could not continue to payment.";
-        }
-      } finally {
-        membershipTermsProcessing = false;
-        updateMembershipTermsButtonState();
-      }
-    }
-
-
-    membershipChangeButton?.addEventListener("click", () => {
-      openMembershipSelectionOverlayUI();
-    });
-    membershipSelectionClose?.addEventListener("click", closeMembershipSelectionOverlayUI);
-    membershipSelectionOverlay?.addEventListener("click", (evt) => {
-      if (evt.target === membershipSelectionOverlay) {
-        closeMembershipSelectionOverlayUI();
-      }
-    });
-    membershipSelectionOptions?.forEach?.((node) => {
-      node.addEventListener("click", () => {
-        selectMembershipPlan(node.dataset.membershipOption);
-      });
-    });
-    membershipTermsButton?.addEventListener("click", () => {
-      if (!pendingMembershipPlanId) {
-        if (membershipSelectionError) {
-          membershipSelectionError.textContent = "Choose a membership first.";
-        }
-        return;
-      }
-      if (membershipTermsAcknowledged) {
-        handleMembershipAcceptAndPay();
-      } else {
-        openMembershipTermsOverlayUI();
-      }
-    });
-    membershipTermsClose?.addEventListener("click", closeMembershipTermsOverlayUI);
-    membershipTermsOverlay?.addEventListener("click", (evt) => {
-      if (evt.target === membershipTermsOverlay) {
-        closeMembershipTermsOverlayUI();
-      }
-    });
-    membershipTermsContent?.addEventListener("scroll", handleMembershipTermsScroll);
-    membershipTermsCheckbox?.addEventListener("change", handleMembershipTermsCheckboxChange);
-    paymentMembershipOptions?.forEach?.((node) => {
-      node.addEventListener("click", () => {
-        handlePaymentMembershipOption(node.dataset.paymentTierOption);
-      });
-    });
-    // === RIDE SYNC STRIPE: END membership overlay logic ===
-
+    // Rider memberships are now informational only; no separate checkout flow is initiated here.
     if (paymentOverlayClose) {
       paymentOverlayClose.addEventListener("click", () => {
         const context = activePaymentContext;
@@ -7591,8 +6898,6 @@
         }
         if (context?.type === "ride") {
           profileMessage.textContent = "Ride payment canceled. Ride not requested.";
-        } else if (context?.type === "membership" && membershipCardMessage) {
-          membershipCardMessage.textContent = "Membership payment canceled.";
         }
       });
     }
@@ -7613,8 +6918,6 @@
           }
           if (context?.type === "ride") {
             profileMessage.textContent = "Ride payment canceled. Ride not requested.";
-          } else if (context?.type === "membership" && membershipCardMessage) {
-            membershipCardMessage.textContent = "Membership payment canceled.";
           }
         }
       });
@@ -7963,41 +7266,8 @@
       showLoadingView();
     }
 
-    async function handlePaymentSuccess(paymentIntent, context) {
-      if (context?.type === "membershipSubscription") {
-        let finalizeResponse;
-        try {
-          finalizeResponse = await finalizeMembershipSubscriptionFn({
-            subscriptionId: context.subscriptionId,
-          });
-        } catch (err) {
-          throw handleCallableError("finalizeMembershipSubscription", err);
-        }
-        const status = finalizeResponse?.data?.status || "active";
-        if (status === "active") {
-          setMembershipMessage("Membership updated!");
-        } else {
-          setMembershipMessage(`Subscription status: ${status}`);
-        }
-        const user = auth.currentUser;
-        if (user) {
-          await loadUserProfile(user.uid, user.email);
-        }
-        return;
-      }
-
-      if (context?.type === "membership") {
-        await callApplyMembershipPlan({
-          plan: context.plan,
-          paymentIntentId: paymentIntent.id,
-        });
-        setMembershipMessage("Membership updated!");
-        const user = auth.currentUser;
-        if (user) {
-          await loadUserProfile(user.uid, user.email);
-        }
-        return;
-      }
+    async function handlePaymentSuccess(paymentIntent) {
+      return paymentIntent;
     }
 
     function buildRidePaymentPayload(rawPayload = {}) {
