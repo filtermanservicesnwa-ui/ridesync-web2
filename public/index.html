@@ -585,6 +585,11 @@
     .membership-plan button {
       margin-top: auto;
     }
+    .membership-plan-hint {
+      font-size: 0.75rem;
+      color: #fbbf24;
+      margin: 0;
+    }
     .membership-plan-card {
       cursor: pointer;
       transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
@@ -1599,7 +1604,7 @@
               Membership savings are bundled with your fare and tip. Contact RideSync support if you need to change plans.
             </p>
           </div>
-          <div class="membership-plan-grid info-only">
+          <div id="membershipPlanGrid" class="membership-plan-grid">
             <div class="membership-plan" data-plan="uofa_unlimited">
               <div class="membership-plan-title">U OF A STUDENT — UNLIMITED</div>
               <div
@@ -1611,6 +1616,17 @@
               <p class="membership-plan-desc">
                 Unlimited Fayetteville rides with a 30-min cooldown (60 during surge). Only pay the tip after each trip.
               </p>
+              <p
+                class="membership-plan-desc membership-plan-hint"
+                data-plan-hint="uofa_unlimited"
+              ></p>
+              <button
+                type="button"
+                class="btn-primary"
+                data-plan-action="uofa_unlimited"
+              >
+                Activate membership
+              </button>
             </div>
             <div class="membership-plan" data-plan="nwa_unlimited">
               <div class="membership-plan-title">NORTHWEST ARKANSAS — UNLIMITED</div>
@@ -1623,6 +1639,17 @@
               <p class="membership-plan-desc">
                 Unlimited rides within a 30-mile radius of Rogers with tips handled separately at checkout.
               </p>
+              <p
+                class="membership-plan-desc membership-plan-hint"
+                data-plan-hint="nwa_unlimited"
+              ></p>
+              <button
+                type="button"
+                class="btn-primary"
+                data-plan-action="nwa_unlimited"
+              >
+                Activate membership
+              </button>
             </div>
           </div>
           <div id="membershipCardMessage" class="small">
@@ -2509,6 +2536,11 @@
     const PAYMENT_ERROR_FALLBACK =
       "Payments are temporarily unavailable. Please try again.";
     const rideCheckoutSessionEndpoints = buildRideCheckoutSessionEndpoints();
+    const membershipFinalizeEndpoints = buildMembershipFinalizeEndpoints();
+    const MEMBERSHIP_CHECKOUT_ERROR_FALLBACK =
+      "Membership billing is temporarily unavailable. Please try again.";
+    const MEMBERSHIP_FINALIZE_FALLBACK =
+      "We received your payment but still need to finish processing your membership. Contact RideSync support if this continues.";
 
     function isFirebaseHttpsError(err) {
       return typeof err?.code === "string" && err.code.startsWith("functions/");
@@ -2555,6 +2587,10 @@
     const createRideCheckoutSessionCallableFn = httpsCallable(
       functionsClient,
       "createRideCheckoutSessionCallable"
+    );
+    const createMembershipCheckoutSessionFn = httpsCallable(
+      functionsClient,
+      "createMembershipCheckoutSession"
     );
     const saveUserProfileFn = httpsCallable(functionsClient, "saveUserProfile");
     const createRideRequestFn = httpsCallable(functionsClient, "createRideRequest");
@@ -2775,6 +2811,30 @@
       checkoutReturnState.status = "waiting";
     }
 
+    const membershipCheckoutReturnState = {
+      pendingId:
+        urlParams.get("membership_pending_id") ||
+        urlParams.get("membershipPendingId") ||
+        urlParams.get("membershipPending"),
+      sessionId:
+        urlParams.get("membership_session_id") ||
+        urlParams.get("membershipSessionId") ||
+        urlParams.get("membershipSession"),
+      status: "idle",
+      attempts: 0,
+    };
+    if (
+      membershipCheckoutReturnState.pendingId &&
+      membershipCheckoutReturnState.sessionId
+    ) {
+      membershipCheckoutReturnState.status = "waiting";
+    }
+
+    const membershipCheckoutState = {
+      status: "idle",
+      activePlan: null,
+    };
+
     let joinMode = false;
     let joinTargetRide = null;
 
@@ -2844,6 +2904,20 @@
     const membershipCardMessage = document.getElementById("membershipCardMessage");
     const membershipCurrentLabel = document.getElementById("membershipCurrentLabel");
     const membershipPriceEls = document.querySelectorAll("[data-plan-price]");
+    const membershipPlanGrid = document.getElementById("membershipPlanGrid");
+    const membershipPlanCards = membershipPlanGrid
+      ? Array.from(membershipPlanGrid.querySelectorAll(".membership-plan[data-plan]"))
+      : [];
+    const membershipPlanButtons = new Map();
+    document.querySelectorAll("[data-plan-action]").forEach((button) => {
+      const planKey = normalizePlanKey(button.dataset.planAction);
+      membershipPlanButtons.set(planKey, button);
+    });
+    const membershipPlanHints = new Map();
+    document.querySelectorAll("[data-plan-hint]").forEach((node) => {
+      const planKey = normalizePlanKey(node.dataset.planHint);
+      membershipPlanHints.set(planKey, node);
+    });
     const paymentMembershipBox = document.getElementById("paymentMembershipBox");
     const paymentMembershipCurrent = document.getElementById("paymentMembershipCurrent");
     const paymentMembershipMessage = document.getElementById("paymentMembershipMessage");
@@ -3990,6 +4064,220 @@
 
     updateMembershipPrices();
 
+    function canStartMembershipCheckout(planKey, profile = currentUserProfile) {
+      if (!STRIPE_ENABLED || !profile) {
+        return false;
+      }
+      const normalized = normalizePlanKey(planKey);
+      if (normalized === "uofa_unlimited") {
+        return !!(profile.isStudent && profile.uofaVerified);
+      }
+      if (normalized === "nwa_unlimited") {
+        return true;
+      }
+      return false;
+    }
+
+    function getMembershipPlanDisabledReason(
+      planKey,
+      profile = currentUserProfile
+    ) {
+      const normalized = normalizePlanKey(planKey);
+      if (!profile) {
+        return "Sign in to manage memberships.";
+      }
+      if (normalized === "uofa_unlimited") {
+        if (!profile.isStudent) {
+          return "Mark yourself as a U of A student in your profile.";
+        }
+        if (!profile.uofaVerified) {
+          return "Upload your student ID so RideSync can verify you.";
+        }
+      }
+      if (normalized === "nwa_unlimited") {
+        return "Contact RideSync support if you need help unlocking this plan.";
+      }
+      return "Contact RideSync support to manage this plan.";
+    }
+
+    function resolveMembershipActionCopy(
+      planKey,
+      profile = currentUserProfile
+    ) {
+      const normalized = normalizePlanKey(planKey);
+      const planLabel = formatMembershipPlanLabel(normalized);
+      const planMode = getMembershipPlanMode(normalized);
+      const currentPlan = normalizePlanKey(
+        profile?.membershipType || profile?.membership || "basic"
+      );
+      const status = (profile?.membershipStatus || "none").toLowerCase();
+      const response = {
+        label: `Activate ${planLabel}`,
+        disabled: false,
+        hint: "",
+      };
+
+      if (!STRIPE_ENABLED) {
+        response.label = "Payments unavailable";
+        response.disabled = true;
+        response.hint = "Stripe payments are offline. Try again shortly.";
+        return response;
+      }
+
+      if (planMode === "none") {
+        response.label = "Contact support";
+        response.disabled = true;
+        response.hint = "RideSync support can help you manage this plan.";
+        return response;
+      }
+
+      if (!profile) {
+        response.label = "Sign in to activate";
+        response.disabled = true;
+        response.hint = "Load your RideSync profile to manage memberships.";
+        return response;
+      }
+
+      if (
+        membershipCheckoutState.status === "redirecting" &&
+        membershipCheckoutState.activePlan === normalized
+      ) {
+        response.label = "Opening Stripe…";
+        response.disabled = true;
+        response.hint = "Hang tight while we redirect you to Stripe Checkout.";
+        return response;
+      }
+
+      if (!canStartMembershipCheckout(normalized, profile)) {
+        response.label = "Verification required";
+        response.disabled = true;
+        response.hint = getMembershipPlanDisabledReason(normalized, profile);
+        return response;
+      }
+
+      if (currentPlan === normalized) {
+        if (status === "active") {
+          response.label = "Plan active";
+          response.disabled = true;
+          response.hint = `${planLabel} is active.`;
+          return response;
+        }
+        if (status === "pending_verification") {
+          response.label = "Awaiting approval";
+          response.disabled = true;
+          response.hint =
+            "RideSync is verifying your student ID. You'll be notified once it's active.";
+          return response;
+        }
+        response.label = "Renew membership";
+        response.disabled = false;
+        response.hint = "Restart your unlimited coverage through Stripe.";
+        return response;
+      }
+
+      response.label =
+        normalized === "uofa_unlimited"
+          ? "Activate U of A Unlimited"
+          : "Activate NWA Unlimited";
+      response.disabled = false;
+      response.hint =
+        "Secure checkout via Stripe. Membership updates automatically.";
+      return response;
+    }
+
+    function updateMembershipPlanButtons(profile = currentUserProfile) {
+      if (!membershipPlanButtons.size) {
+        return;
+      }
+      membershipPlanButtons.forEach((button, planKey) => {
+        const ui = resolveMembershipActionCopy(planKey, profile);
+        button.textContent = ui.label;
+        button.disabled = !!ui.disabled;
+        button.setAttribute("aria-disabled", ui.disabled ? "true" : "false");
+        const hintEl = membershipPlanHints.get(planKey);
+        if (hintEl) {
+          hintEl.textContent = ui.hint || "";
+          hintEl.style.display = ui.hint ? "" : "none";
+        }
+      });
+      if (membershipPlanCards.length && profile) {
+        const profilePlan = normalizePlanKey(
+          profile.membershipType || profile.membership || "basic"
+        );
+        membershipPlanCards.forEach((card) => {
+          const planKey = normalizePlanKey(card.dataset.plan);
+          card.classList.toggle("active", planKey === profilePlan);
+        });
+      }
+    }
+
+    async function handleMembershipPlanAction(planKey) {
+      const normalized = normalizePlanKey(planKey);
+      if (!STRIPE_ENABLED) {
+        setMembershipMessage("Stripe payments are not available right now.");
+        return;
+      }
+      const planMode = getMembershipPlanMode(normalized);
+      if (planMode === "none") {
+        setMembershipMessage("Contact RideSync support to manage this plan.");
+        return;
+      }
+      if (!canStartMembershipCheckout(normalized)) {
+        setMembershipMessage(getMembershipPlanDisabledReason(normalized));
+        return;
+      }
+      const user = auth.currentUser;
+      if (!user) {
+        setMembershipMessage("Sign in to manage memberships.");
+        return;
+      }
+
+      membershipCheckoutState.status = "redirecting";
+      membershipCheckoutState.activePlan = normalized;
+      updateMembershipPlanButtons(currentUserProfile);
+      setMembershipMessage("Opening Stripe Checkout…");
+      logStripeDebug("membership_checkout_start", {
+        plan: normalized,
+        mode: planMode,
+      });
+
+      try {
+        const redirectBaseUrl =
+          typeof window !== "undefined" && window.location?.origin
+            ? window.location.origin
+            : undefined;
+        const response = await createMembershipCheckoutSessionFn({
+          plan: normalized,
+          planId: normalized,
+          mode: planMode,
+          redirectBaseUrl,
+        });
+        const data = response?.data || {};
+        if (data.pendingId && !membershipCheckoutReturnState.pendingId) {
+          membershipCheckoutReturnState.pendingId = data.pendingId;
+          membershipCheckoutReturnState.status = "waiting";
+        }
+        if (!data.url) {
+          throw new Error(MEMBERSHIP_CHECKOUT_ERROR_FALLBACK);
+        }
+        window.location.href = data.url;
+      } catch (err) {
+        const normalizedError = handleCallableError(
+          "createMembershipCheckoutSession",
+          err,
+          MEMBERSHIP_CHECKOUT_ERROR_FALLBACK
+        );
+        membershipCheckoutState.status = "idle";
+        membershipCheckoutState.activePlan = null;
+        updateMembershipPlanButtons(currentUserProfile);
+        setMembershipMessage(
+          normalizedError.message || MEMBERSHIP_CHECKOUT_ERROR_FALLBACK
+        );
+      }
+    }
+
+    updateMembershipPlanButtons();
+
     function normalizePlanKey(plan) {
       const raw = (plan ?? "").toString().trim().toLowerCase();
       if (!raw) {
@@ -4097,14 +4385,30 @@
           !isActive && !isPending
         );
       }
-      const unlimitedActive = isUnlimitedMembershipActive(plan, profile?.membershipStatus);
-      const infoMessage =
-        plan === "basic"
-          ? "Membership charges are bundled with each fare. Contact RideSync support if you'd like information about unlimited plans."
-          : unlimitedActive
-              ? "Your unlimited coverage is active. Reach out to RideSync support if you need to update or pause it."
-              : `Your unlimited coverage is ${statusLabel.toLowerCase()}. Reach out to RideSync support if you need help updating or reactivating it.`;
+      const unlimitedActive = isUnlimitedMembershipActive(
+        plan,
+        profile?.membershipStatus
+      );
+      const infoMessage = (() => {
+        if (plan === "basic") {
+          if (
+            canStartMembershipCheckout("uofa_unlimited", profile) ||
+            canStartMembershipCheckout("nwa_unlimited", profile)
+          ) {
+            return "Activate an unlimited plan below to pay instantly with Stripe.";
+          }
+          return "Membership charges are bundled with each fare. Contact RideSync support if you'd like information about unlimited plans.";
+        }
+        if (normalizedStatus === "pending_verification") {
+          return "We received your payment and are verifying your student ID. You'll be notified once it is active.";
+        }
+        if (unlimitedActive) {
+          return "Your unlimited coverage is active. Reach out to RideSync support if you need to update or pause it.";
+        }
+        return "Tap Renew below to restart your unlimited coverage through Stripe checkout.";
+      })();
       setMembershipMessage(infoMessage);
+      updateMembershipPlanButtons(profile);
     }
 
     function updateSyncButtonLabel() {
@@ -4565,7 +4869,12 @@
         currentUserProfile = null;
         loginStatusEl.textContent = "";
         showAuthView();
-        if (hasPendingCheckoutReturn()) {
+        if (hasPendingMembershipCheckoutReturn()) {
+          openPaymentStatusOverlay(
+            "Sign in to finish membership",
+            "Stripe approved your payment. Log in so we can finalize your membership."
+          );
+        } else if (hasPendingCheckoutReturn()) {
           openPaymentStatusOverlay(
             "Sign in to finish payment",
             "Stripe approved your payment. Log in so we can finalize your ride."
@@ -4581,9 +4890,16 @@
       subscribeToDriverAvailability();
       initMapOnce();
       startDriverAvailabilityWatchers();
+      let pendingOverlay = false;
+      if (hasPendingMembershipCheckoutReturn()) {
+        pendingOverlay = true;
+        await finalizeMembershipCheckoutSessionIfNeeded(user);
+      }
       if (hasPendingCheckoutReturn()) {
+        pendingOverlay = true;
         await finalizeCheckoutSessionIfNeeded(user);
-      } else {
+      }
+      if (!pendingOverlay) {
         closePaymentStatusOverlay();
       }
 
@@ -5926,6 +6242,18 @@
       rideCardSubmit.addEventListener("click", handleRideCardSubmit);
     }
 
+    if (membershipPlanGrid) {
+      membershipPlanGrid.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-plan-action]");
+        if (!button || button.disabled) {
+          return;
+        }
+        const planKey = button.dataset.planAction;
+        if (!planKey) return;
+        handleMembershipPlanAction(planKey);
+      });
+    }
+
     if (cooldownDismissButton) {
       cooldownDismissButton.addEventListener("click", () => {
         hideCooldownOverlay();
@@ -6423,6 +6751,44 @@
       );
     }
 
+    function hasPendingMembershipCheckoutReturn() {
+      return (
+        membershipCheckoutReturnState.pendingId &&
+        membershipCheckoutReturnState.sessionId &&
+        membershipCheckoutReturnState.status !== "completed"
+      );
+    }
+
+    function stripMembershipCheckoutParamsFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      let changed = false;
+      [
+        "membership_pending_id",
+        "membershipPendingId",
+        "membershipPending",
+        "membership_session_id",
+        "membershipSessionId",
+        "membershipSession",
+      ].forEach((key) => {
+        if (params.has(key)) {
+          params.delete(key);
+          changed = true;
+        }
+      });
+      if (!changed) {
+        return;
+      }
+      const query = params.toString();
+      const hash = window.location.hash || "";
+      const newUrl =
+        `${window.location.origin}${window.location.pathname}` +
+        (query ? `?${query}` : "") +
+        hash;
+      window.history.replaceState({}, document.title, newUrl);
+      membershipCheckoutReturnState.pendingId = null;
+      membershipCheckoutReturnState.sessionId = null;
+    }
+
     function stripCheckoutParamsFromUrl() {
       const params = new URLSearchParams(window.location.search);
       let changed = false;
@@ -6444,6 +6810,65 @@
         (query ? `?${query}` : "") +
         hash;
       window.history.replaceState({}, document.title, newUrl);
+    }
+
+    async function finalizeMembershipCheckoutSessionIfNeeded(user) {
+      if (!hasPendingMembershipCheckoutReturn()) {
+        return;
+      }
+      if (!user) {
+        openPaymentStatusOverlay(
+          "Sign in to finish membership",
+          "Stripe approved your payment. Log in so we can finalize your membership."
+        );
+        return;
+      }
+      if (membershipCheckoutReturnState.status === "processing") {
+        return;
+      }
+      membershipCheckoutReturnState.status = "processing";
+      membershipCheckoutReturnState.attempts += 1;
+      openPaymentStatusOverlay(
+        "Finalizing your membership…",
+        "Hang tight while we confirm your Stripe checkout."
+      );
+
+      try {
+        const idToken = await user.getIdToken(true);
+        const payload = {
+          membership_pending_id: membershipCheckoutReturnState.pendingId,
+          membershipPendingId: membershipCheckoutReturnState.pendingId,
+          pendingId: membershipCheckoutReturnState.pendingId,
+          membership_session_id: membershipCheckoutReturnState.sessionId,
+          membershipSessionId: membershipCheckoutReturnState.sessionId,
+          sessionId: membershipCheckoutReturnState.sessionId,
+        };
+        await requestMembershipCheckoutFinalization(payload, idToken);
+        membershipCheckoutReturnState.status = "completed";
+        stripMembershipCheckoutParamsFromUrl();
+        if (user?.uid) {
+          await loadUserProfile(user.uid, user.email);
+        }
+        openPaymentStatusOverlay(
+          "Membership updated",
+          "Payment succeeded and your membership is ready."
+        );
+        setTimeout(() => {
+          if (!hasPendingCheckoutReturn()) {
+            closePaymentStatusOverlay();
+          }
+        }, 3500);
+      } catch (err) {
+        console.error(
+          "[RideSync][Stripe] finalize membership checkout failed",
+          err
+        );
+        membershipCheckoutReturnState.status = "error";
+        openPaymentStatusOverlay(
+          "Membership finalization pending",
+          err?.message || MEMBERSHIP_FINALIZE_FALLBACK
+        );
+      }
     }
 
     async function finalizeCheckoutSessionIfNeeded(user) {
@@ -6508,6 +6933,53 @@
             "We received your payment but still need to finish processing. Contact RideSync support if this persists."
         );
       }
+    }
+
+    async function requestMembershipCheckoutFinalization(payload, idToken) {
+      const headers = {
+        "Content-Type": "application/json",
+      };
+      if (idToken) {
+        headers.Authorization = `Bearer ${idToken}`;
+      }
+      const body = JSON.stringify(payload);
+      let lastFailure = null;
+      for (const endpoint of membershipFinalizeEndpoints) {
+        if (!endpoint) continue;
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers,
+            body,
+          });
+          let data = null;
+          try {
+            data = await response.json();
+          } catch (_) {
+            data = null;
+          }
+          if (response.ok) {
+            return data || {};
+          }
+          lastFailure = {
+            endpoint,
+            status: response.status,
+            body: data,
+          };
+        } catch (err) {
+          lastFailure = {
+            endpoint,
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
+      }
+      if (lastFailure) {
+        console.error(
+          "[RideSync][Stripe] finalizeMembershipCheckoutSession endpoint error",
+          lastFailure
+        );
+      }
+      throw new Error(MEMBERSHIP_FINALIZE_FALLBACK);
     }
 
     function openPaymentStatusOverlay(title, message) {
@@ -7732,6 +8204,41 @@
       if (firebaseConfig?.projectId) {
         const functionUrl = normalizeCheckoutEndpoint(
           `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/createRideCheckoutSession`
+        );
+        if (functionUrl) {
+          endpoints.push(functionUrl);
+        }
+      }
+      const deduped = [];
+      const seen = new Set();
+      for (const endpoint of endpoints) {
+        if (!endpoint || seen.has(endpoint)) {
+          continue;
+        }
+        seen.add(endpoint);
+        deduped.push(endpoint);
+      }
+      return deduped;
+    }
+
+    function buildMembershipFinalizeEndpoints() {
+      const endpoints = [];
+      const configuredUrl = normalizeCheckoutEndpoint(
+        functionsConfig.finalizeMembershipCheckoutSessionUrl ||
+          functionsConfig.finalizeMembershipCheckoutUrl
+      );
+      if (configuredUrl) {
+        endpoints.push(configuredUrl);
+      }
+      const defaultRelative = normalizeCheckoutEndpoint(
+        "/finalizeMembershipCheckoutSession"
+      );
+      if (defaultRelative) {
+        endpoints.push(defaultRelative);
+      }
+      if (firebaseConfig?.projectId) {
+        const functionUrl = normalizeCheckoutEndpoint(
+          `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/finalizeMembershipCheckoutSession`
         );
         if (functionUrl) {
           endpoints.push(functionUrl);
