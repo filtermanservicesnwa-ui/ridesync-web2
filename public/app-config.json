@@ -28,7 +28,7 @@
     "publishableKeyTest": "pk_test_51SKjO4CbEdF7xUZ5y1Uceore88zrCE8Q9ASNO6bVxGVkj9YGPazDPvx9VZwjfriUnzslstmBVa5WEzukGjMkgVz000w5bDBHhi",
     "membershipPlans": {
       "basic": {
-        "priceDisplay": "Pay per ride • No monthly fee",
+        "priceDisplay": "$0.60/min + $3.00 + 3%",
         "mode": "none"
       },
       "uofa_unlimited": {
@@ -44,7 +44,9 @@
   "geo": {
     "nwaCenter": { "lat": 36.334, "lng": -94.118 },
     "nwaRadiusMiles": 30,
-    "dropoffGeofenceMeters": 45
+    "dropoffGeofenceMeters": 45,
+    "fayettevilleCenter": { "lat": 36.063, "lng": -94.171 },
+    "fayettevilleRadiusMiles": 6
   },
   "ridePolicy": {
     "unlimitedCooldownMinutes": 30,
@@ -54,6 +56,7 @@
   "fares": {
     "basicRatePerMin": 0.6,
     "basicPlatformFee": 1.5,
+    "basicPerRideFee": 1.5,
     "basicProcessingFeeRate": 0.03,
     "unlimitedOutRate": 0.35,
     "unlimitedProcessingFeeRate": 0.04
