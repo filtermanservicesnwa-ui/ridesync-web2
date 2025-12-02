@@ -169,7 +169,17 @@ describe("manual capture helpers", () => {
     expect(above.reason).toBe("above_max");
   });
 
+  it("allows zero tip when no minimum is enforced", () => {
+    expect(clampTipAmountCents(0, { min: 0, max: 1200 })).toBe(0);
+    const zeroTip = validateTipBounds(0);
+    expect(zeroTip.ok).toBe(true);
+    expect(zeroTip.value).toBe(0);
+    expect(zeroTip.min).toBe(0);
+  });
+
   it("computes the hold amount using fare plus max tip", () => {
     expect(computeRideHoldAmountCents(1500, 1200)).toBe(2700);
+    expect(computeRideHoldAmountCents(1500, 0)).toBe(1500);
+    expect(computeRideHoldAmountCents(0, 0)).toBe(0);
   });
 });
