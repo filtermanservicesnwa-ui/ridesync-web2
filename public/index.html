@@ -556,6 +556,10 @@
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 12px;
     }
+    .membership-plan-grid.checkout-plans {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
     .membership-plan {
       border-radius: 14px;
       border: 1px solid rgba(148,163,184,0.35);
@@ -594,6 +598,9 @@
       cursor: pointer;
       transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
       text-align: left;
+    }
+    .membership-plan-card.checkout-option {
+      width: 100%;
     }
     .membership-plan-card:hover {
       border-color: #22c55e;
@@ -788,6 +795,10 @@
       font-size: 0.8rem;
       color: #94a3b8;
       margin: 0;
+    }
+    .sync-membership-card.info-only {
+      cursor: default;
+      pointer-events: none;
     }
     .sync-tip-note {
       font-size: 0.78rem;
@@ -2125,23 +2136,6 @@
           </div>
         </div>
       </div>
-      <div id="paymentMembershipBox" class="membership-card" style="margin-top:16px;" aria-live="polite">
-        <div class="section-title" style="margin-top:0;">Membership</div>
-        <p id="paymentMembershipCurrent" class="membership-subtitle">
-          Checking your membership…
-        </p>
-        <div class="membership-plan-grid payment-membership-grid info-only" style="margin-top:12px;">
-          <div class="membership-plan membership-plan-card">
-            <div class="membership-plan-title">Membership & tip summary</div>
-            <p class="membership-plan-desc">
-              Membership savings are already reflected in the fare above. Tips remain optional and go directly to your driver.
-            </p>
-          </div>
-        </div>
-        <div id="paymentMembershipMessage" class="small" style="margin-top:8px;">
-          Need to adjust your plan? Contact RideSync support before your next ride.
-        </div>
-      </div>
       <div id="preauthTipSection" class="payment-tip-section" aria-live="polite">
         <div class="section-title" style="margin-top:18px;">
           Add a tip (you can change it after the ride)
@@ -2273,6 +2267,66 @@
       </button>
       <div id="rideCheckoutMessage" class="error"></div>
       <div id="rideFareStatus" class="ride-payment-status"></div>
+    </div>
+  </div>
+
+  <div
+    id="membershipCheckoutOverlay"
+    class="payment-overlay"
+    aria-hidden="true"
+  >
+    <div
+      class="payment-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="membershipCheckoutTitle"
+    >
+      <div class="payment-panel-header">
+        <div>
+          <h3 id="membershipCheckoutTitle" class="payment-panel-title">
+            Upgrade your membership
+          </h3>
+          <p id="membershipCheckoutSubtitle" class="payment-panel-subtitle">
+            Compare one-time rides with unlimited plans before heading to Stripe.
+          </p>
+        </div>
+        <button
+          id="membershipCheckoutClose"
+          type="button"
+          class="btn-secondary btn-small"
+          data-default-focus="true"
+        >
+          Close
+        </button>
+      </div>
+      <div
+        id="membershipCheckoutOptions"
+        class="membership-plan-grid checkout-plans"
+        role="radiogroup"
+        aria-label="Membership checkout options"
+      ></div>
+      <div class="fare-box" style="margin-top:12px;">
+        <div class="fare-row">
+          <div class="fare-label">Selected plan</div>
+          <div class="fare-value" id="membershipCheckoutPrice">—</div>
+        </div>
+        <p id="membershipCheckoutHint" class="small" style="margin-top:6px;"></p>
+      </div>
+      <div id="membershipCheckoutError" class="error" aria-live="polite"></div>
+      <button
+        id="membershipCheckoutButton"
+        type="button"
+        class="btn-primary"
+      >
+        Checkout with Stripe
+      </button>
+      <button
+        id="membershipCheckoutCancel"
+        type="button"
+        class="btn-secondary"
+      >
+        Not now
+      </button>
     </div>
   </div>
 
@@ -2840,6 +2894,8 @@
     const membershipCheckoutState = {
       status: "idle",
       activePlan: null,
+      selectedPlan: null,
+      processing: false,
     };
 
     let joinMode = false;
@@ -2925,9 +2981,8 @@
       const planKey = normalizePlanKey(node.dataset.planHint);
       membershipPlanHints.set(planKey, node);
     });
-    const paymentMembershipBox = document.getElementById("paymentMembershipBox");
-    const paymentMembershipCurrent = document.getElementById("paymentMembershipCurrent");
-    const paymentMembershipMessage = document.getElementById("paymentMembershipMessage");
+    const MEMBERSHIP_CARD_DEFAULT_MESSAGE =
+      "Membership charges are included with your fare payment.";
     const syncConfirmOverlay = document.getElementById("syncConfirmOverlay");
     const syncConfirmTitle = document.getElementById("syncConfirmTitle");
     const syncConfirmSubtitle = document.getElementById("syncConfirmSubtitle");
@@ -2944,6 +2999,15 @@
     const syncConfirmClose = document.getElementById("syncConfirmClose");
     const syncConfirmCancel = document.getElementById("syncConfirmCancel");
     const syncConfirmError = document.getElementById("syncConfirmError");
+
+    const membershipCheckoutOverlay = document.getElementById("membershipCheckoutOverlay");
+    const membershipCheckoutOptions = document.getElementById("membershipCheckoutOptions");
+    const membershipCheckoutPrice = document.getElementById("membershipCheckoutPrice");
+    const membershipCheckoutHint = document.getElementById("membershipCheckoutHint");
+    const membershipCheckoutError = document.getElementById("membershipCheckoutError");
+    const membershipCheckoutButton = document.getElementById("membershipCheckoutButton");
+    const membershipCheckoutClose = document.getElementById("membershipCheckoutClose");
+    const membershipCheckoutCancel = document.getElementById("membershipCheckoutCancel");
 
     const riderEmailDetailEl = document.getElementById("riderEmailDetail");
     const riderPhoneDetailEl = document.getElementById("riderPhoneDetail");
@@ -3209,7 +3273,6 @@
     let rideTipRefreshTimer = null;
     let lastPaymentOverlayOptions = null;
     let isSyncConfirmOpen = false;
-    let syncMembershipSelection = null;
     let syncTipUsesCustom = false;
 
     let isSignupMode = false;
@@ -4012,20 +4075,6 @@
       }
     }
 
-    function renderPaymentMembershipSection() {
-      if (!paymentMembershipBox) return;
-      const tier = resolveProfileTier(currentUserProfile);
-      const tierDetail =
-        MEMBERSHIP_TIER_DETAILS[tier] || MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.BASIC];
-      if (paymentMembershipCurrent) {
-        paymentMembershipCurrent.textContent = tierDetail.summary;
-      }
-      if (paymentMembershipMessage) {
-        paymentMembershipMessage.textContent =
-          "Membership savings are already included with the fare above. Tips remain optional and separate.";
-      }
-    }
-
     function formatCurrencyFromCents(amountCents = 0, currency = "usd") {
       const value = Number(amountCents || 0) / 100;
       try {
@@ -4187,11 +4236,11 @@
 
       response.label =
         normalized === "uofa_unlimited"
-          ? "Activate U of A Unlimited"
-          : "Activate NWA Unlimited";
+          ? "Review U of A Unlimited"
+          : "Review NWA Unlimited";
       response.disabled = false;
       response.hint =
-        "Secure checkout via Stripe. Membership updates automatically.";
+        "Opens a checkout panel so you can compare one-time fares with unlimited savings before Stripe.";
       return response;
     }
 
@@ -4221,7 +4270,7 @@
       }
     }
 
-    async function handleMembershipPlanAction(planKey) {
+    function handleMembershipPlanAction(planKey) {
       const normalized = normalizePlanKey(planKey);
       if (!STRIPE_ENABLED) {
         setMembershipMessage("Stripe payments are not available right now.");
@@ -4241,25 +4290,153 @@
         setMembershipMessage("Sign in to manage memberships.");
         return;
       }
-
-      membershipCheckoutState.status = "redirecting";
       membershipCheckoutState.activePlan = normalized;
-      updateMembershipPlanButtons(currentUserProfile);
-      setMembershipMessage("Opening Stripe Checkout…");
-      logStripeDebug("membership_checkout_start", {
-        plan: normalized,
-        mode: planMode,
-      });
+      membershipCheckoutState.status = "ready";
+      membershipCheckoutState.processing = false;
+      openMembershipCheckoutOverlay(normalized);
+      setMembershipMessage("Compare plans before redirecting to Stripe.");
+    }
 
+    function planRequiresStripeCheckout(planKey) {
+      const mode = getMembershipPlanMode(planKey);
+      return mode === "subscription" || mode === "payment";
+    }
+
+    function setMembershipCheckoutError(message) {
+      if (membershipCheckoutError) {
+        membershipCheckoutError.textContent = message || "";
+      }
+    }
+
+    function updateMembershipCheckoutSummary() {
+      if (!membershipCheckoutPrice || !membershipCheckoutButton) return;
+      const selectedPlan =
+        membershipCheckoutState.selectedPlan || getProfilePlanKey() || "basic";
+      membershipCheckoutPrice.textContent = formatPlanPriceLabel(selectedPlan);
+      if (membershipCheckoutHint) {
+        membershipCheckoutHint.textContent =
+          selectedPlan === "basic"
+            ? "Stick with pay-per-ride pricing. Stripe will prompt you after each trip."
+            : "Upgrade now to unlock unlimited coverage. We'll send you to Stripe Checkout.";
+      }
+      const requiresCheckout = planRequiresStripeCheckout(selectedPlan);
+      membershipCheckoutButton.disabled =
+        !requiresCheckout || membershipCheckoutState.processing;
+      membershipCheckoutButton.textContent = membershipCheckoutState.processing
+        ? "Preparing Stripe…"
+        : requiresCheckout
+        ? "Checkout with Stripe"
+        : "Pay per ride at checkout";
+    }
+
+    function renderMembershipCheckoutOptions() {
+      if (!membershipCheckoutOptions) return;
+      const plans = ["basic", "uofa_unlimited", "nwa_unlimited"];
+      const selectedPlan =
+        membershipCheckoutState.selectedPlan || getProfilePlanKey() || "basic";
+      const fragment = document.createDocumentFragment();
+      plans.forEach((planKey) => {
+        const planCopy =
+          MEMBERSHIP_PLAN_COPY[planKey] || MEMBERSHIP_PLAN_COPY.basic;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.membershipOption = planKey;
+        button.className = "membership-plan membership-plan-card checkout-option";
+        button.setAttribute("role", "radio");
+        button.setAttribute("aria-checked", selectedPlan === planKey ? "true" : "false");
+        const selectable = planKey === "basic" || isPlanSelectable(planKey);
+        if (!selectable) {
+          button.disabled = true;
+          button.classList.add("disabled");
+        }
+        if (selectedPlan === planKey) {
+          button.classList.add("active");
+        }
+        const lockReason = !selectable ? getPlanLockReason(planKey) : "";
+        const planHint =
+          planKey === "basic"
+            ? "Keep paying per ride with standard fares."
+            : lockReason ||
+              "Unlimited riders only pay tips after each trip.";
+        button.innerHTML = `
+          <div class="membership-plan-title">${planCopy.label}</div>
+          <div class="membership-plan-price">${formatPlanPriceLabel(planKey)}</div>
+          <p class="membership-plan-desc">${planCopy.description}</p>
+          <p class="membership-plan-desc">${planHint}</p>
+        `;
+        fragment.appendChild(button);
+      });
+      membershipCheckoutOptions.innerHTML = "";
+      membershipCheckoutOptions.appendChild(fragment);
+    }
+
+    function selectMembershipCheckoutPlan(planKey) {
+      membershipCheckoutState.selectedPlan = normalizePlanKey(planKey || "basic");
+      setMembershipCheckoutError("");
+      renderMembershipCheckoutOptions();
+      updateMembershipCheckoutSummary();
+    }
+
+    function openMembershipCheckoutOverlay(initialPlan) {
+      if (!membershipCheckoutOverlay) return;
+      const fallbackPlan = getProfilePlanKey() || "basic";
+      const normalized = normalizePlanKey(initialPlan || fallbackPlan);
+      membershipCheckoutState.selectedPlan = normalized;
+      membershipCheckoutState.status = "ready";
+      membershipCheckoutState.activePlan = null;
+      membershipCheckoutState.processing = false;
+      setMembershipCheckoutError("");
+      renderMembershipCheckoutOptions();
+      updateMembershipCheckoutSummary();
+      toggleOverlay(membershipCheckoutOverlay, true, membershipCheckoutClose);
+    }
+
+    function closeMembershipCheckoutOverlay() {
+      if (!membershipCheckoutOverlay) return;
+      membershipCheckoutState.processing = false;
+      membershipCheckoutState.status = "idle";
+      membershipCheckoutState.selectedPlan = null;
+      membershipCheckoutState.activePlan = null;
+      toggleOverlay(membershipCheckoutOverlay, false);
+      setMembershipCheckoutError("");
+      updateMembershipPlanButtons(currentUserProfile);
+      setMembershipMessage("");
+    }
+
+    async function startMembershipCheckout() {
+      const planKey =
+        membershipCheckoutState.selectedPlan || getProfilePlanKey() || "basic";
+      if (!planRequiresStripeCheckout(planKey)) {
+        setMembershipMessage(
+          "Basic rides are billed from your fare overlay. No membership checkout needed."
+        );
+        closeMembershipCheckoutOverlay();
+        return;
+      }
+      if (!canStartMembershipCheckout(planKey)) {
+        setMembershipCheckoutError(getMembershipPlanDisabledReason(planKey));
+        return;
+      }
+      membershipCheckoutState.processing = true;
+      membershipCheckoutState.status = "redirecting";
+      membershipCheckoutState.activePlan = planKey;
+      updateMembershipPlanButtons(currentUserProfile);
+      updateMembershipCheckoutSummary();
+      setMembershipCheckoutError("");
+      logStripeDebug("membership_checkout_start", {
+        plan: planKey,
+        mode: getMembershipPlanMode(planKey),
+      });
+      showPaymentRedirectOverlay("Redirecting you to Stripe Checkout…");
       try {
         const redirectBaseUrl =
           typeof window !== "undefined" && window.location?.origin
             ? window.location.origin
             : undefined;
         const response = await createMembershipCheckoutSessionFn({
-          plan: normalized,
-          planId: normalized,
-          mode: planMode,
+          plan: planKey,
+          planId: planKey,
+          mode: getMembershipPlanMode(planKey),
           redirectBaseUrl,
         });
         const data = response?.data || {};
@@ -4277,10 +4454,13 @@
           err,
           MEMBERSHIP_CHECKOUT_ERROR_FALLBACK
         );
-        membershipCheckoutState.status = "idle";
+        hidePaymentRedirectOverlay();
+        membershipCheckoutState.processing = false;
+        membershipCheckoutState.status = "ready";
         membershipCheckoutState.activePlan = null;
         updateMembershipPlanButtons(currentUserProfile);
-        setMembershipMessage(
+        updateMembershipCheckoutSummary();
+        setMembershipCheckoutError(
           normalizedError.message || MEMBERSHIP_CHECKOUT_ERROR_FALLBACK
         );
       }
@@ -4783,7 +4963,6 @@
       setMembershipBadge(p);
       renderMembershipCard(p);
       updateSyncButtonLabel();
-      renderPaymentMembershipSection();
     }
 
     editProfileButton.addEventListener("click", () => {
@@ -6264,6 +6443,30 @@
       });
     }
 
+    if (membershipCheckoutButton) {
+      membershipCheckoutButton.addEventListener("click", startMembershipCheckout);
+    }
+    if (membershipCheckoutClose) {
+      membershipCheckoutClose.addEventListener("click", closeMembershipCheckoutOverlay);
+    }
+    if (membershipCheckoutCancel) {
+      membershipCheckoutCancel.addEventListener("click", closeMembershipCheckoutOverlay);
+    }
+    if (membershipCheckoutOverlay) {
+      membershipCheckoutOverlay.addEventListener("click", (event) => {
+        if (event.target === membershipCheckoutOverlay) {
+          closeMembershipCheckoutOverlay();
+        }
+      });
+    }
+    if (membershipCheckoutOptions) {
+      membershipCheckoutOptions.addEventListener("click", (event) => {
+        const option = event.target.closest("[data-membership-option]");
+        if (!option || option.disabled) return;
+        selectMembershipCheckoutPlan(option.dataset.membershipOption);
+      });
+    }
+
     if (cooldownDismissButton) {
       cooldownDismissButton.addEventListener("click", () => {
         hideCooldownOverlay();
@@ -6305,7 +6508,8 @@
 
     function setMembershipMessage(text) {
       if (membershipCardMessage) {
-        membershipCardMessage.textContent = text || "";
+        membershipCardMessage.textContent =
+          text || MEMBERSHIP_CARD_DEFAULT_MESSAGE;
       }
     }
 
@@ -6367,25 +6571,12 @@
       );
     }
 
-    function isPlanSelectable(planKey) {
+    function isPlanSelectable(planKey, profile = currentUserProfile) {
       const normalized = normalizePlanKey(planKey);
       if (normalized === "basic") {
         return true;
       }
-      if (!currentUserProfile) {
-        return false;
-      }
-      if (normalized === "uofa_unlimited") {
-        return !!(currentUserProfile.isStudent && currentUserProfile.uofaVerified);
-      }
-      if (normalized === "nwa_unlimited") {
-        return (
-          normalizePlanKey(
-            currentUserProfile.membershipType || currentUserProfile.membership
-          ) === "nwa_unlimited"
-        );
-      }
-      return false;
+      return canStartMembershipCheckout(normalized, profile);
     }
 
     function getPlanLockReason(planKey) {
@@ -6404,79 +6595,55 @@
       return "";
     }
 
-    function updateSyncMembershipHint(planKey) {
+    function updateSyncMembershipHint() {
       if (!syncMembershipHint) return;
-      const normalized = normalizePlanKey(planKey);
-      const planCopy =
-        MEMBERSHIP_PLAN_COPY[normalized] || MEMBERSHIP_PLAN_COPY.basic;
-      const tier = planCopy?.tier || MEMBERSHIP_TIER_KEYS.BASIC;
-      let message =
-        MEMBERSHIP_TIER_DETAILS[tier]?.summary ||
-        "Membership savings are bundled with your fare.";
       const profilePlan = getProfilePlanKey();
-      if (normalized !== profilePlan) {
-        const profileLabel =
-          MEMBERSHIP_PLAN_COPY[profilePlan]?.label ||
-          MEMBERSHIP_PLAN_COPY.basic.label;
-        message = `Your RideSync profile is set to ${profileLabel}. Contact support if you need to change plans.`;
+      const profileLabel =
+        MEMBERSHIP_PLAN_COPY[profilePlan]?.label ||
+        MEMBERSHIP_PLAN_COPY.basic.label;
+      if (profilePlan === "basic") {
+        syncMembershipHint.textContent =
+          "Unlimited members only pay tips at checkout. U of A: $80/mo. NWA: $120/mo.";
+        return;
       }
-      syncMembershipHint.textContent = message;
+      syncMembershipHint.textContent = `${profileLabel} is active for your rides. Tips stay optional; contact RideSync support if you need to change plans.`;
     }
 
     function renderSyncMembershipOptions() {
       if (!syncMembershipList) return;
       const plans = ["basic", "uofa_unlimited", "nwa_unlimited"];
-      const normalizedSelection = normalizePlanKey(
-        syncMembershipSelection || getProfilePlanKey()
-      );
-      syncMembershipSelection = normalizedSelection;
+      const profilePlan = getProfilePlanKey();
       const fragment = document.createDocumentFragment();
       plans.forEach((planKey) => {
         const planCopy =
           MEMBERSHIP_PLAN_COPY[planKey] || MEMBERSHIP_PLAN_COPY.basic;
-        const button = document.createElement("button");
-        button.type = "button";
-        button.dataset.plan = planKey;
-        button.className = "sync-membership-card";
-        const selectable = isPlanSelectable(planKey);
-        if (!selectable) {
-          button.classList.add("disabled");
-          button.disabled = true;
+        const card = document.createElement("div");
+        card.className = "sync-membership-card info-only";
+        card.dataset.plan = planKey;
+        if (planKey === profilePlan) {
+          card.classList.add("active");
         }
-        if (normalizedSelection === planKey) {
-          button.classList.add("active");
-        }
-        const lockReason = !selectable ? getPlanLockReason(planKey) : "";
-        button.innerHTML = `
+        const lockReason = !isPlanSelectable(planKey)
+          ? getPlanLockReason(planKey)
+          : "";
+        const savingsHint =
+          planKey === "basic"
+            ? "Pay per ride with standard fees."
+            : "Unlimited riders only tip their driver after each trip.";
+        card.innerHTML = `
           <span class="plan-pill" aria-hidden="true"></span>
           <span class="plan-content">
             <span class="plan-label">${planCopy.label}</span>
             <span class="plan-price">${formatPlanPriceLabel(planKey)}</span>
             <p class="plan-desc">${planCopy.description}</p>
-            ${lockReason ? `<p class="plan-desc" style="color:#fbbf24;">${lockReason}</p>` : ""}
+            <p class="plan-desc">${lockReason || savingsHint}</p>
           </span>
         `;
-        fragment.appendChild(button);
+        fragment.appendChild(card);
       });
       syncMembershipList.innerHTML = "";
       syncMembershipList.appendChild(fragment);
-      updateSyncMembershipHint(syncMembershipSelection);
-    }
-
-    function setSyncMembershipSelection(planKey) {
-      const normalized = normalizePlanKey(planKey);
-      if (!isPlanSelectable(normalized)) {
-        const reason = getPlanLockReason(normalized);
-        if (syncConfirmError && reason) {
-          syncConfirmError.textContent = reason;
-        }
-        return;
-      }
-      if (syncConfirmError) {
-        syncConfirmError.textContent = "";
-      }
-      syncMembershipSelection = normalized;
-      renderSyncMembershipOptions();
+      updateSyncMembershipHint();
     }
 
     function isPresetTipValue(cents) {
@@ -6641,12 +6808,6 @@
           ? `$${total.toFixed(2)}`
           : "—";
       }
-      syncMembershipSelection = normalizePlanKey(
-        currentUserProfile?.membershipType ||
-          currentUserProfile?.membership ||
-          syncMembershipSelection ||
-          "basic"
-      );
       renderSyncMembershipOptions();
       const presetMatch = isPresetTipValue(
         ridePreauthState.selectedTipCents || MIN_RIDE_TIP_CENTS
@@ -6674,34 +6835,8 @@
       }
     }
 
-    function validateSyncMembershipSelection() {
-      if (!currentUserProfile) {
-        if (syncConfirmError) {
-          syncConfirmError.textContent = "Log in to request a ride.";
-        }
-        return false;
-      }
-      const profilePlan = getProfilePlanKey();
-      if (syncMembershipSelection !== profilePlan) {
-        if (syncConfirmError) {
-          const profileLabel =
-            MEMBERSHIP_PLAN_COPY[profilePlan]?.label ||
-            MEMBERSHIP_PLAN_COPY.basic.label;
-          syncConfirmError.textContent = `Your account is set to ${profileLabel}. Contact RideSync support to change your membership.`;
-        }
-        return false;
-      }
-      if (syncConfirmError) {
-        syncConfirmError.textContent = "";
-      }
-      return true;
-    }
-
     async function handleSyncConfirmSubmit() {
       if (!syncConfirmOverlay || !isSyncConfirmOpen) {
-        return;
-      }
-      if (!validateSyncMembershipSelection()) {
         return;
       }
       setSyncConfirmBusy(true);
@@ -6716,16 +6851,6 @@
         setSyncConfirmBusy(false);
         openSyncConfirmOverlay({ preserveError: true });
       }
-    }
-
-    if (syncMembershipList) {
-      syncMembershipList.addEventListener("click", (event) => {
-        const target = event.target.closest(".sync-membership-card");
-        if (!target || target.disabled) return;
-        const planKey = target.dataset?.plan;
-        if (!planKey) return;
-        setSyncMembershipSelection(planKey);
-      });
     }
 
     if (syncTipOptions) {
@@ -8235,15 +8360,6 @@
         paymentFareSummary.style.display =
           options.context?.type === "ride" ? "" : "none";
       }
-      if (paymentMembershipBox) {
-        const shouldShowMembership =
-          options.context?.type === "ride" ||
-          options.context?.type === "ride_preauth";
-        paymentMembershipBox.style.display = shouldShowMembership ? "" : "none";
-        if (shouldShowMembership) {
-          renderPaymentMembershipSection();
-        }
-      }
     }
 
     function closePaymentOverlay() {
@@ -8258,9 +8374,6 @@
       paymentOverlay?.setAttribute("aria-hidden", "true");
       if (paymentOverlayMessage) {
         paymentOverlayMessage.textContent = "";
-      }
-      if (paymentMembershipMessage) {
-        paymentMembershipMessage.textContent = "";
       }
     }
 
