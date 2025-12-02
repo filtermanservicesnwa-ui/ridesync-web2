@@ -6826,6 +6826,7 @@
       if (membershipCheckoutReturnState.status === "processing") {
         return;
       }
+      const rideCheckoutPendingAtMembershipFinalizeStart = hasPendingCheckoutReturn();
       membershipCheckoutReturnState.status = "processing";
       membershipCheckoutReturnState.attempts += 1;
       openPaymentStatusOverlay(
@@ -6854,7 +6855,10 @@
           "Payment succeeded and your membership is ready."
         );
         setTimeout(() => {
-          if (!hasPendingCheckoutReturn()) {
+          if (
+            !rideCheckoutPendingAtMembershipFinalizeStart &&
+            !hasPendingCheckoutReturn()
+          ) {
             closePaymentStatusOverlay();
           }
         }, 3500);
