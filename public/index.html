@@ -6571,25 +6571,12 @@
       );
     }
 
-    function isPlanSelectable(planKey) {
+    function isPlanSelectable(planKey, profile = currentUserProfile) {
       const normalized = normalizePlanKey(planKey);
       if (normalized === "basic") {
         return true;
       }
-      if (!currentUserProfile) {
-        return false;
-      }
-      if (normalized === "uofa_unlimited") {
-        return !!(currentUserProfile.isStudent && currentUserProfile.uofaVerified);
-      }
-      if (normalized === "nwa_unlimited") {
-        return (
-          normalizePlanKey(
-            currentUserProfile.membershipType || currentUserProfile.membership
-          ) === "nwa_unlimited"
-        );
-      }
-      return false;
+      return canStartMembershipCheckout(normalized, profile);
     }
 
     function getPlanLockReason(planKey) {
