@@ -443,7 +443,7 @@ function resolveFareConstants() {
 
 const FARE_CONSTANTS = resolveFareConstants();
 
-const MIN_RIDE_TIP_CENTS = 200;
+const MIN_RIDE_TIP_CENTS = 0;
 const DEFAULT_MAX_TIP_CENTS = 1200;
 const MAX_ALLOWED_TIP_CENTS = 5000;
 
