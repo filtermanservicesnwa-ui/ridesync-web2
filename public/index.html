@@ -1356,9 +1356,9 @@
           <div>
             <label for="membership">Membership</label>
             <select id="membership">
-              <option value="basic">Basic (pay per ride)</option>
-              <option value="uofa_unlimited">U of A Unlimited ($80/mo)</option>
-              <option value="nwa_unlimited">NWA Unlimited ($120/mo)</option>
+              <option value="basic">BASIC (default) — pay per ride</option>
+              <option value="uofa_unlimited">U OF A STUDENT — UNLIMITED ($80/mo)</option>
+              <option value="nwa_unlimited">NORTHWEST ARKANSAS — UNLIMITED ($120/mo)</option>
             </select>
           </div>
         </div>
@@ -1537,7 +1537,7 @@
           <!-- === RIDE SYNC STRIPE: END membership summary === -->
           <div class="membership-plan-grid" style="display:none;">
             <div class="membership-plan" data-plan="uofa_unlimited">
-              <div class="membership-plan-title">U of A Unlimited</div>
+              <div class="membership-plan-title">U OF A STUDENT — UNLIMITED</div>
               <div
                 class="membership-plan-price"
                 data-plan-price="uofa_unlimited"
@@ -1545,18 +1545,18 @@
                 $80 / month
               </div>
               <p class="membership-plan-desc">
-                Unlimited Fayetteville rides. Out-of-zone trips bill per minute.
+                Unlimited Fayetteville rides with a 30-min cooldown (60 during surge). Only pay tip.
               </p>
               <button
                 class="btn-primary btn-small"
                 type="button"
                 data-plan-action="uofa_unlimited"
               >
-                Upgrade to U of A Unlimited
+                Upgrade to U of A Student — Unlimited
               </button>
             </div>
             <div class="membership-plan" data-plan="nwa_unlimited">
-              <div class="membership-plan-title">NWA Unlimited</div>
+              <div class="membership-plan-title">NORTHWEST ARKANSAS — UNLIMITED</div>
               <div
                 class="membership-plan-price"
                 data-plan-price="nwa_unlimited"
@@ -1564,14 +1564,14 @@
                 $120 / month
               </div>
               <p class="membership-plan-desc">
-                Unlimited rides inside the 30-mile NWA radius.
+                Unlimited rides within a 30-mile radius of Rogers. Only pay tip.
               </p>
               <button
                 class="btn-primary btn-small"
                 type="button"
                 data-plan-action="nwa_unlimited"
               >
-                Upgrade to NWA Unlimited
+                Upgrade to Northwest Arkansas — Unlimited
               </button>
             </div>
           </div>
@@ -1961,6 +1961,50 @@
           </div>
         </div>
       </div>
+      <div id="paymentMembershipBox" class="membership-card" style="margin-top:16px;" aria-live="polite">
+        <div class="section-title" style="margin-top:0;">Membership</div>
+        <p id="paymentMembershipCurrent" class="membership-subtitle">
+          Checking your membership…
+        </p>
+        <div class="membership-plan-grid payment-membership-grid" style="margin-top:12px;">
+          <button
+            type="button"
+            class="membership-plan membership-plan-card"
+            data-payment-tier-option="BASIC"
+          >
+            <div class="membership-plan-title">BASIC (default)</div>
+            <div class="membership-plan-price">
+              $0.60/min + $3.00 + 3%
+            </div>
+            <p class="membership-plan-desc">
+              Standard RideSync coverage. Pay per ride with Stripe.
+            </p>
+          </button>
+          <button
+            type="button"
+            class="membership-plan membership-plan-card"
+            data-payment-tier-option="UOFA"
+          >
+            <div class="membership-plan-title">U OF A STUDENT — UNLIMITED</div>
+            <div class="membership-plan-price">$80 / month</div>
+            <p class="membership-plan-desc">
+              Unlimited Fayetteville rides. Only pay tip. 30-min cooldown (60 during surge).
+            </p>
+          </button>
+          <button
+            type="button"
+            class="membership-plan membership-plan-card"
+            data-payment-tier-option="NWA"
+          >
+            <div class="membership-plan-title">NORTHWEST ARKANSAS — UNLIMITED</div>
+            <div class="membership-plan-price">$120 / month</div>
+            <p class="membership-plan-desc">
+              Unlimited rides within 30 miles of Rogers. Only pay tip.
+            </p>
+          </button>
+        </div>
+        <div id="paymentMembershipMessage" class="small" style="margin-top:8px;"></div>
+      </div>
       <div id="preauthTipSection" class="payment-tip-section" aria-live="polite">
         <div class="section-title" style="margin-top:18px;">
           Add a tip (you can change it after the ride)
@@ -2144,12 +2188,12 @@
           type="button"
           data-membership-option="nwa_unlimited"
         >
-          <div class="membership-plan-title">NWA Unlimited</div>
+          <div class="membership-plan-title">NORTHWEST ARKANSAS — UNLIMITED</div>
           <div class="membership-plan-price" data-plan-price="nwa_unlimited">
             $120 / month
           </div>
           <p class="membership-plan-desc">
-            Unlimited rides inside the 30-mile NWA service radius.
+            Unlimited rides within a 30-mile radius of Rogers. Only pay tip.
           </p>
         </button>
         <button
@@ -2157,12 +2201,12 @@
           type="button"
           data-membership-option="uofa_unlimited"
         >
-          <div class="membership-plan-title">U of A Unlimited</div>
+          <div class="membership-plan-title">U OF A STUDENT — UNLIMITED</div>
           <div class="membership-plan-price" data-plan-price="uofa_unlimited">
             $80 / month
           </div>
           <p class="membership-plan-desc">
-            Unlimited Fayetteville rides with out-of-zone surcharges.
+            Unlimited Fayetteville rides. Only pay tip. 30-min cooldown (60 during surge).
           </p>
         </button>
       </div>
@@ -2569,6 +2613,10 @@
 
     const NWA_CENTER = geoConfig.nwaCenter || { lat: 36.334, lng: -94.118 };
     const NWA_RADIUS_MILES = geoConfig.nwaRadiusMiles ?? 30;
+    const FAYETTEVILLE_CENTER =
+      geoConfig.fayettevilleCenter || { lat: 36.063, lng: -94.171 };
+    const FAYETTEVILLE_RADIUS_MILES =
+      geoConfig.fayettevilleRadiusMiles ?? 6;
     const UNLIMITED_COOLDOWN_MINUTES =
       ridePolicyConfig.unlimitedCooldownMinutes ?? 30;
     const SURGE_MODE = ridePolicyConfig.surgeMode ?? false;
@@ -2584,25 +2632,73 @@
     const SUPPORT_SMS_LINK = SUPPORT_PHONE_NUMBER
       ? `sms:${SUPPORT_PHONE_NUMBER}`
       : "#";
+    const MEMBERSHIP_TIER_KEYS = {
+      BASIC: "BASIC",
+      UOFA: "UOFA",
+      NWA: "NWA",
+    };
+    const MEMBERSHIP_TIER_DETAILS = {
+      [MEMBERSHIP_TIER_KEYS.BASIC]: {
+        label: "BASIC (default)",
+        summary: "Pay per ride inside the standard RideSync coverage area.",
+        badgeTag: "Pay per ride",
+      },
+      [MEMBERSHIP_TIER_KEYS.UOFA]: {
+        label: "U OF A STUDENT — UNLIMITED",
+        summary: "Unlimited Fayetteville rides. Only pay tip. 30-min cooldown (60 during surge).",
+        badgeTag: "Fayetteville radius",
+      },
+      [MEMBERSHIP_TIER_KEYS.NWA]: {
+        label: "NORTHWEST ARKANSAS — UNLIMITED",
+        summary: "Unlimited rides within 30 miles of Rogers. Only pay tip.",
+        badgeTag: "30-mi NWA zone",
+      },
+    };
     const MEMBERSHIP_PLAN_COPY = {
       basic: {
-        label: "Basic",
-        price: "$0 / ride",
-        description: "Pay per ride with Stripe.",
+        label: MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.BASIC].label,
+        price: "$0.60/min + $3.00 + 3%",
+        description: "Standard RideSync coverage. Billed per ride.",
+        tier: MEMBERSHIP_TIER_KEYS.BASIC,
       },
       uofa_unlimited: {
-        label: "U of A Unlimited",
+        label: MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.UOFA].label,
         price: "$80 / month",
-        description: "Unlimited Fayetteville rides.",
+        description: "Unlimited Fayetteville rides with a 30-min cooldown (60-min during surge).",
+        tier: MEMBERSHIP_TIER_KEYS.UOFA,
       },
       nwa_unlimited: {
-        label: "NWA Unlimited",
+        label: MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.NWA].label,
         price: "$120 / month",
-        description: "Unlimited rides inside the 30-mile NWA radius.",
+        description: "Unlimited rides within a 30-mile Rogers radius. Only pay tip.",
+        tier: MEMBERSHIP_TIER_KEYS.NWA,
       },
     };
     const MEMBERSHIP_PLAN_KEY_ALIASES = {
-      basic: new Set(["basic", "basic (pay per ride)", "basic plan", "plan: basic"]),
+      basic: new Set([
+        "basic",
+        "basic (pay per ride)",
+        "basic plan",
+        "plan: basic",
+        "basic (default)",
+      ]),
+      uofa_unlimited: new Set([
+        "uofa",
+        "u of a",
+        "u of a student — unlimited",
+        "u of a student - unlimited",
+        "u of a student unlimited",
+        "u of a student",
+        "uofa_unlimited",
+      ]),
+      nwa_unlimited: new Set([
+        "nwa",
+        "northwest arkansas",
+        "northwest arkansas — unlimited",
+        "northwest arkansas - unlimited",
+        "northwest arkansas unlimited",
+        "nwa_unlimited",
+      ]),
     };
     const MEMBERSHIP_PLAN_DEFAULT_MODES = {
       basic: "none",
@@ -2611,9 +2707,45 @@
     };
     const MEMBERSHIP_PLAN_VALID_MODES = new Set(["subscription", "payment", "none"]);
 
+    function resolvePlanTier(planKey) {
+      const normalized = normalizePlanKey(planKey);
+      return MEMBERSHIP_PLAN_COPY[normalized]?.tier || MEMBERSHIP_TIER_KEYS.BASIC;
+    }
+
+    function formatPlanTierLabel(planKey) {
+      const tier = resolvePlanTier(planKey);
+      return (
+        MEMBERSHIP_TIER_DETAILS[tier]?.label ||
+        MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.BASIC].label
+      );
+    }
+
+    function normalizeMembershipTierClient(value) {
+      if (typeof value !== "string") {
+        return MEMBERSHIP_TIER_KEYS.BASIC;
+      }
+      const normalized = value.trim().toUpperCase();
+      return MEMBERSHIP_TIER_KEYS[normalized] ? normalized : MEMBERSHIP_TIER_KEYS.BASIC;
+    }
+
+    function resolveProfileTier(profile) {
+      if (!profile) {
+        return MEMBERSHIP_TIER_KEYS.BASIC;
+      }
+      if (profile.membershipTier) {
+        return normalizeMembershipTierClient(profile.membershipTier);
+      }
+      if (profile.membership_tier) {
+        return normalizeMembershipTierClient(profile.membership_tier);
+      }
+      const plan = normalizePlanKey(profile.membershipType || profile.membership || "basic");
+      return resolvePlanTier(plan);
+    }
+
     const DEFAULT_FARE_SETTINGS = {
       BASIC_RATE_PER_MIN: 0.6,
       BASIC_PLATFORM_FEE: 1.5,
+      BASIC_PER_RIDE_FEE: 1.5,
       BASIC_PROCESSING_FEE_RATE: 0.03,
       UNLIMITED_OUT_RATE: 0.35,
       UNLIMITED_PROCESSING_FEE_RATE: 0.04
@@ -2638,6 +2770,10 @@
       BASIC_PLATFORM_FEE: coerceFareNumber(
         fareConfig.basicPlatformFee,
         DEFAULT_FARE_SETTINGS.BASIC_PLATFORM_FEE
+      ),
+      BASIC_PER_RIDE_FEE: coerceFareNumber(
+        fareConfig.basicPerRideFee,
+        DEFAULT_FARE_SETTINGS.BASIC_PER_RIDE_FEE
       ),
       BASIC_PROCESSING_FEE_RATE: coerceFareNumber(
         fareConfig.basicProcessingFeeRate,
@@ -2773,6 +2909,12 @@
     const membershipTermsContent = document.getElementById("membershipTermsContent");
     const membershipTermsCheckbox = document.getElementById("membershipTermsCheckbox");
     const membershipTermsError = document.getElementById("membershipTermsError");
+    const paymentMembershipBox = document.getElementById("paymentMembershipBox");
+    const paymentMembershipCurrent = document.getElementById("paymentMembershipCurrent");
+    const paymentMembershipOptions = document.querySelectorAll(
+      "[data-payment-tier-option]"
+    );
+    const paymentMembershipMessage = document.getElementById("paymentMembershipMessage");
 
     const riderEmailDetailEl = document.getElementById("riderEmailDetail");
     const riderPhoneDetailEl = document.getElementById("riderPhoneDetail");
@@ -3033,6 +3175,8 @@
     let selectedRating = 0;
     let ratingSubmitting = false;
     let rideTipRefreshTimer = null;
+    let lastPaymentOverlayOptions = null;
+    let pendingPaymentOverlayResume = null;
 
     let isSignupMode = false;
     let currentUserProfile = null;
@@ -3809,27 +3953,57 @@
       const plan = normalizePlanKey(profile?.membershipType || profile?.membership);
       const isStudent = !!profile?.isStudent;
       const uofaVerified = !!profile?.uofaVerified;
+      const tier = resolvePlanTier(plan);
+      const badgeLabel =
+        MEMBERSHIP_TIER_DETAILS[tier]?.label ||
+        MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.BASIC].label;
+      const defaultTag =
+        MEMBERSHIP_TIER_DETAILS[tier]?.badgeTag || "";
 
       membershipBadgeEl.className = "badge";
-      membershipBadgeLabelEl.textContent = "";
-      membershipBadgeTagEl.textContent = "";
+      membershipBadgeLabelEl.textContent = badgeLabel;
+      membershipBadgeTagEl.textContent = defaultTag;
 
       if (plan === "uofa_unlimited") {
         membershipBadgeEl.classList.add("badge-uofa");
-        membershipBadgeLabelEl.textContent = "U of A Unlimited";
-        membershipBadgeTagEl.textContent = uofaVerified
-          ? "Verified student"
-          : profile?.membershipStatus === "pending_verification"
+        membershipBadgeTagEl.textContent = profile?.membershipStatus === "pending_verification"
           ? "Pending approval"
-          : (isStudent ? "Student (pending ID)" : "");
+          : uofaVerified
+          ? "Verified student"
+          : isStudent
+          ? "Student (pending ID)"
+          : defaultTag;
       } else if (plan === "nwa_unlimited") {
         membershipBadgeEl.classList.add("badge-nwa");
-        membershipBadgeLabelEl.textContent = "NWA Unlimited";
-        membershipBadgeTagEl.textContent = "30-mi NWA zone";
+        membershipBadgeTagEl.textContent = defaultTag;
       } else {
         membershipBadgeEl.classList.add("badge-basic");
-        membershipBadgeLabelEl.textContent = "Basic";
-        membershipBadgeTagEl.textContent = "Pay per ride";
+        membershipBadgeTagEl.textContent = defaultTag;
+      }
+    }
+
+    function renderPaymentMembershipSection() {
+      if (!paymentMembershipBox) return;
+      const tier = resolveProfileTier(currentUserProfile);
+      const tierDetail =
+        MEMBERSHIP_TIER_DETAILS[tier] || MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.BASIC];
+      if (paymentMembershipCurrent) {
+        paymentMembershipCurrent.textContent = tierDetail.summary;
+      }
+      if (paymentMembershipOptions?.forEach) {
+        paymentMembershipOptions.forEach((node) => {
+          if (!node?.dataset?.paymentTierOption) return;
+          const optionTier = normalizeMembershipTierClient(node.dataset.paymentTierOption);
+          const isActive = optionTier === tier;
+          node.classList.toggle("active", isActive);
+          node.setAttribute("aria-pressed", isActive ? "true" : "false");
+        });
+      }
+      if (paymentMembershipMessage) {
+        paymentMembershipMessage.textContent =
+          tier === MEMBERSHIP_TIER_KEYS.BASIC
+            ? "Upgrade to unlock unlimited coverage in Fayetteville or Northwest Arkansas."
+            : "Unlimited plans cover pickups inside their radius. Outside the zone defaults to pay-per-ride.";
       }
     }
 
@@ -3934,31 +4108,20 @@
     function formatMembershipSummary(planKey, status) {
       const plan = normalizePlanKey(planKey);
       const normalizedStatus = (status || "none").toLowerCase();
-      if (plan === "uofa_unlimited") {
-        if (normalizedStatus === "pending_verification") {
-          return "U of A Unlimited (Pending verification)";
-        }
-        if (normalizedStatus === "active") {
-          return "U of A Unlimited (Active)";
-        }
-        if (normalizedStatus === "expired") {
-          return "U of A Unlimited (Expired)";
-        }
-        return "U of A Unlimited";
+      const tierLabel = formatPlanTierLabel(plan);
+      if (normalizedStatus === "pending_verification") {
+        return `${tierLabel} (Pending verification)`;
       }
-      if (plan === "nwa_unlimited") {
-        if (normalizedStatus === "pending_verification") {
-          return "NWA Unlimited (Pending verification)";
-        }
-        if (normalizedStatus === "active") {
-          return "NWA Unlimited (Active)";
-        }
-        if (normalizedStatus === "expired") {
-          return "NWA Unlimited (Expired)";
-        }
-        return "NWA Unlimited";
+      if (normalizedStatus === "active") {
+        return `${tierLabel} (Active)`;
       }
-      return "Basic (pay per ride)";
+      if (normalizedStatus === "expired") {
+        return `${tierLabel} (Expired)`;
+      }
+      if (normalizedStatus === "none") {
+        return `${tierLabel} (Not active)`;
+      }
+      return `${tierLabel} (${normalizedStatus})`;
     }
     function isUnlimitedMembershipActive(planKey, status) {
       const plan = normalizePlanKey(planKey);
@@ -4379,6 +4542,7 @@
       setMembershipBadge(p);
       renderMembershipCard(p);
       updateSyncButtonLabel();
+      renderPaymentMembershipSection();
     }
 
     editProfileButton.addEventListener("click", () => {
@@ -4928,45 +5092,32 @@
           currentUserProfile?.membershipType || currentUserProfile?.membership || "basic"
         );
 
-        let inHomeZone = false;
-
-        if (plan === "uofa_unlimited") {
-          inHomeZone = lastDestinationIsFayetteville === true;
-        } else if (plan === "nwa_unlimited") {
-          if (currentLocation && destinationLatLng) {
-            const distFromCenterPickup = haversineDistanceMiles(
-              NWA_CENTER.lat, NWA_CENTER.lng,
-              currentLocation.lat, currentLocation.lng
-            );
-            const destLat = destinationLatLng.lat();
-            const destLng = destinationLatLng.lng();
-            const distFromCenterDest = haversineDistanceMiles(
-              NWA_CENTER.lat, NWA_CENTER.lng,
-              destLat, destLng
-            );
-            inHomeZone =
-              distFromCenterPickup <= NWA_RADIUS_MILES &&
-              distFromCenterDest <= NWA_RADIUS_MILES &&
-              waypointLocations.every((loc) => {
-                if (!loc) return false;
-                return (
-                  haversineDistanceMiles(
-                    NWA_CENTER.lat,
-                    NWA_CENTER.lng,
-                    Number(loc.lat),
-                    Number(loc.lng)
-                  ) <= NWA_RADIUS_MILES
-                );
-              });
-          }
+        let pickupCovered = false;
+        if (plan === "uofa_unlimited" && currentLocation) {
+          pickupCovered =
+            haversineDistanceMiles(
+              FAYETTEVILLE_CENTER.lat,
+              FAYETTEVILLE_CENTER.lng,
+              currentLocation.lat,
+              currentLocation.lng
+            ) <= FAYETTEVILLE_RADIUS_MILES;
+        } else if (plan === "nwa_unlimited" && currentLocation) {
+          pickupCovered =
+            haversineDistanceMiles(
+              NWA_CENTER.lat,
+              NWA_CENTER.lng,
+              currentLocation.lat,
+              currentLocation.lng
+            ) <= NWA_RADIUS_MILES;
         }
 
-        const fareInfo = computeFareForMembership(plan, minutes, inHomeZone);
+        const fareInfo = computeFareForMembership(plan, minutes, pickupCovered);
 
         lastRideMetrics = {
           durationMinutes: minutes,
           distanceMeters: totalDistanceMeters,
-          inHomeZone,
+          inHomeZone: pickupCovered,
+          pickupCovered,
           fareBreakdown: fareInfo,
           membershipLabel: fareInfo.membershipLabel
         };
@@ -4984,7 +5135,13 @@
           fareDistance.textContent = `${(totalDistanceMeters / 1609.34).toFixed(2)} mi`;
         }
         if (fareMembership) {
-          fareMembership.textContent = fareInfo.membershipLabel;
+          let fareMembershipLabel = fareInfo.membershipLabel;
+          if (plan === "uofa_unlimited" || plan === "nwa_unlimited") {
+            fareMembershipLabel = pickupCovered
+              ? `${fareInfo.membershipLabel} • Covered pickup`
+              : `${fareInfo.membershipLabel} • Outside coverage`;
+          }
+          fareMembership.textContent = fareMembershipLabel;
         }
         if (fareTotal) {
           fareTotal.textContent = `$${fareInfo.total.toFixed(2)}`;
@@ -5060,10 +5217,10 @@
           const phone = r.riderPhone || "";
           const membership =
             r.membershipType === "uofa_unlimited"
-              ? "U of A Unlimited"
+              ? "U OF A STUDENT — UNLIMITED"
               : r.membershipType === "nwa_unlimited"
-              ? "NWA Unlimited"
-              : "Basic";
+              ? "NORTHWEST ARKANSAS — UNLIMITED"
+              : "BASIC (default)";
           const initials = (name || "RS")
             .split(" ")
             .map((s) => s[0])
@@ -5153,65 +5310,62 @@
       });
     }
 
-    function computeFareForMembership(plan, minutes, inHomeZone) {
+    function computeBasicFareBreakdown(minutesRaw) {
+      const minutes = Number(minutesRaw);
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        return {
+          rideSubtotal: 0,
+          processingFee: 0,
+          total: 0
+        };
+      }
+      const clampedMinutes = Math.min(Math.max(minutes, 1), 600);
       const {
         BASIC_RATE_PER_MIN,
         BASIC_PLATFORM_FEE,
-        BASIC_PROCESSING_FEE_RATE,
-        UNLIMITED_OUT_RATE,
-        UNLIMITED_PROCESSING_FEE_RATE
+        BASIC_PER_RIDE_FEE,
+        BASIC_PROCESSING_FEE_RATE
       } = FARE_SETTINGS;
-      const normalizedPlan = normalizePlanKey(plan);
-      const minutesValue = Number(minutes);
-      const safeMinutes = Number.isFinite(minutesValue) ? Math.max(0, minutesValue) : 0;
-
-      let membershipLabel = "";
-      let rideSubtotal = 0;
-      let processingFee = 0;
-      let total = 0;
-
-      if (normalizedPlan === "basic") {
-        rideSubtotal = safeMinutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
-        processingFee = rideSubtotal * BASIC_PROCESSING_FEE_RATE;
-        total = rideSubtotal + processingFee;
-        membershipLabel = "Basic (pay per ride)";
-      } else if (normalizedPlan === "uofa_unlimited") {
-        if (inHomeZone) {
-          rideSubtotal = 0;
-          processingFee = 0;
-          total = 0;
-          membershipLabel = "U of A Unlimited – in Fayetteville (included)";
-        } else {
-          rideSubtotal = safeMinutes * UNLIMITED_OUT_RATE;
-          processingFee = rideSubtotal * UNLIMITED_PROCESSING_FEE_RATE;
-          total = rideSubtotal + processingFee;
-          membershipLabel = "U of A Unlimited – out of Fayetteville (extra per-minute)";
-        }
-      } else if (normalizedPlan === "nwa_unlimited") {
-        if (inHomeZone) {
-          rideSubtotal = 0;
-          processingFee = 0;
-          total = 0;
-          membershipLabel = "NWA Unlimited – in zone (included)";
-        } else {
-          rideSubtotal = safeMinutes * UNLIMITED_OUT_RATE;
-          processingFee = rideSubtotal * UNLIMITED_PROCESSING_FEE_RATE;
-          total = rideSubtotal + processingFee;
-          membershipLabel = "NWA Unlimited – out of zone (extra per-minute)";
-        }
-      } else {
-        rideSubtotal = safeMinutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
-        processingFee = rideSubtotal * BASIC_PROCESSING_FEE_RATE;
-        total = rideSubtotal + processingFee;
-        membershipLabel = "Basic (default)";
-      }
-
+      const rideSubtotal =
+        clampedMinutes * BASIC_RATE_PER_MIN +
+        BASIC_PLATFORM_FEE +
+        BASIC_PER_RIDE_FEE;
+      const processingFee = rideSubtotal * BASIC_PROCESSING_FEE_RATE;
+      const total = rideSubtotal + processingFee;
       return {
         rideSubtotal,
         processingFee,
-        total,
-        membershipLabel
+        total
       };
+    }
+
+    function computeFareForMembership(plan, minutes, pickupCovered) {
+      const normalizedPlan = normalizePlanKey(plan);
+      const tier = MEMBERSHIP_PLAN_COPY[normalizedPlan]?.tier || MEMBERSHIP_TIER_KEYS.BASIC;
+      const tierLabel =
+        MEMBERSHIP_TIER_DETAILS[tier]?.label ||
+        MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.BASIC].label;
+      const breakdown = computeBasicFareBreakdown(minutes);
+      const baseResult = {
+        rideSubtotal: breakdown.rideSubtotal,
+        processingFee: breakdown.processingFee,
+        total: breakdown.total,
+        membershipLabel: tierLabel
+      };
+
+      if (normalizedPlan === "uofa_unlimited" || normalizedPlan === "nwa_unlimited") {
+        if (pickupCovered) {
+          return {
+            rideSubtotal: 0,
+            processingFee: 0,
+            total: 0,
+            membershipLabel: tierLabel
+          };
+        }
+        return baseResult;
+      }
+
+      return baseResult;
     }
 
     async function checkCooldown(userId, plan) {
@@ -6121,6 +6275,7 @@
         if (currentUser) {
           await loadUserProfile(currentUser.uid, currentUser.email);
         }
+        resumePaymentOverlayIfNeeded();
         setTimeout(() => {
           closePaymentStatusOverlay();
         }, 4000);
@@ -7158,6 +7313,65 @@
       setMembershipTermsAcknowledged(false);
     }
 
+    function handlePaymentMembershipOption(tierKey) {
+      if (!tierKey) return;
+      const normalizedTier = normalizeMembershipTierClient(tierKey);
+      const currentTier = resolveProfileTier(currentUserProfile);
+      if (normalizedTier === currentTier) {
+        if (paymentMembershipMessage) {
+          paymentMembershipMessage.textContent = "You're already on this membership.";
+        }
+        return;
+      }
+      if (normalizedTier === MEMBERSHIP_TIER_KEYS.BASIC) {
+        if (paymentMembershipMessage) {
+          paymentMembershipMessage.textContent =
+            "BASIC is your default per-ride plan for the standard RideSync area.";
+        }
+        return;
+      }
+      startMembershipUpgradeFromPayment(normalizedTier);
+    }
+
+    function startMembershipUpgradeFromPayment(tierKey) {
+      const planKey =
+        tierKey === MEMBERSHIP_TIER_KEYS.UOFA
+          ? "uofa_unlimited"
+          : tierKey === MEMBERSHIP_TIER_KEYS.NWA
+          ? "nwa_unlimited"
+          : null;
+      if (!planKey) {
+        return;
+      }
+      if (!auth.currentUser) {
+        setMembershipMessage("Log in to manage your membership.");
+        return;
+      }
+      pendingPaymentOverlayResume = lastPaymentOverlayOptions
+        ? {
+            ...lastPaymentOverlayOptions,
+            context: { ...(lastPaymentOverlayOptions.context || {}) },
+          }
+        : null;
+      closePaymentOverlay();
+      paymentMembershipMessage.textContent = "Opening membership checkout…";
+      openMembershipSelectionOverlayUI();
+      selectMembershipPlan(planKey);
+    }
+
+    function resumePaymentOverlayIfNeeded() {
+      if (!pendingPaymentOverlayResume) {
+        return;
+      }
+      const resumeOptions = pendingPaymentOverlayResume;
+      pendingPaymentOverlayResume = null;
+      try {
+        openPaymentOverlay(resumeOptions);
+      } catch (err) {
+        console.error("Failed to resume payment overlay", err);
+      }
+    }
+
     function openMembershipSelectionOverlayUI() {
       if (!auth.currentUser) {
         setMembershipMessage("Log in to manage your membership.");
@@ -7359,6 +7573,11 @@
     });
     membershipTermsContent?.addEventListener("scroll", handleMembershipTermsScroll);
     membershipTermsCheckbox?.addEventListener("change", handleMembershipTermsCheckboxChange);
+    paymentMembershipOptions?.forEach?.((node) => {
+      node.addEventListener("click", () => {
+        handlePaymentMembershipOption(node.dataset.paymentTierOption);
+      });
+    });
     // === RIDE SYNC STRIPE: END membership overlay logic ===
 
     if (paymentOverlayClose) {
@@ -7526,6 +7745,13 @@
         checkoutAmountCents: options.checkoutAmountCents ?? null,
         checkoutDescription: options.checkoutDescription || null,
       };
+      lastPaymentOverlayOptions = {
+        ...options,
+        livemode,
+      };
+      if (options.context) {
+        lastPaymentOverlayOptions.context = { ...options.context };
+      }
       if (paymentOverlayTitle) {
         paymentOverlayTitle.textContent = options.title || "Complete payment";
       }
@@ -7556,6 +7782,15 @@
         paymentFareSummary.style.display =
           options.context?.type === "ride" ? "" : "none";
       }
+      if (paymentMembershipBox) {
+        const shouldShowMembership =
+          options.context?.type === "ride" ||
+          options.context?.type === "ride_preauth";
+        paymentMembershipBox.style.display = shouldShowMembership ? "" : "none";
+        if (shouldShowMembership) {
+          renderPaymentMembershipSection();
+        }
+      }
     }
 
     function closePaymentOverlay() {
@@ -7570,6 +7805,9 @@
       paymentOverlay?.setAttribute("aria-hidden", "true");
       if (paymentOverlayMessage) {
         paymentOverlayMessage.textContent = "";
+      }
+      if (paymentMembershipMessage) {
+        paymentMembershipMessage.textContent = "";
       }
     }
 
@@ -8128,7 +8366,7 @@
       const poolGender = normalizePoolGender(currentUserProfile?.gender);
       const genderPoolEligible = !!poolGender;
       const numRiders = parseInt(numRidersEl.value || "1", 10);
-      const inHomeZone = !!lastRideMetrics.inHomeZone;
+      const inHomeZone = !!lastRideMetrics?.pickupCovered;
 
       const uofaPoolEligible =
         plan === "uofa_unlimited" &&

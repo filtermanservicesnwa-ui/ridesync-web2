@@ -64,15 +64,15 @@ const {
 describe("fare calculation", () => {
   it("applies $1.50 platform fee to basic rides", () => {
     const result = computeFareForMembership("basic", 10, false);
-    expect(result.rideSubtotal).toBeCloseTo(7.5, 5);
-    expect(result.processingFee).toBeCloseTo(0.225, 5);
-    expect(result.total).toBeCloseTo(7.725, 5);
+    expect(result.rideSubtotal).toBeCloseTo(9, 5);
+    expect(result.processingFee).toBeCloseTo(0.27, 5);
+    expect(result.total).toBeCloseTo(9.27, 5);
   });
 
   it("treats unlimited in-zone rides as included", () => {
     const result = computeFareForMembership("uofa_unlimited", 15, true);
     expect(result.total).toBe(0);
-    expect(result.membershipLabel).toMatch(/included/i);
+    expect(result.membershipLabel).toBe("U OF A STUDENT — UNLIMITED");
   });
 });
 

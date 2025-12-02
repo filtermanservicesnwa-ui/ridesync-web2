@@ -232,19 +232,19 @@ const MEMBERSHIP_PLAN_DEFAULTS = {
   basic: {
     amountCents: 0,
     currency: "usd",
-    label: "Basic (pay per ride)",
+    label: "BASIC (default)",
     durationDays: 0,
   },
   uofa_unlimited: {
     amountCents: 8000,
     currency: "usd",
-    label: "U of A Unlimited ($80/mo)",
+    label: "U OF A STUDENT — UNLIMITED ($80/mo)",
     durationDays: 30,
   },
   nwa_unlimited: {
     amountCents: 12000,
     currency: "usd",
-    label: "NWA Unlimited ($120/mo)",
+    label: "NORTHWEST ARKANSAS — UNLIMITED ($120/mo)",
     durationDays: 30,
   },
 };
@@ -252,8 +252,100 @@ const MEMBERSHIP_PLAN_DEFAULTS = {
 const MEMBERSHIP_DEFAULT_DURATION_DAYS = 30;
 
 const MEMBERSHIP_PLAN_ALIASES = {
-  basic: new Set(["basic", "basic (pay per ride)", "basic plan", "plan: basic"]),
+  basic: new Set([
+    "basic",
+    "basic (pay per ride)",
+    "basic plan",
+    "plan: basic",
+    "basic (default)",
+  ]),
+  uofa_unlimited: new Set([
+    "uofa",
+    "uofa_unlimited",
+    "u of a",
+    "u of a unlimited",
+    "u of a student — unlimited",
+    "u of a student - unlimited",
+    "u of a student unlimited",
+    "u of a student—unlimited",
+    "u of a student",
+    "u of a student unlimited plan",
+  ]),
+  nwa_unlimited: new Set([
+    "nwa",
+    "nwa_unlimited",
+    "nwa unlimited",
+    "northwest arkansas",
+    "northwest arkansas unlimited",
+    "northwest arkansas — unlimited",
+    "northwest arkansas - unlimited",
+    "northwest arkansas unlimited plan",
+  ]),
 };
+
+const MEMBERSHIP_TIER_KEYS = Object.freeze({
+  BASIC: "BASIC",
+  UOFA: "UOFA",
+  NWA: "NWA",
+});
+
+const MEMBERSHIP_TIER_LABELS = Object.freeze({
+  BASIC: "BASIC (default)",
+  UOFA: "U OF A STUDENT — UNLIMITED",
+  NWA: "NORTHWEST ARKANSAS — UNLIMITED",
+});
+
+const MEMBERSHIP_PLAN_TO_TIER = Object.freeze({
+  basic: MEMBERSHIP_TIER_KEYS.BASIC,
+  uofa_unlimited: MEMBERSHIP_TIER_KEYS.UOFA,
+  nwa_unlimited: MEMBERSHIP_TIER_KEYS.NWA,
+});
+
+const MEMBERSHIP_TIER_TO_PLAN = Object.freeze({
+  BASIC: "basic",
+  UOFA: "uofa_unlimited",
+  NWA: "nwa_unlimited",
+});
+
+function normalizeMembershipTier(value = "") {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (MEMBERSHIP_TIER_KEYS[normalized]) {
+    return normalized;
+  }
+  return MEMBERSHIP_TIER_KEYS.BASIC;
+}
+
+function deriveMembershipTierFromPlan(planKey) {
+  const normalizedPlan = normalizeMembershipPlan(planKey || "basic");
+  return MEMBERSHIP_PLAN_TO_TIER[normalizedPlan] || MEMBERSHIP_TIER_KEYS.BASIC;
+}
+
+function deriveMembershipTierLabel(input) {
+  const tierKey = MEMBERSHIP_TIER_KEYS[input]
+    ? input
+    : deriveMembershipTierFromPlan(input);
+  return MEMBERSHIP_TIER_LABELS[tierKey] || MEMBERSHIP_TIER_LABELS.BASIC;
+}
+
+function deriveBinaryMembershipStatus(status) {
+  const normalized = (status || "none").toLowerCase();
+  return normalized === "active" ? "active" : "expired";
+}
+
+function buildMembershipFieldPayload(planKey, status) {
+  const normalizedPlan = normalizeMembershipPlan(planKey || "basic");
+  const normalizedStatus = (status || "none").toLowerCase();
+  const tierKey = deriveMembershipTierFromPlan(normalizedPlan);
+  return {
+    membershipType: normalizedPlan,
+    membershipStatus: normalizedStatus,
+    membershipTier: tierKey,
+    membership_tier: tierKey,
+    membership_status: deriveBinaryMembershipStatus(normalizedStatus),
+  };
+}
 
 const COOLDOWN_ELIGIBLE_PLANS = new Set(["uofa_unlimited", "nwa_unlimited"]);
 const MAX_EXTRA_STOPS = 3;
@@ -281,6 +373,7 @@ const SURGE_COOLDOWN_MINUTES =
 const DEFAULT_FARE_CONSTANTS = {
   BASIC_RATE_PER_MIN: 0.6,
   BASIC_PLATFORM_FEE: 1.5,
+  BASIC_PER_RIDE_FEE: 1.5,
   BASIC_PROCESSING_FEE_RATE: 0.03,
   UNLIMITED_OUT_RATE: 0.35,
   UNLIMITED_PROCESSING_FEE_RATE: 0.04,
@@ -324,6 +417,11 @@ function resolveFareConstants() {
       "FARE_BASIC_PLATFORM_FEE",
       "basic_platform_fee",
       DEFAULT_FARE_CONSTANTS.BASIC_PLATFORM_FEE
+    ),
+    BASIC_PER_RIDE_FEE: read(
+      "FARE_BASIC_PER_RIDE_FEE",
+      "basic_per_ride_fee",
+      DEFAULT_FARE_CONSTANTS.BASIC_PER_RIDE_FEE
     ),
     BASIC_PROCESSING_FEE_RATE: read(
       "FARE_BASIC_PROCESSING_FEE_RATE",
@@ -666,8 +764,7 @@ async function maybeDowngradeExpiredMembership(userRef, profileData = {}) {
 
   await userRef.set(
     {
-      membershipType: "basic",
-      membershipStatus: "expired",
+      ...buildMembershipFieldPayload("basic", "expired"),
       membershipExpiresAt: FieldValue.delete(),
       membershipExpiredAt: FieldValue.serverTimestamp(),
     },
@@ -683,8 +780,7 @@ async function maybeDowngradeExpiredMembership(userRef, profileData = {}) {
   return refreshedSnap.exists ? refreshedSnap.data() || {} : {};
 }
 
-function computeFareForMembership(planRaw, minutesRaw, inHomeZone) {
-  const plan = normalizeMembershipPlan(planRaw || "basic");
+function computeBasicFareBreakdown(minutesRaw) {
   const minutes = Number(minutesRaw);
   if (!Number.isFinite(minutes) || minutes <= 0) {
     throw new functions.https.HttpsError(
@@ -693,54 +789,50 @@ function computeFareForMembership(planRaw, minutesRaw, inHomeZone) {
     );
   }
   const clampedMinutes = Math.min(Math.max(minutes, 1), 600);
-  const inZone = !!inHomeZone;
-
   const {
     BASIC_RATE_PER_MIN,
     BASIC_PLATFORM_FEE,
+    BASIC_PER_RIDE_FEE,
     BASIC_PROCESSING_FEE_RATE,
-    UNLIMITED_OUT_RATE,
-    UNLIMITED_PROCESSING_FEE_RATE,
   } = FARE_CONSTANTS;
+  const rideSubtotal =
+    clampedMinutes * BASIC_RATE_PER_MIN +
+    BASIC_PLATFORM_FEE +
+    BASIC_PER_RIDE_FEE;
+  const processingFee = rideSubtotal * BASIC_PROCESSING_FEE_RATE;
+  const total = rideSubtotal + processingFee;
+  return {
+    minutes: clampedMinutes,
+    rideSubtotal,
+    processingFee,
+    total,
+  };
+}
 
-  let rideSubtotal = 0;
-  let processingFee = 0;
-  let total = 0;
-  let membershipLabel = "";
+function computeFareForMembership(planRaw, minutesRaw, pickupCovered) {
+  const plan = normalizeMembershipPlan(planRaw || "basic");
+  const tierLabel = deriveMembershipTierLabel(plan);
+  const breakdown = computeBasicFareBreakdown(minutesRaw);
+  const baseResult = {
+    rideSubtotal: breakdown.rideSubtotal,
+    processingFee: breakdown.processingFee,
+    total: breakdown.total,
+    membershipLabel: tierLabel,
+  };
 
   if (plan === "uofa_unlimited" || plan === "nwa_unlimited") {
-    if (inZone) {
-      membershipLabel =
-        plan === "uofa_unlimited"
-          ? "U of A Unlimited – in Fayetteville (included)"
-          : "NWA Unlimited – in zone (included)";
+    if (pickupCovered) {
       return {
         rideSubtotal: 0,
         processingFee: 0,
         total: 0,
-        membershipLabel,
+        membershipLabel: tierLabel,
       };
     }
-    rideSubtotal = clampedMinutes * UNLIMITED_OUT_RATE;
-    processingFee = rideSubtotal * UNLIMITED_PROCESSING_FEE_RATE;
-    total = rideSubtotal + processingFee;
-    membershipLabel =
-      plan === "uofa_unlimited"
-        ? "U of A Unlimited – out of Fayetteville (extra per-minute)"
-        : "NWA Unlimited – out of zone (extra per-minute)";
-  } else {
-    rideSubtotal = clampedMinutes * BASIC_RATE_PER_MIN + BASIC_PLATFORM_FEE;
-    processingFee = rideSubtotal * BASIC_PROCESSING_FEE_RATE;
-    total = rideSubtotal + processingFee;
-    membershipLabel = "Basic (pay per ride)";
+    return baseResult;
   }
 
-  return {
-    rideSubtotal,
-    processingFee,
-    total,
-    membershipLabel,
-  };
+  return baseResult;
 }
 
 async function createStripeCustomerForUser({
@@ -945,6 +1037,11 @@ function buildRidePayload(rideInput = {}, context = {}) {
   payload.startedByUserId = context.uid;
   payload.membershipType = context.membershipType;
   payload.membershipStatus = context.membershipStatus || "none";
+  const resolvedTier =
+    context.membershipTier || deriveMembershipTierFromPlan(payload.membershipType);
+  payload.membershipTier = resolvedTier;
+  payload.membership_tier = resolvedTier;
+  payload.membership_status = deriveBinaryMembershipStatus(payload.membershipStatus);
   payload.pickupLocation =
     context.pickupLocation ||
     payload.pickupLocation ||
@@ -977,13 +1074,14 @@ function buildRidePayload(rideInput = {}, context = {}) {
   payload.stripeCurrency = "usd";
   payload.totalCents = context.totalCents || payload.totalCents || 0;
   payload.geofenceContext = context.chargeContext || null;
-  payload.inHomeZone =
-    typeof payload.inHomeZone === "boolean"
-      ? payload.inHomeZone
-      : !!(
-          context.chargeContext?.pickupInside &&
-          context.chargeContext?.dropoffInside
-        );
+  if (typeof context.pickupCovered === "boolean") {
+    payload.inHomeZone = context.pickupCovered;
+  } else if (typeof payload.inHomeZone !== "boolean") {
+    payload.inHomeZone = !!(
+      context.chargeContext?.pickupInside &&
+      context.chargeContext?.dropoffInside
+    );
+  }
   payload.estimatedDurationMinutes =
     Number(payload.estimatedDurationMinutes) ||
     Number(context.estimatedDurationMinutes) ||
@@ -1001,6 +1099,63 @@ function buildRidePayload(rideInput = {}, context = {}) {
   return payload;
 }
 // === RIDE SYNC STRIPE: END ride payload helper ===
+
+async function upsertRideRecord(rideId, record = {}) {
+  if (!rideId) {
+    return;
+  }
+  const {
+    userId = null,
+    membershipType = "basic",
+    membershipStatus = "none",
+    baseFareAmountCents = null,
+    finalFareAmountCents = null,
+    tipAmountCents = null,
+    totalChargedCents = null,
+  } = record;
+  const normalizedPlan = normalizeMembershipPlan(membershipType || "basic");
+  const normalizedStatus = (membershipStatus || "none").toLowerCase();
+  const tierKey = deriveMembershipTierFromPlan(normalizedPlan);
+  const normalizeCents = (value, fallback = 0) => {
+    const num = Number(value);
+    if (Number.isFinite(num)) {
+      return Math.max(0, Math.round(num));
+    }
+    return Math.max(0, Math.round(fallback));
+  };
+  const baseCents = normalizeCents(baseFareAmountCents, 0);
+  const finalCents = normalizeCents(
+    finalFareAmountCents,
+    baseCents
+  );
+  const tipCents = normalizeCents(tipAmountCents, 0);
+  const totalCents = normalizeCents(
+    totalChargedCents,
+    finalCents + tipCents
+  );
+  const recordRef = db.collection("rideRecords").doc(rideId);
+  const payloadToSave = removeUndefinedFields({
+    rideId,
+    userId: userId || null,
+    user_id: userId || null,
+    membershipType: normalizedPlan,
+    membershipStatus: normalizedStatus,
+    membershipTier: tierKey,
+    membership_tier: tierKey,
+    membershipTierLabel: MEMBERSHIP_TIER_LABELS[tierKey] || MEMBERSHIP_TIER_LABELS.BASIC,
+    membership_status: deriveBinaryMembershipStatus(normalizedStatus),
+    baseFareAmountCents: baseCents,
+    base_fare_amount: baseCents / 100,
+    finalFareAmountCents: finalCents,
+    final_fare_amount: finalCents / 100,
+    tipAmountCents: tipCents,
+    tip_amount: tipCents / 100,
+    totalChargedCents: totalCents,
+    total_charged: totalCents / 100,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  await recordRef.set(payloadToSave, { merge: true });
+}
 
 function requireAuth(context) {
   if (!context?.auth?.uid) {
@@ -1155,6 +1310,44 @@ function resolveGeofenceForPlan(planKey) {
   return null;
 }
 
+function evaluateMembershipCoverage(planKey, pickupLocation, dropoffLocation) {
+  const geofence = resolveGeofenceForPlan(planKey);
+  if (!geofence) {
+    return {
+      pickupInside: false,
+      dropoffInside: false,
+      geofenceName: null,
+      geofence: null,
+    };
+  }
+  const pickupInside =
+    geofence && hasValidLocation(pickupLocation)
+      ? isInsideCircle(
+          pickupLocation.lat,
+          pickupLocation.lng,
+          geofence.center.lat,
+          geofence.center.lng,
+          geofence.radiusMiles
+        )
+      : false;
+  const dropoffInside =
+    geofence && hasValidLocation(dropoffLocation)
+      ? isInsideCircle(
+          dropoffLocation.lat,
+          dropoffLocation.lng,
+          geofence.center.lat,
+          geofence.center.lng,
+          geofence.radiusMiles
+        )
+      : false;
+  return {
+    pickupInside,
+    dropoffInside,
+    geofenceName: planKey,
+    geofence,
+  };
+}
+
 function maxDistanceMilesFromCenter(locations = [], geofence) {
   if (!geofence) return Infinity;
   let maxMiles = 0;
@@ -1179,83 +1372,68 @@ function computeOutOfZoneSurchargeCents(totalCents, extraMiles) {
   return Math.min(rideTotal, Math.max(SURCHARGE_BASE_CENTS, calculated));
 }
 
+function deriveBaseFareCents(totalCents, minutesRaw) {
+  const cents = Number(totalCents);
+  if (Number.isFinite(cents) && cents > 0) {
+    return Math.max(0, Math.round(cents));
+  }
+  if (Number.isFinite(minutesRaw) && minutesRaw > 0) {
+    try {
+      const breakdown = computeBasicFareBreakdown(minutesRaw);
+      return Math.max(0, Math.round(breakdown.total * 100));
+    } catch (err) {
+      // ignore validation errors here and fall back to zero
+    }
+  }
+  return 0;
+}
+
 function calculateRideChargeContext({
   membershipType,
   membershipStatus,
   pickupLocation,
   dropoffLocation,
   totalCents,
+  estimatedDurationMinutes = null,
+  coverageOverride = null,
 }) {
   const normalizedPlan = normalizeMembershipPlan(membershipType || "basic");
   const status = (membershipStatus || "none").toLowerCase();
-  const amountCents = Math.max(0, Math.round(Number(totalCents) || 0));
+  const coverage =
+    coverageOverride ||
+    evaluateMembershipCoverage(normalizedPlan, pickupLocation, dropoffLocation);
+  const baseFareCents = deriveBaseFareCents(totalCents, estimatedDurationMinutes);
 
-  if (!amountCents) {
+  if (
+    !coverage.geofence ||
+    status !== "active" ||
+    (normalizedPlan !== "uofa_unlimited" && normalizedPlan !== "nwa_unlimited")
+  ) {
+    return {
+      amountCents: baseFareCents,
+      pickupInside: coverage.pickupInside,
+      dropoffInside: coverage.dropoffInside,
+      geofenceName: coverage.geofenceName,
+      surchargeCents: 0,
+    };
+  }
+
+  if (coverage.pickupInside) {
     return {
       amountCents: 0,
-      pickupInside: false,
-      dropoffInside: false,
-      geofenceName: null,
+      pickupInside: coverage.pickupInside,
+      dropoffInside: coverage.dropoffInside,
+      geofenceName: coverage.geofenceName,
       surchargeCents: 0,
     };
   }
-
-  const geofence = resolveGeofenceForPlan(normalizedPlan);
-  const pickupInside =
-    geofence && hasValidLocation(pickupLocation)
-      ? isInsideCircle(
-          pickupLocation.lat,
-          pickupLocation.lng,
-          geofence.center.lat,
-          geofence.center.lng,
-          geofence.radiusMiles
-        )
-      : false;
-  const dropoffInside =
-    geofence && hasValidLocation(dropoffLocation)
-      ? isInsideCircle(
-          dropoffLocation.lat,
-          dropoffLocation.lng,
-          geofence.center.lat,
-          geofence.center.lng,
-          geofence.radiusMiles
-        )
-      : false;
-
-  if (!geofence || status !== "active") {
-    return {
-      amountCents,
-      pickupInside,
-      dropoffInside,
-      geofenceName: null,
-      surchargeCents: 0,
-    };
-  }
-
-  if (pickupInside && dropoffInside) {
-    return {
-      amountCents: 0,
-      pickupInside: true,
-      dropoffInside: true,
-      geofenceName: normalizedPlan,
-      surchargeCents: 0,
-    };
-  }
-
-  const farthestMiles = maxDistanceMilesFromCenter(
-    [pickupLocation, dropoffLocation],
-    geofence
-  );
-  const overageMiles = Math.max(0, farthestMiles - geofence.radiusMiles);
-  const surchargeCents = computeOutOfZoneSurchargeCents(amountCents, overageMiles);
 
   return {
-    amountCents: surchargeCents,
-    pickupInside,
-    dropoffInside,
-    geofenceName: normalizedPlan,
-    surchargeCents,
-    overageMiles,
+    amountCents: baseFareCents,
+    pickupInside: coverage.pickupInside,
+    dropoffInside: coverage.dropoffInside,
+    geofenceName: coverage.geofenceName,
+    surchargeCents: baseFareCents,
   };
 }
 // === RIDE SYNC STRIPE: END geofence helpers ===
@@ -1736,8 +1914,7 @@ async function applyMembershipPlanHandler(data = {}, uid) {
   if (planKey === "basic") {
     await userRef.set(
       {
-        membershipType: "basic",
-        membershipStatus: "none",
+        ...buildMembershipFieldPayload("basic", "none"),
         membershipExpiresAt: FieldValue.delete(),
         membershipExpiredAt: FieldValue.delete(),
         stripeSubscriptionId: FieldValue.delete(),
@@ -1758,8 +1935,7 @@ async function applyMembershipPlanHandler(data = {}, uid) {
   if (planConfig.amountCents === 0) {
     await userRef.set(
       {
-        membershipType: planKey || "basic",
-        membershipStatus,
+        ...buildMembershipFieldPayload(planKey || "basic", membershipStatus),
         membershipRenewedAt: FieldValue.serverTimestamp(),
         membershipExpiresAt: membershipExpiresAt || FieldValue.delete(),
         membershipApprovalRequired: needsApproval || FieldValue.delete(),
@@ -1813,8 +1989,7 @@ async function applyMembershipPlanHandler(data = {}, uid) {
 
   await userRef.set(
     {
-      membershipType: planKey,
-      membershipStatus,
+      ...buildMembershipFieldPayload(planKey, membershipStatus),
       membershipRenewedAt: FieldValue.serverTimestamp(),
       membershipExpiresAt: membershipExpiresAt || FieldValue.delete(),
       membershipPaidAmountCents: pending.amountCents,
@@ -2492,8 +2667,7 @@ async function finalizeMembershipSubscriptionInternal({
   await Promise.all([
     userRef.set(
       {
-        membershipType: subscriptionPlan,
-        membershipStatus,
+        ...buildMembershipFieldPayload(subscriptionPlan, membershipStatus),
         stripeSubscriptionId: subscription.id,
         stripeCustomerId: customerId || FieldValue.delete(),
         pendingMembershipPlanId: FieldValue.delete(),
@@ -2690,12 +2864,19 @@ async function createRideCheckoutSessionInternal({
   );
   const membershipStatus = profile?.membershipStatus || "none";
 
+  const membershipCoverage = evaluateMembershipCoverage(
+    membershipType,
+    pickupLocation,
+    dropoffLocation
+  );
   const chargeContext = calculateRideChargeContext({
     membershipType,
     membershipStatus,
     pickupLocation,
     dropoffLocation,
     totalCents,
+    estimatedDurationMinutes: estimatedMinutes,
+    coverageOverride: membershipCoverage,
   });
 
   if (!chargeContext.amountCents || chargeContext.amountCents <= 0) {
@@ -2723,6 +2904,7 @@ async function createRideCheckoutSessionInternal({
     totalCents,
     chargeContext,
     estimatedDurationMinutes: estimatedMinutes,
+    pickupCovered: membershipCoverage.pickupInside,
   });
 
   const description = sanitizeCheckoutDescription(
@@ -3323,6 +3505,22 @@ async function finalizePendingRide({
     });
   });
 
+  await upsertRideRecord(rideRef.id, {
+    userId: uid,
+    membershipType: rideData.membershipType,
+    membershipStatus: rideData.membershipStatus,
+    baseFareAmountCents:
+      rideData.totalCents ?? pending.totalCents ?? rideData.stripeAmountCents,
+    finalFareAmountCents: rideData.stripeAmountCents,
+    tipAmountCents: 0,
+    totalChargedCents: rideData.stripeAmountCents,
+  }).catch((err) => {
+    console.error("[RideSync][ledger] Failed to write ride record (pending)", {
+      rideId: rideRef.id,
+      error: err?.message || err,
+    });
+  });
+
   return rideRef.id;
 }
 
@@ -3341,6 +3539,7 @@ async function finalizeExistingRideCheckout({
   }
 
   const rideRef = db.collection("rideRequests").doc(rideId);
+  let ledgerPayload = null;
   await db.runTransaction(async (tx) => {
     const rideSnap = await tx.get(rideRef);
     if (!rideSnap.exists) {
@@ -3396,7 +3595,26 @@ async function finalizeExistingRideCheckout({
       processedAt: FieldValue.serverTimestamp(),
       stripePaymentIntentId: paymentIntent.id,
     });
+
+    ledgerPayload = {
+      userId: ride.userId || uid,
+      membershipType: ride.membershipType || pending.membershipType || pending.plan,
+      membershipStatus: ride.membershipStatus || pending.membershipStatus || "none",
+      baseFareAmountCents: normalizedBaseAmountCents,
+      finalFareAmountCents: normalizedBaseAmountCents,
+      tipAmountCents: normalizedTipAmountCents,
+      totalChargedCents: amountReceived,
+    };
   });
+
+  if (ledgerPayload) {
+    await upsertRideRecord(rideId, ledgerPayload).catch((err) => {
+      console.error("[RideSync][ledger] Failed to write ride record (checkout)", {
+        rideId,
+        error: err?.message || err,
+      });
+    });
+  }
 
   return rideId;
 }
@@ -3874,11 +4092,11 @@ exports.saveUserProfile = functions.https.onCall(async (data, context) => {
     context?.auth?.token?.email ||
     null;
 
+  const membershipFields = buildMembershipFieldPayload(membershipType, membershipStatus);
   const docPayload = {
     ...profileUpdates,
+    ...membershipFields,
     email: userEmail,
-    membershipType,
-    membershipStatus,
   };
 
   if (!snap.exists) {
@@ -3955,10 +4173,16 @@ exports.createRideRequest = functions
       const poolType = rideInput.poolType === "uofa" ? "uofa" : null;
       const normalizedStatus = normalizeRideStatus(rideInput.status, poolType);
 
+      const membershipCoverage = evaluateMembershipCoverage(
+        membershipType,
+        pickupLocation,
+        dropoffLocation
+      );
+      const pickupCovered = membershipCoverage.pickupInside;
       const fareBreakdown = computeFareForMembership(
         membershipType,
         estimatedMinutes,
-        Boolean(rideInput.inHomeZone)
+        pickupCovered
       );
       const totalCents = Math.max(
         0,
@@ -3973,6 +4197,8 @@ exports.createRideRequest = functions
         pickupLocation,
         dropoffLocation,
         totalCents,
+        estimatedDurationMinutes: estimatedMinutes,
+        coverageOverride: membershipCoverage,
       });
       const amountCents = Math.max(0, Math.round(chargeContext.amountCents || 0));
       const paymentMeta = resolveRidePaymentStatus(membershipType, amountCents);
@@ -3997,6 +4223,7 @@ exports.createRideRequest = functions
           amountCents,
           totalCents,
           chargeContext,
+          pickupCovered,
         }
       );
 
@@ -4059,10 +4286,24 @@ exports.createRideRequest = functions
         rideDoc.groupId = rideRef.id;
       }
 
-      removeUndefinedFields(rideDoc);
+    removeUndefinedFields(rideDoc);
 
-      await rideRef.set(rideDoc);
-      await userRef.set({ lastRideRequestedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await rideRef.set(rideDoc);
+    await upsertRideRecord(rideRef.id, {
+      userId: uid,
+      membershipType,
+      membershipStatus,
+      baseFareAmountCents: totalCents,
+      finalFareAmountCents: amountCents,
+      tipAmountCents: 0,
+      totalChargedCents: amountCents,
+    }).catch((err) => {
+      console.error("[RideSync][ledger] Failed to write ride record", {
+        rideId: rideRef.id,
+        error: err?.message || err,
+      });
+    });
+    await userRef.set({ lastRideRequestedAt: FieldValue.serverTimestamp() }, { merge: true });
 
       functions.logger.info("[createRideRequest] ride created", {
         uid,
@@ -4112,6 +4353,7 @@ exports.joinRideGroup = functions.https.onCall(async (data, context) => {
   const hostRef = db.collection("rideRequests").doc(hostRideId);
   const rideRef = db.collection("rideRequests").doc();
   let createdRideId = null;
+  let createdRideLedger = null;
 
   await db.runTransaction(async (tx) => {
     const hostSnap = await tx.get(hostRef);
@@ -4155,10 +4397,16 @@ exports.joinRideGroup = functions.https.onCall(async (data, context) => {
     }
 
     const minutes = Number(host.estimatedDurationMinutes) || 0;
+    const membershipCoverage = evaluateMembershipCoverage(
+      membershipType,
+      pickupLocation,
+      dropoffLocation
+    );
+    const pickupCovered = membershipCoverage.pickupInside;
     const fareBreakdown = computeFareForMembership(
       membershipType,
       minutes,
-      Boolean(host.inHomeZone)
+      pickupCovered
     );
     const totalCents = Math.max(
       0,
@@ -4172,6 +4420,8 @@ exports.joinRideGroup = functions.https.onCall(async (data, context) => {
       pickupLocation,
       dropoffLocation,
       totalCents,
+      estimatedDurationMinutes: minutes,
+      coverageOverride: membershipCoverage,
     });
     const amountCents = Math.max(0, Math.round(chargeContext.amountCents || 0));
     const paymentMeta = resolveRidePaymentStatus(membershipType, amountCents);
@@ -4185,11 +4435,11 @@ exports.joinRideGroup = functions.https.onCall(async (data, context) => {
       normalizeRideCode(host.dropoffPin) ||
       generateRideCode();
 
+    const membershipFields = buildMembershipFieldPayload(membershipType, membershipStatus);
     const joinRideDoc = {
       userId: uid,
       startedByUserId: host.startedByUserId || host.userId || uid,
-      membershipType,
-      membershipStatus,
+      ...membershipFields,
       isStudent: Boolean(profile.isStudent),
       uofaVerified: Boolean(profile.uofaVerified),
       gender: riderGender,
@@ -4223,7 +4473,27 @@ exports.joinRideGroup = functions.https.onCall(async (data, context) => {
     });
 
     createdRideId = rideRef.id;
+    createdRideLedger = {
+      baseFareAmountCents: totalCents,
+      finalFareAmountCents: amountCents,
+      totalChargedCents: amountCents,
+    };
   });
+
+  if (createdRideId && createdRideLedger) {
+    await upsertRideRecord(createdRideId, {
+      userId: uid,
+      membershipType,
+      membershipStatus,
+      tipAmountCents: 0,
+      ...createdRideLedger,
+    }).catch((err) => {
+      console.error("[RideSync][ledger] Failed to write ride record (join)", {
+        rideId: createdRideId,
+        error: err?.message || err,
+      });
+    });
+  }
 
   return { rideId: createdRideId };
 });
@@ -4410,6 +4680,21 @@ exports.confirmRidePaymentIntent = functions
       updatedAt: FieldValue.serverTimestamp(),
     });
 
+    await upsertRideRecord(rideId, {
+      userId: ride.userId || uid,
+      membershipType: ride.membershipType || "basic",
+      membershipStatus: ride.membershipStatus || "none",
+      baseFareAmountCents: metadataFare,
+      finalFareAmountCents: metadataFare,
+      tipAmountCents,
+      totalChargedCents: metadataFare + tipAmountCents,
+    }).catch((err) => {
+      console.error("[RideSync][ledger] Failed to update ride record (confirm)", {
+        rideId,
+        error: err?.message || err,
+      });
+    });
+
     return { status: "paid" };
   });
 
@@ -4525,6 +4810,21 @@ exports.captureRidePaymentIntent = functions
       tipCurrency: intent.currency || "usd",
       stripeCapturedAmountCents: amountToCapture,
       updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    await upsertRideRecord(rideId, {
+      userId: ride.userId || uid,
+      membershipType: ride.membershipType || "basic",
+      membershipStatus: ride.membershipStatus || "none",
+      baseFareAmountCents,
+      finalFareAmountCents: baseFareAmountCents,
+      tipAmountCents: finalTipAmountCents,
+      totalChargedCents: amountToCapture,
+    }).catch((err) => {
+      console.error("[RideSync][ledger] Failed to update ride record (capture)", {
+        rideId,
+        error: err?.message || err,
+      });
     });
 
     return {
