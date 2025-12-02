@@ -7267,7 +7267,13 @@
       }
       profileMessage.textContent = "Syncing your ride.";
       profileError.textContent = "";
-      showLoadingView();
+      const overlaySubtitle =
+        ridePayload?.toDestination ||
+        ridePayload?.fare?.membershipLabel ||
+        "";
+      setOverlayCopy("Syncing your ride", overlaySubtitle);
+      setRiderOverlayState(RIDER_STATES.SEARCHING);
+      showRideView();
     }
 
     async function handlePaymentSuccess(paymentIntent) {
@@ -7829,13 +7835,19 @@
           throw new Error("This group ride is no longer available.");
         }
 
+        const joinDestination =
+          joinTargetRide?.toDestination ||
+          joinTargetRide?.toAddress ||
+          "";
         currentRideId = rideId;
         joinMode = false;
         joinTargetRide = null;
         startRideStatusWatcher(rideId);
         updateCancelButtonVisibility();
         hideGroupQr();
-        showLoadingView();
+        setOverlayCopy("Syncing your ride", joinDestination);
+        setRiderOverlayState(RIDER_STATES.SEARCHING);
+        showRideView();
       } catch (err) {
         console.error("Join ride error", err);
         profileError.textContent = err.message || "Could not join group ride.";
