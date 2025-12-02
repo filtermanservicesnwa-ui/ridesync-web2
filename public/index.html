@@ -6258,7 +6258,8 @@
       isSyncConfirmOpen = false;
     }
 
-    function openSyncConfirmOverlay() {
+    function openSyncConfirmOverlay(options = {}) {
+      const { preserveError = false } = options;
       if (!syncConfirmOverlay) return false;
       if (!currentUserProfile) {
         profileError.textContent = "Load your RideSync profile before syncing a destination.";
@@ -6309,7 +6310,7 @@
       );
       syncTipUsesCustom = !presetMatch;
       updateSyncTipUi();
-      if (syncConfirmError) {
+      if (syncConfirmError && !preserveError) {
         syncConfirmError.textContent = "";
       }
       toggleOverlay(syncConfirmOverlay, true, syncConfirmClose);
@@ -6370,7 +6371,7 @@
           syncConfirmError.textContent = err?.message || "Could not sync this ride.";
         }
         setSyncConfirmBusy(false);
-        openSyncConfirmOverlay();
+        openSyncConfirmOverlay({ preserveError: true });
       }
     }
 
