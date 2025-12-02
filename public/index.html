@@ -7620,6 +7620,17 @@
       return value.trim().slice(0, 140);
     }
 
+    const MEMBERSHIP_INACTIVE_STATUS_COPY = {
+      expired:
+        "Your membership expired and is not covering this fare. Renew to restore savings.",
+      canceled:
+        "Your membership was canceled and is not covering this fare. Start a new plan to unlock savings again.",
+      inactive:
+        "Your membership is inactive and is not covering this fare. Update billing or contact RideSync support to reactivate it.",
+      none:
+        "Your membership isn’t active for this fare. Start or renew a plan to apply savings.",
+    };
+
     function buildRideMembershipMessage(planKey, status) {
       const normalizedPlan = normalizePlanKey(planKey);
       const normalizedStatus = (status || "none").toLowerCase();
@@ -7632,7 +7643,10 @@
       if (normalizedStatus === "active") {
         return "Your membership is covering this fare. Tips remain optional.";
       }
-      return "Membership savings are already included with your fare. Tips remain optional.";
+      if (MEMBERSHIP_INACTIVE_STATUS_COPY[normalizedStatus]) {
+        return MEMBERSHIP_INACTIVE_STATUS_COPY[normalizedStatus];
+      }
+      return "Membership savings could not be confirmed for this fare. Contact RideSync support if this seems incorrect.";
     }
 
     function buildRideFareSummary(ride = {}) {
