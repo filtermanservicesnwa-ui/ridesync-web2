@@ -1872,9 +1872,9 @@
               <input
                 id="finalTipInput"
                 type="number"
-                min="2"
+                min="0"
                 step="1"
-                value="2"
+                value="0"
                 aria-label="Tip amount in dollars"
               />
               <button id="finalTipIncrease" type="button" class="btn-secondary btn-small" aria-label="Increase tip">
@@ -1882,7 +1882,7 @@
               </button>
             </div>
             <p id="finalTipHint" class="tip-hint">
-              Minimum $2.00 tip. You can increase it up to $12.00.
+              Tips are optional. Increase it if you'd like before we finish payment.
             </p>
             <button id="finalizeTipButton" class="btn-primary" type="button" style="margin-top:12px;">
               Confirm tip & finish payment
@@ -2046,6 +2046,7 @@
 
       <div class="section-title">Tip your driver</div>
       <div id="syncTipOptions" class="tip-options">
+        <button class="tip-button" type="button" data-tip="0">No tip</button>
         <button class="tip-button" type="button" data-tip="2">$2</button>
         <button class="tip-button" type="button" data-tip="5">$5</button>
         <button class="tip-button" type="button" data-tip="10">$10</button>
@@ -2056,7 +2057,7 @@
       <input
         id="syncTipCustomInput"
         type="number"
-        min="2"
+        min="0"
         step="1"
         placeholder="Custom tip"
         style="display:none;"
@@ -2146,6 +2147,7 @@
           Add a tip (you can change it after the ride)
         </div>
         <div id="preauthTipOptions" class="tip-options">
+          <button type="button" class="tip-button" data-tip="0">No tip</button>
           <button type="button" class="tip-button" data-tip="2">$2</button>
           <button type="button" class="tip-button" data-tip="5">$5</button>
           <button type="button" class="tip-button" data-tip="10">$10</button>
@@ -2156,13 +2158,13 @@
         <input
           id="preauthTipCustomInput"
           type="number"
-          min="2"
+          min="0"
           step="1"
           placeholder="Custom tip"
           style="display:none;"
         />
         <p id="preauthTipMessage" class="tip-hint">
-          We'll place a temporary hold for your fare plus up to $12.00 in tip.
+          Tips are optional. We'll place a temporary hold for your fare plus up to $12.00 if you add one.
         </p>
       </div>
       <div class="fare-box" id="preauthHoldSummary" style="margin-top:12px;">
@@ -2242,6 +2244,10 @@
           <div class="fare-label">Base fare</div>
           <div class="fare-value" id="rideFareBaseAmount">$0.00</div>
         </div>
+        <div class="fare-row" id="rideFareMembershipRow" style="display:none;">
+          <div class="fare-label">Membership</div>
+          <div class="fare-value" id="rideFareMembershipLabel">Checking…</div>
+        </div>
         <div class="fare-row">
           <div class="fare-label">Tip</div>
           <div class="fare-value" id="rideFareTipAmount">$0.00</div>
@@ -2251,6 +2257,7 @@
           <div class="fare-total" id="rideFareAmount">$0.00</div>
         </div>
         <div id="rideFareDetails" class="ride-fare-details"></div>
+        <p id="rideFareMembershipNote" class="small" style="margin-top:6px; display:none;"></p>
       </div>
       <div class="section-title" style="margin-top:18px;">Pay securely</div>
       <p class="small" id="rideCheckoutDetails">
@@ -2458,7 +2465,7 @@
     const stripeConfig = APP_CONFIG.stripe || {};
     const fareConfig = APP_CONFIG.fares || {};
     const paymentConfig = APP_CONFIG.payments || {};
-    const MIN_RIDE_TIP_CENTS = 200;
+    const MIN_RIDE_TIP_CENTS = 0;
     const DEFAULT_MAX_TIP_CENTS = Math.max(
       MIN_RIDE_TIP_CENTS,
       Math.round(paymentConfig.maxTipHoldCents || 1200)
@@ -3117,6 +3124,9 @@
     const rideFareClose = document.getElementById("rideFareClose");
     const rideFareBaseAmount = document.getElementById("rideFareBaseAmount");
     const rideFareTipAmount = document.getElementById("rideFareTipAmount");
+    const rideFareMembershipRow = document.getElementById("rideFareMembershipRow");
+    const rideFareMembershipLabel = document.getElementById("rideFareMembershipLabel");
+    const rideFareMembershipNote = document.getElementById("rideFareMembershipNote");
     const rideCardElement = document.getElementById("rideCardElement");
     const rideCardSubmit = document.getElementById("rideCardSubmit");
     const rideCardMessage = document.getElementById("rideCardMessage");
@@ -6535,10 +6545,15 @@
         }
       }
       if (syncTipMessage) {
-        syncTipMessage.textContent = `We'll place a temporary hold for your fare plus ${formatCurrencyFromCents(
-          selectedCents,
-          "usd"
-        )}. You can adjust after the ride.`;
+        if (selectedCents > 0) {
+          syncTipMessage.textContent = `We'll place a temporary hold for your fare plus ${formatCurrencyFromCents(
+            selectedCents,
+            "usd"
+          )}. You can adjust after the ride.`;
+        } else {
+          syncTipMessage.textContent =
+            "No tip selected. Tips are optional and go directly to your driver.";
+        }
       }
     }
 
@@ -7008,21 +7023,48 @@
     }
 
     function renderRideFareDetails(summary = {}) {
-      if (!rideFareDetails) return;
-      const parts = [];
-      if (summary.pickup) {
-        parts.push(`Pickup: ${summary.pickup}`);
+      if (rideFareDetails) {
+        const parts = [];
+        if (summary.pickup) {
+          parts.push(`Pickup: ${summary.pickup}`);
+        }
+        if (summary.dropoff) {
+          parts.push(`Dropoff: ${summary.dropoff}`);
+        }
+        if (Number.isFinite(summary.distanceMiles)) {
+          parts.push(`Distance: ${summary.distanceMiles.toFixed(2)} miles`);
+        }
+        if (Number.isFinite(summary.durationMinutes)) {
+          parts.push(`Duration: ${Math.round(summary.durationMinutes)} min`);
+        }
+        rideFareDetails.textContent = parts.join(" • ");
       }
-      if (summary.dropoff) {
-        parts.push(`Dropoff: ${summary.dropoff}`);
+
+      if (
+        rideFareMembershipLabel ||
+        rideFareMembershipRow ||
+        rideFareMembershipNote
+      ) {
+        const fallbackPlan = getProfilePlanKey();
+        const fallbackStatus = currentUserProfile?.membershipStatus || "none";
+        const membershipLabel =
+          summary?.membershipLabel ||
+          formatMembershipSummary(fallbackPlan, fallbackStatus);
+        const membershipMessage =
+          summary?.membershipMessage ||
+          buildRideMembershipMessage(fallbackPlan, fallbackStatus);
+
+        if (rideFareMembershipLabel) {
+          rideFareMembershipLabel.textContent = membershipLabel || "—";
+        }
+        if (rideFareMembershipRow) {
+          rideFareMembershipRow.style.display = membershipLabel ? "flex" : "none";
+        }
+        if (rideFareMembershipNote) {
+          rideFareMembershipNote.textContent = membershipMessage || "";
+          rideFareMembershipNote.style.display = membershipMessage ? "block" : "none";
+        }
       }
-      if (Number.isFinite(summary.distanceMiles)) {
-        parts.push(`Distance: ${summary.distanceMiles.toFixed(2)} miles`);
-      }
-      if (Number.isFinite(summary.durationMinutes)) {
-        parts.push(`Duration: ${Math.round(summary.durationMinutes)} min`);
-      }
-      rideFareDetails.textContent = parts.join(" • ");
     }
 
     function resetRideTipUi() {
@@ -7253,7 +7295,7 @@
         });
       }
       if (preauthTipCustomInput) {
-        const presetValues = new Set([200, 500, 1000]);
+        const presetValues = new Set([0, 200, 500, 1000]);
         const useCustom = !presetValues.has(ridePreauthState.selectedTipCents);
         preauthTipCustomInput.style.display = useCustom ? "block" : "none";
         preauthTipCustomInput.value = useCustom
@@ -7266,12 +7308,10 @@
         preauthHoldAmount.textContent = formatCurrencyFromCents(hold, "usd");
       }
       if (preauthTipMessage) {
-        preauthTipMessage.textContent = `We’ll place a temporary hold for your fare plus up to ${formatCurrencyFromCents(
+        preauthTipMessage.textContent = `Tips are optional. We’ll place a temporary hold for your fare plus up to ${formatCurrencyFromCents(
           ridePreauthState.maxTipAmountCents,
           "usd"
-        )}. Minimum tip after the ride is $${(MIN_RIDE_TIP_CENTS / 100).toFixed(
-          2
-        )}.`;
+        )} if you add one.`;
       }
     }
 
@@ -7580,6 +7620,35 @@
       return value.trim().slice(0, 140);
     }
 
+    const MEMBERSHIP_INACTIVE_STATUS_COPY = {
+      expired:
+        "Your membership expired and is not covering this fare. Renew to restore savings.",
+      canceled:
+        "Your membership was canceled and is not covering this fare. Start a new plan to unlock savings again.",
+      inactive:
+        "Your membership is inactive and is not covering this fare. Update billing or contact RideSync support to reactivate it.",
+      none:
+        "Your membership isn’t active for this fare. Start or renew a plan to apply savings.",
+    };
+
+    function buildRideMembershipMessage(planKey, status) {
+      const normalizedPlan = normalizePlanKey(planKey);
+      const normalizedStatus = (status || "none").toLowerCase();
+      if (normalizedPlan === "basic") {
+        return "Basic rides pay per trip. Contact RideSync support to change plans.";
+      }
+      if (normalizedStatus === "pending_verification") {
+        return "We’re verifying your membership. Tips remain optional.";
+      }
+      if (normalizedStatus === "active") {
+        return "Your membership is covering this fare. Tips remain optional.";
+      }
+      if (MEMBERSHIP_INACTIVE_STATUS_COPY[normalizedStatus]) {
+        return MEMBERSHIP_INACTIVE_STATUS_COPY[normalizedStatus];
+      }
+      return "Membership savings could not be confirmed for this fare. Contact RideSync support if this seems incorrect.";
+    }
+
     function buildRideFareSummary(ride = {}) {
       const pickupCandidate =
         ride.pickupAddress ||
@@ -7603,6 +7672,22 @@
         ride.estimatedDurationMinutes ||
         ride.metrics?.durationMinutes ||
         ride.rideMetrics?.durationMinutes;
+      const membershipPlanCandidate =
+        ride.membershipType ||
+        ride.membership ||
+        ride.fare?.membershipPlan ||
+        ride.fare?.plan ||
+        ride.fare?.planKey ||
+        getProfilePlanKey();
+      const membershipPlan = normalizePlanKey(membershipPlanCandidate);
+      const membershipStatus =
+        ride.membershipStatus ||
+        ride.fare?.membershipStatus ||
+        currentUserProfile?.membershipStatus ||
+        "none";
+      const membershipLabel =
+        ride.fare?.membershipLabel ||
+        formatMembershipSummary(membershipPlan, membershipStatus);
       return {
         pickup: pickupCandidate ? sanitizeDestinationLabel(pickupCandidate) : "",
         dropoff: dropoffCandidate ? sanitizeDestinationLabel(dropoffCandidate) : "",
@@ -7612,6 +7697,11 @@
         durationMinutes: Number.isFinite(durationMinutes)
           ? durationMinutes
           : null,
+        membershipLabel,
+        membershipMessage: buildRideMembershipMessage(
+          membershipPlan,
+          membershipStatus
+        ),
       };
     }
 
@@ -7848,9 +7938,7 @@
         finalTipInput.value = (rideTipCaptureState.selectedTipCents / 100).toFixed(2);
       }
       if (finalTipHint) {
-        finalTipHint.textContent = `Minimum $${(MIN_RIDE_TIP_CENTS / 100).toFixed(
-          2
-        )}. You can tip up to ${formatCurrencyFromCents(
+        finalTipHint.textContent = `Tips are optional. You can tip up to ${formatCurrencyFromCents(
           rideTipCaptureState.maxTipAmountCents,
           "usd"
         )}.`;
@@ -8694,7 +8782,7 @@
           updatePreauthTipUi();
           await openPaymentOverlay({
             title: "Save your payment method",
-            subtitle: "We’ll place a temporary hold for your fare plus tip.",
+            subtitle: "We’ll place a temporary hold for your fare and any tip you add.",
             clientSecret: payload.clientSecret,
             livemode: payload.livemode ?? null,
             context: {
