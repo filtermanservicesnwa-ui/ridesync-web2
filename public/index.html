@@ -3902,6 +3902,10 @@
       const statusLabel = formatMembershipStatusLabel(profile?.membershipStatus);
       const summaryLabel = formatMembershipSummary(plan, profile?.membershipStatus);
 
+      const normalizedStatus = (profile?.membershipStatus || "none").toLowerCase();
+      const isActive = normalizedStatus === "active";
+      const isPending = normalizedStatus === "pending_verification";
+
       if (membershipStatusText) {
         membershipStatusText.textContent = `Plan: ${planCopy.label}`;
       }
@@ -3910,9 +3914,6 @@
       }
 
       if (membershipStatusBadge) {
-        const normalizedStatus = (profile?.membershipStatus || "none").toLowerCase();
-        const isActive = normalizedStatus === "active";
-        const isPending = normalizedStatus === "pending_verification";
         membershipStatusBadge.textContent = statusLabel;
         membershipStatusBadge.classList.toggle("active", isActive);
         membershipStatusBadge.classList.toggle("pending", isPending);
@@ -3921,10 +3922,13 @@
           !isActive && !isPending
         );
       }
+      const unlimitedActive = isUnlimitedMembershipActive(plan, profile?.membershipStatus);
       const infoMessage =
         plan === "basic"
           ? "Membership charges are bundled with each fare. Contact RideSync support if you'd like information about unlimited plans."
-          : "Your unlimited coverage is active. Reach out to RideSync support if you need to update or pause it.";
+          : unlimitedActive
+              ? "Your unlimited coverage is active. Reach out to RideSync support if you need to update or pause it."
+              : `Your unlimited coverage is ${statusLabel.toLowerCase()}. Reach out to RideSync support if you need help updating or reactivating it.`;
       setMembershipMessage(infoMessage);
     }
 
