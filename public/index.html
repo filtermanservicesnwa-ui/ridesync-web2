@@ -717,6 +717,78 @@
       font-size: 0.9rem;
       color: #9ca3af;
     }
+    .sync-membership-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .sync-membership-card {
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(15,23,42,0.85);
+      padding: 12px 14px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+      cursor: pointer;
+      position: relative;
+      width: 100%;
+      text-align: left;
+      color: inherit;
+      font: inherit;
+    }
+    .sync-membership-card input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .sync-membership-card.active {
+      border-color: #22c55e;
+      background: rgba(34,197,94,0.08);
+    }
+    .sync-membership-card.disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+    .sync-membership-card:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+    .sync-membership-card .plan-pill {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid rgba(148,163,184,0.5);
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+    .sync-membership-card.active .plan-pill {
+      border-color: #22c55e;
+      background: #22c55e;
+    }
+    .sync-membership-card .plan-content {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .sync-membership-card .plan-label {
+      font-weight: 600;
+    }
+    .sync-membership-card .plan-price {
+      font-size: 0.9rem;
+      color: #cbd5f5;
+    }
+    .sync-membership-card .plan-desc {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      margin: 0;
+    }
+    .sync-tip-note {
+      font-size: 0.78rem;
+      color: #94a3b8;
+      margin-top: -6px;
+    }
     .payment-fare-summary {
       border-top: 1px solid rgba(148,163,184,0.25);
       padding-top: 8px;
@@ -1897,6 +1969,90 @@
     </div>
   </div>
 
+  <div id="syncConfirmOverlay" class="payment-overlay" aria-hidden="true">
+    <div
+      class="payment-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="syncConfirmTitle"
+    >
+      <div class="payment-panel-header">
+        <div>
+          <h3 id="syncConfirmTitle" class="payment-panel-title">
+            Review trip &amp; payment
+          </h3>
+          <p id="syncConfirmSubtitle" class="payment-panel-subtitle">
+            Confirm your fare, tip, and membership before syncing.
+          </p>
+        </div>
+        <button
+          id="syncConfirmClose"
+          type="button"
+          class="btn-secondary btn-small"
+        >
+          Close
+        </button>
+      </div>
+
+      <div class="fare-box" id="syncConfirmFareBox">
+        <div class="fare-row">
+          <div class="fare-label">Destination</div>
+          <div class="fare-value" id="syncConfirmDestination">—</div>
+        </div>
+        <div class="fare-row">
+          <div class="fare-label">Time</div>
+          <div class="fare-value" id="syncConfirmTime">—</div>
+        </div>
+        <div class="fare-row">
+          <div class="fare-label">Distance</div>
+          <div class="fare-value" id="syncConfirmDistance">—</div>
+        </div>
+        <div class="fare-row">
+          <div class="fare-label">Estimated total</div>
+          <div class="fare-total" id="syncConfirmTotal">—</div>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top:4px;">Membership</div>
+      <div id="syncMembershipList" class="sync-membership-list"></div>
+      <div id="syncMembershipHint" class="small"></div>
+
+      <div class="section-title">Tip your driver</div>
+      <div id="syncTipOptions" class="tip-options">
+        <button class="tip-button" type="button" data-tip="2">$2</button>
+        <button class="tip-button" type="button" data-tip="5">$5</button>
+        <button class="tip-button" type="button" data-tip="10">$10</button>
+        <button class="tip-button tip-custom" type="button" data-tip="custom">
+          Custom
+        </button>
+      </div>
+      <input
+        id="syncTipCustomInput"
+        type="number"
+        min="2"
+        step="1"
+        placeholder="Custom tip"
+        style="display:none;"
+      />
+      <p id="syncTipMessage" class="sync-tip-note">
+        Tips go directly to your driver. You can adjust after the ride.
+      </p>
+
+      <div id="syncConfirmError" class="error"></div>
+      <button
+        id="syncConfirmButton"
+        type="button"
+        class="btn-primary"
+        data-default-focus="true"
+      >
+        Sync &amp; pay
+      </button>
+      <button id="syncConfirmCancel" type="button" class="btn-secondary">
+        Go back
+      </button>
+    </div>
+  </div>
+
   <div id="paymentOverlay" class="payment-overlay" aria-hidden="true">
     <div class="payment-panel">
       <div class="payment-panel-header">
@@ -2691,6 +2847,22 @@
     const paymentMembershipBox = document.getElementById("paymentMembershipBox");
     const paymentMembershipCurrent = document.getElementById("paymentMembershipCurrent");
     const paymentMembershipMessage = document.getElementById("paymentMembershipMessage");
+    const syncConfirmOverlay = document.getElementById("syncConfirmOverlay");
+    const syncConfirmTitle = document.getElementById("syncConfirmTitle");
+    const syncConfirmSubtitle = document.getElementById("syncConfirmSubtitle");
+    const syncConfirmDestination = document.getElementById("syncConfirmDestination");
+    const syncConfirmTime = document.getElementById("syncConfirmTime");
+    const syncConfirmDistance = document.getElementById("syncConfirmDistance");
+    const syncConfirmTotal = document.getElementById("syncConfirmTotal");
+    const syncMembershipList = document.getElementById("syncMembershipList");
+    const syncMembershipHint = document.getElementById("syncMembershipHint");
+    const syncTipOptions = document.getElementById("syncTipOptions");
+    const syncTipCustomInput = document.getElementById("syncTipCustomInput");
+    const syncTipMessage = document.getElementById("syncTipMessage");
+    const syncConfirmButton = document.getElementById("syncConfirmButton");
+    const syncConfirmClose = document.getElementById("syncConfirmClose");
+    const syncConfirmCancel = document.getElementById("syncConfirmCancel");
+    const syncConfirmError = document.getElementById("syncConfirmError");
 
     const riderEmailDetailEl = document.getElementById("riderEmailDetail");
     const riderPhoneDetailEl = document.getElementById("riderPhoneDetail");
@@ -2952,6 +3124,9 @@
     let ratingSubmitting = false;
     let rideTipRefreshTimer = null;
     let lastPaymentOverlayOptions = null;
+    let isSyncConfirmOpen = false;
+    let syncMembershipSelection = null;
+    let syncTipUsesCustom = false;
 
     let isSignupMode = false;
     let currentUserProfile = null;
@@ -5833,6 +6008,413 @@
       }
     }
 
+    // === Rider sync confirmation overlay helpers ===
+    function getDestinationSummaryText() {
+      const typed = (destinationEl?.value || "").trim();
+      if (typed) return typed;
+      if (lastDestinationPlace?.name) {
+        return lastDestinationPlace.name;
+      }
+      if (lastDestinationPlace?.formatted_address) {
+        return lastDestinationPlace.formatted_address;
+      }
+      return "";
+    }
+
+    function getProfilePlanKey() {
+      return normalizePlanKey(
+        currentUserProfile?.membershipType ||
+          currentUserProfile?.membership ||
+          "basic"
+      );
+    }
+
+    function isPlanSelectable(planKey) {
+      const normalized = normalizePlanKey(planKey);
+      if (normalized === "basic") {
+        return true;
+      }
+      if (!currentUserProfile) {
+        return false;
+      }
+      if (normalized === "uofa_unlimited") {
+        return !!(currentUserProfile.isStudent && currentUserProfile.uofaVerified);
+      }
+      if (normalized === "nwa_unlimited") {
+        return (
+          normalizePlanKey(
+            currentUserProfile.membershipType || currentUserProfile.membership
+          ) === "nwa_unlimited"
+        );
+      }
+      return false;
+    }
+
+    function getPlanLockReason(planKey) {
+      const normalized = normalizePlanKey(planKey);
+      if (normalized === "uofa_unlimited") {
+        if (!currentUserProfile?.isStudent) {
+          return "Only verified U of A students can activate this plan.";
+        }
+        if (!currentUserProfile?.uofaVerified) {
+          return "Upload your student ID so RideSync can verify you.";
+        }
+      }
+      if (normalized === "nwa_unlimited") {
+        return "Contact RideSync support to unlock NWA Unlimited.";
+      }
+      return "";
+    }
+
+    function updateSyncMembershipHint(planKey) {
+      if (!syncMembershipHint) return;
+      const normalized = normalizePlanKey(planKey);
+      const planCopy =
+        MEMBERSHIP_PLAN_COPY[normalized] || MEMBERSHIP_PLAN_COPY.basic;
+      const tier = planCopy?.tier || MEMBERSHIP_TIER_KEYS.BASIC;
+      let message =
+        MEMBERSHIP_TIER_DETAILS[tier]?.summary ||
+        "Membership savings are bundled with your fare.";
+      const profilePlan = getProfilePlanKey();
+      if (normalized !== profilePlan) {
+        const profileLabel =
+          MEMBERSHIP_PLAN_COPY[profilePlan]?.label ||
+          MEMBERSHIP_PLAN_COPY.basic.label;
+        message = `Your RideSync profile is set to ${profileLabel}. Contact support if you need to change plans.`;
+      }
+      syncMembershipHint.textContent = message;
+    }
+
+    function renderSyncMembershipOptions() {
+      if (!syncMembershipList) return;
+      const plans = ["basic", "uofa_unlimited", "nwa_unlimited"];
+      const normalizedSelection = normalizePlanKey(
+        syncMembershipSelection || getProfilePlanKey()
+      );
+      syncMembershipSelection = normalizedSelection;
+      const fragment = document.createDocumentFragment();
+      plans.forEach((planKey) => {
+        const planCopy =
+          MEMBERSHIP_PLAN_COPY[planKey] || MEMBERSHIP_PLAN_COPY.basic;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.plan = planKey;
+        button.className = "sync-membership-card";
+        const selectable = isPlanSelectable(planKey);
+        if (!selectable) {
+          button.classList.add("disabled");
+          button.disabled = true;
+        }
+        if (normalizedSelection === planKey) {
+          button.classList.add("active");
+        }
+        const lockReason = !selectable ? getPlanLockReason(planKey) : "";
+        button.innerHTML = `
+          <span class="plan-pill" aria-hidden="true"></span>
+          <span class="plan-content">
+            <span class="plan-label">${planCopy.label}</span>
+            <span class="plan-price">${formatPlanPriceLabel(planKey)}</span>
+            <p class="plan-desc">${planCopy.description}</p>
+            ${lockReason ? `<p class="plan-desc" style="color:#fbbf24;">${lockReason}</p>` : ""}
+          </span>
+        `;
+        fragment.appendChild(button);
+      });
+      syncMembershipList.innerHTML = "";
+      syncMembershipList.appendChild(fragment);
+      updateSyncMembershipHint(syncMembershipSelection);
+    }
+
+    function setSyncMembershipSelection(planKey) {
+      const normalized = normalizePlanKey(planKey);
+      if (!isPlanSelectable(normalized)) {
+        const reason = getPlanLockReason(normalized);
+        if (syncConfirmError && reason) {
+          syncConfirmError.textContent = reason;
+        }
+        return;
+      }
+      if (syncConfirmError) {
+        syncConfirmError.textContent = "";
+      }
+      syncMembershipSelection = normalized;
+      renderSyncMembershipOptions();
+    }
+
+    function isPresetTipValue(cents) {
+      if (!syncTipOptions) return false;
+      const buttons = syncTipOptions.querySelectorAll(".tip-button");
+      for (const button of buttons) {
+        const tipValue = button.dataset?.tip;
+        if (!tipValue || tipValue === "custom") continue;
+        const dollars = Number(tipValue);
+        if (!Number.isFinite(dollars)) continue;
+        if (Math.round(dollars * 100) === cents) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function updateSyncTipUi() {
+      if (!syncTipOptions) return;
+      const selectedCents = clampTipAmount(
+        ridePreauthState.selectedTipCents || MIN_RIDE_TIP_CENTS,
+        MIN_RIDE_TIP_CENTS,
+        ridePreauthState.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS
+      );
+      ridePreauthState.selectedTipCents = selectedCents;
+      const buttons = Array.from(
+        syncTipOptions.querySelectorAll(".tip-button")
+      );
+      let matchedPreset = false;
+      buttons.forEach((button) => {
+        const value = button.dataset?.tip;
+        if (!value || value === "custom") {
+          return;
+        }
+        const dollars = Number(value);
+        if (!Number.isFinite(dollars)) {
+          button.classList.remove("active");
+          return;
+        }
+        const cents = Math.round(dollars * 100);
+        const isActive = !syncTipUsesCustom && cents === selectedCents;
+        if (isActive) {
+          matchedPreset = true;
+        }
+        button.classList.toggle("active", isActive);
+      });
+      const customButton = syncTipOptions.querySelector(
+        '.tip-button[data-tip="custom"]'
+      );
+      if (customButton) {
+        const highlightCustom = syncTipUsesCustom || !matchedPreset;
+        customButton.classList.toggle("active", highlightCustom);
+      }
+      const shouldShowCustomInput = syncTipUsesCustom || !matchedPreset;
+      if (syncTipCustomInput) {
+        syncTipCustomInput.style.display = shouldShowCustomInput
+          ? "block"
+          : "none";
+        if (shouldShowCustomInput) {
+          syncTipCustomInput.value =
+            selectedCents > 0
+              ? Math.round(selectedCents / 100).toString()
+              : "";
+        } else {
+          syncTipCustomInput.value = "";
+        }
+      }
+      if (syncTipMessage) {
+        syncTipMessage.textContent = `We'll place a temporary hold for your fare plus ${formatCurrencyFromCents(
+          selectedCents,
+          "usd"
+        )}. You can adjust after the ride.`;
+      }
+    }
+
+    function handleSyncTipOptionClick(event) {
+      const target = event.target.closest(".tip-button");
+      if (!target || target.disabled) return;
+      const tipValue = target.dataset?.tip;
+      if (tipValue === "custom") {
+        syncTipUsesCustom = true;
+        if (syncTipCustomInput) {
+          syncTipCustomInput.style.display = "block";
+          syncTipCustomInput.focus();
+          syncTipCustomInput.select();
+        }
+        updateSyncTipUi();
+        return;
+      }
+      const dollars = Number(tipValue);
+      if (!Number.isFinite(dollars)) return;
+      syncTipUsesCustom = false;
+      ridePreauthState.selectedTipCents = clampTipAmount(
+        Math.round(dollars * 100),
+        MIN_RIDE_TIP_CENTS,
+        ridePreauthState.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS
+      );
+      updateSyncTipUi();
+    }
+
+    function handleSyncTipCustomInput() {
+      if (!syncTipCustomInput) return;
+      syncTipUsesCustom = true;
+      const cents = dollarsToCents(syncTipCustomInput.value);
+      ridePreauthState.selectedTipCents = clampTipAmount(
+        cents,
+        MIN_RIDE_TIP_CENTS,
+        ridePreauthState.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS
+      );
+      updateSyncTipUi();
+    }
+
+    function closeSyncConfirmOverlay() {
+      if (!syncConfirmOverlay) return;
+      toggleOverlay(syncConfirmOverlay, false);
+      setSyncConfirmBusy(false);
+      isSyncConfirmOpen = false;
+    }
+
+    function openSyncConfirmOverlay(options = {}) {
+      const { preserveError = false } = options;
+      if (!syncConfirmOverlay) return false;
+      if (!currentUserProfile) {
+        profileError.textContent = "Load your RideSync profile before syncing a destination.";
+        return false;
+      }
+      if (!destinationLatLng || !lastRideMetrics) {
+        profileError.textContent =
+          "Set destination and wait for the fare estimate first.";
+        updateRouteAndFare();
+        return false;
+      }
+      const destinationSummary = getDestinationSummaryText() || "your ride";
+      if (syncConfirmDestination) {
+        syncConfirmDestination.textContent = destinationSummary;
+      }
+      if (syncConfirmSubtitle) {
+        syncConfirmSubtitle.textContent = hasOnlineDrivers
+          ? "Drivers are online. Confirm these details to sync instantly."
+          : "Drivers look offline. We'll notify them as soon as you confirm.";
+      }
+      if (syncConfirmTime) {
+        const minutes = Number(lastRideMetrics.durationMinutes || 0);
+        syncConfirmTime.textContent = minutes
+          ? `${minutes.toFixed(1)} min`
+          : "—";
+      }
+      if (syncConfirmDistance) {
+        const meters = Number(lastRideMetrics.distanceMeters || 0);
+        syncConfirmDistance.textContent = meters
+          ? `${(meters / 1609.34).toFixed(2)} mi`
+          : "—";
+      }
+      if (syncConfirmTotal) {
+        const total = Number(lastRideMetrics.fareBreakdown?.total || 0);
+        syncConfirmTotal.textContent = total
+          ? `$${total.toFixed(2)}`
+          : "—";
+      }
+      syncMembershipSelection = normalizePlanKey(
+        currentUserProfile?.membershipType ||
+          currentUserProfile?.membership ||
+          syncMembershipSelection ||
+          "basic"
+      );
+      renderSyncMembershipOptions();
+      const presetMatch = isPresetTipValue(
+        ridePreauthState.selectedTipCents || MIN_RIDE_TIP_CENTS
+      );
+      syncTipUsesCustom = !presetMatch;
+      updateSyncTipUi();
+      if (syncConfirmError && !preserveError) {
+        syncConfirmError.textContent = "";
+      }
+      toggleOverlay(syncConfirmOverlay, true, syncConfirmClose);
+      isSyncConfirmOpen = true;
+      return true;
+    }
+
+    function setSyncConfirmBusy(isBusy) {
+      if (syncConfirmButton) {
+        syncConfirmButton.disabled = !!isBusy;
+        syncConfirmButton.textContent = isBusy ? "Syncing…" : "Sync & pay";
+      }
+      if (syncConfirmClose) {
+        syncConfirmClose.disabled = !!isBusy;
+      }
+      if (syncConfirmCancel) {
+        syncConfirmCancel.disabled = !!isBusy;
+      }
+    }
+
+    function validateSyncMembershipSelection() {
+      if (!currentUserProfile) {
+        if (syncConfirmError) {
+          syncConfirmError.textContent = "Log in to request a ride.";
+        }
+        return false;
+      }
+      const profilePlan = getProfilePlanKey();
+      if (syncMembershipSelection !== profilePlan) {
+        if (syncConfirmError) {
+          const profileLabel =
+            MEMBERSHIP_PLAN_COPY[profilePlan]?.label ||
+            MEMBERSHIP_PLAN_COPY.basic.label;
+          syncConfirmError.textContent = `Your account is set to ${profileLabel}. Contact RideSync support to change your membership.`;
+        }
+        return false;
+      }
+      if (syncConfirmError) {
+        syncConfirmError.textContent = "";
+      }
+      return true;
+    }
+
+    async function handleSyncConfirmSubmit() {
+      if (!syncConfirmOverlay || !isSyncConfirmOpen) {
+        return;
+      }
+      if (!validateSyncMembershipSelection()) {
+        return;
+      }
+      setSyncConfirmBusy(true);
+      closeSyncConfirmOverlay();
+      try {
+        await handleNewRide();
+      } catch (err) {
+        console.error("handleSyncConfirmSubmit error", err);
+        if (syncConfirmError) {
+          syncConfirmError.textContent = err?.message || "Could not sync this ride.";
+        }
+        setSyncConfirmBusy(false);
+        openSyncConfirmOverlay({ preserveError: true });
+      }
+    }
+
+    if (syncMembershipList) {
+      syncMembershipList.addEventListener("click", (event) => {
+        const target = event.target.closest(".sync-membership-card");
+        if (!target || target.disabled) return;
+        const planKey = target.dataset?.plan;
+        if (!planKey) return;
+        setSyncMembershipSelection(planKey);
+      });
+    }
+
+    if (syncTipOptions) {
+      syncTipOptions.addEventListener("click", handleSyncTipOptionClick);
+    }
+
+    if (syncTipCustomInput) {
+      syncTipCustomInput.addEventListener("input", handleSyncTipCustomInput);
+    }
+
+    if (syncConfirmClose) {
+      syncConfirmClose.addEventListener("click", closeSyncConfirmOverlay);
+    }
+
+    if (syncConfirmCancel) {
+      syncConfirmCancel.addEventListener("click", closeSyncConfirmOverlay);
+    }
+
+    if (syncConfirmOverlay) {
+      syncConfirmOverlay.addEventListener("click", (event) => {
+        if (event.target === syncConfirmOverlay) {
+          closeSyncConfirmOverlay();
+        }
+      });
+    }
+
+    if (syncConfirmButton) {
+      syncConfirmButton.addEventListener("click", () => {
+        handleSyncConfirmSubmit();
+      });
+    }
+
     function hasPendingCheckoutReturn() {
       return (
         checkoutReturnState.pendingId &&
@@ -7862,9 +8444,9 @@
     syncButton.addEventListener("click", async () => {
       if (joinMode && joinTargetRide) {
         await handleJoinRide();
-      } else {
-        await handleNewRide();
+        return;
       }
+      openSyncConfirmOverlay();
     });
 
     showPaymentResultFromLocation();
