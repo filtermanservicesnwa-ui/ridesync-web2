@@ -9769,7 +9769,10 @@
           const payload = response?.data || response || {};
           ridePreauthState.maxTipAmountCents = Math.max(
             MIN_RIDE_TIP_CENTS,
-            Math.round(payload.maxTipAmountCents || ridePreauthState.maxTipAmountCents)
+            Math.round(
+              payload.maxTipAmountCents ??
+                ridePreauthState.maxTipAmountCents
+            )
           );
           ridePreauthState.selectedTipCents = clampTipAmount(
             payload.initialTipAmountCents ?? ridePreauthState.selectedTipCents,
