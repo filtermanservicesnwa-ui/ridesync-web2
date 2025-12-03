@@ -2218,10 +2218,8 @@
       }
       docs.forEach((docSnap) => {
         const data = docSnap.data() || {};
-        const senderRole = (data.senderRole || "").toLowerCase();
         const senderId = data.senderUserId || "";
-        const isDriver = senderRole === "driver";
-        const isSelf = isDriver || (senderId && senderId === currentUser?.uid);
+        const isSelf = Boolean(senderId && senderId === currentUser?.uid);
         const item = document.createElement("div");
         item.className = `ride-chat-message ${isSelf ? "from-self" : "from-peer"}`;
 
