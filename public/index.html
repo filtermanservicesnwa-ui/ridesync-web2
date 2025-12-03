@@ -818,15 +818,6 @@
       margin-top: 6px;
     }
 
-    .top-right {
-      position: fixed;
-      right: 10px;
-      top: 8px;
-      font-size: 0.7rem;
-      color: #cbd5f5;
-      z-index: 3;
-    }
-
     .loading-center {
       display: flex;
       flex-direction: column;
@@ -1375,8 +1366,6 @@
 </head>
 <body>
   <div id="map"></div>
-  <div class="top-right" id="loginStatus"></div>
-
   <div class="card">
     <!-- AUTH VIEW -->
     <div id="authView" class="active">
@@ -2380,7 +2369,9 @@
       onAuthStateChanged,
       signInWithEmailAndPassword,
       createUserWithEmailAndPassword,
-      signOut
+      signOut,
+      setPersistence,
+      browserLocalPersistence
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
     import {
       getFirestore,
@@ -2521,6 +2512,11 @@
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+    } catch (err) {
+      console.warn("Failed to set auth persistence (rider app)", err);
+    }
     const db = getFirestore(app);
     const storage = getStorage(app);
     const FUNCTIONS_REGION = "us-central1";
@@ -2949,7 +2945,6 @@
     const authView = document.getElementById("authView");
     const rideView = document.getElementById("rideView");
     const loadingView = document.getElementById("loadingView");
-    const loginStatusEl = document.getElementById("loginStatus");
     const toggleLink = document.getElementById("toggleLink");
     const authError = document.getElementById("authError");
     const authButton = document.getElementById("authButton");
@@ -5138,7 +5133,6 @@
       if (!user) {
         stopDriverAvailabilityWatchers();
         currentUserProfile = null;
-        loginStatusEl.textContent = "";
         showAuthView();
         if (hasPendingMembershipCheckoutReturn()) {
           openPaymentStatusOverlay(
@@ -5155,7 +5149,6 @@
         }
         return;
       }
-      loginStatusEl.textContent = "Logged in";
       await loadUserProfile(user.uid, user.email);
       showRideView();
       subscribeToDriverAvailability();
