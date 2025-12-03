@@ -1062,6 +1062,107 @@
       padding: 0;
       background: transparent;
     }
+    .ride-chat-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border: 1px solid rgba(148,163,184,0.45);
+      border-radius: 18px;
+      padding: 14px;
+      background: rgba(2,6,23,0.95);
+      box-shadow: inset 0 0 0 rgba(0,0,0,0);
+    }
+    .ride-chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .ride-chat-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    .ride-chat-note {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      display: none;
+    }
+    .ride-chat-messages {
+      min-height: 160px;
+      max-height: 220px;
+      overflow-y: auto;
+      border: 1px solid rgba(148,163,184,0.2);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(15,23,42,0.8);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ride-chat-message {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-width: 90%;
+    }
+    .ride-chat-message.from-self {
+      align-self: flex-end;
+      text-align: right;
+    }
+    .ride-chat-message.from-peer {
+      align-self: flex-start;
+      text-align: left;
+    }
+    .ride-chat-bubble {
+      display: inline-flex;
+      padding: 8px 12px;
+      border-radius: 14px;
+      background: rgba(15,23,42,0.9);
+      border: 1px solid rgba(148,163,184,0.4);
+      color: #f9fafb;
+      font-size: 0.9rem;
+      line-height: 1.35;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .ride-chat-message.from-self .ride-chat-bubble {
+      background: rgba(59,130,246,0.18);
+      border-color: rgba(59,130,246,0.45);
+    }
+    .ride-chat-message.from-peer .ride-chat-bubble {
+      background: rgba(15,23,42,0.95);
+    }
+    .ride-chat-meta {
+      font-size: 0.7rem;
+      color: #94a3b8;
+    }
+    .ride-chat-placeholder {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      padding: 12px 0;
+    }
+    .ride-chat-input-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .ride-chat-input {
+      flex: 1 1 auto;
+      border-radius: 12px;
+      border: 1px solid #4b5563;
+      padding: 10px 12px;
+      background: #020617;
+      color: #f9fafb;
+      font-size: 0.9rem;
+    }
+    .ride-chat-input:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .ride-chat-send {
+      flex: 0 0 auto;
+    }
     .support-panel {
       border: none;
       border-radius: 0;
@@ -1931,6 +2032,44 @@
               </div>
             </div>
 
+            <div
+              id="rideChatCard"
+              class="ride-chat-card"
+              style="display:none;"
+            >
+              <div class="ride-chat-header">
+                <div class="ride-chat-title">Chat with your driver</div>
+                <div id="rideChatOfflineNote" class="ride-chat-note">
+                  Chat is available only while the ride is active.
+                </div>
+              </div>
+              <div
+                id="rideChatMessages"
+                class="ride-chat-messages"
+                role="log"
+                aria-live="polite"
+              ></div>
+              <div class="ride-chat-input-row">
+                <input
+                  id="rideChatInput"
+                  class="ride-chat-input"
+                  type="text"
+                  inputmode="text"
+                  maxlength="500"
+                  autocomplete="off"
+                  placeholder="Type a message…"
+                  aria-label="Message your driver"
+                />
+                <button
+                  id="rideChatSendButton"
+                  type="button"
+                  class="ride-chat-send btn-primary btn-small"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+
             <div id="driverVehicleSection" class="driver-vehicle-card">
               <div class="section-title" style="margin-top:0;">Vehicle</div>
               <div class="driver-vehicle-body">
@@ -2392,7 +2531,9 @@
       where,
       getDocs,
       orderBy,
-      limit
+      limit,
+      setDoc,
+      serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
     import {
       getStorage,
@@ -3126,6 +3267,11 @@
     const riderWaitlistTimerEl = document.getElementById("riderWaitlistTimer");
     const riderWaitlistBadgeEl = document.getElementById("riderWaitlistBadge");
     const driverInfoStack = document.getElementById("driverInfoStack");
+    const rideChatCard = document.getElementById("rideChatCard");
+    const rideChatMessagesEl = document.getElementById("rideChatMessages");
+    const rideChatInputEl = document.getElementById("rideChatInput");
+    const rideChatSendButton = document.getElementById("rideChatSendButton");
+    const rideChatOfflineNote = document.getElementById("rideChatOfflineNote");
     const ratingStarsContainer = document.getElementById("ratingStars");
     const ratingError = document.getElementById("ratingError");
     const rideTipOptions = document.getElementById("rideTipOptions");
@@ -3350,6 +3496,28 @@
       startedAt: null,
       timerId: null
     };
+    const RIDE_CHAT_ACTIVE_STATUSES = new Set([
+      "driver_assigned",
+      "driver_arrived",
+      "arrived_at_pickup",
+      "pickup_code_verified",
+      "in_progress",
+      "arrived_at_dropoff"
+    ]);
+    const RIDE_CHAT_TERMINAL_STATUSES = new Set([
+      "dropoff_code_verified",
+      "completed",
+      "canceled",
+      "canceled_by_driver",
+      "canceled_by_rider",
+      "driver_declined"
+    ]);
+    const RIDE_CHAT_MAX_LENGTH = 500;
+    const RIDE_CHAT_RATE_LIMIT_MS = 1200;
+    const RIDE_CHAT_FETCH_LIMIT = 200;
+    let rideChatUnsub = null;
+    let rideChatCurrentRideId = null;
+    let rideChatLastSendAt = 0;
 
     let currentRideId = null;
     let currentRideStatus = null;
@@ -3434,6 +3602,7 @@
           activeGroupUnsub();
           activeGroupUnsub = null;
         }
+        teardownRideChat(true);
         deactivateWaitlistPanel();
         hideGroupQr();
         updateCancelButtonVisibility();
@@ -5140,6 +5309,7 @@
         currentUserProfile = null;
         loginStatusEl.textContent = "";
         showAuthView();
+        teardownRideChat(true);
         if (hasPendingMembershipCheckoutReturn()) {
           openPaymentStatusOverlay(
             "Sign in to finish membership",
@@ -6207,6 +6377,221 @@
       supportPanel?.classList.remove("active");
     }
 
+    function sanitizeRideChatText(value) {
+      if (typeof value !== "string") return "";
+      return value.replace(/[&<>]/g, (char) => {
+        switch (char) {
+          case "&":
+            return "&amp;";
+          case "<":
+            return "&lt;";
+          case ">":
+            return "&gt;";
+          default:
+            return char;
+        }
+      });
+    }
+
+    function formatRideChatTimestamp(ts) {
+      if (!ts) return "";
+      try {
+        const date =
+          typeof ts.toDate === "function"
+            ? ts.toDate()
+            : typeof ts.seconds === "number"
+            ? new Date(ts.seconds * 1000)
+            : new Date(ts);
+        if (Number.isNaN(date.getTime())) {
+          return "";
+        }
+        return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      } catch (_) {
+        return "";
+      }
+    }
+
+    function ensureRideChatCardVisible() {
+      if (rideChatCard) {
+        rideChatCard.style.display = "flex";
+      }
+    }
+
+    function hideRideChatCard() {
+      if (rideChatCard) {
+        rideChatCard.style.display = "none";
+      }
+    }
+
+    function setRideChatNote(message = "") {
+      if (!rideChatOfflineNote) return;
+      if (message) {
+        rideChatOfflineNote.textContent = message;
+        rideChatOfflineNote.style.display = "block";
+      } else {
+        rideChatOfflineNote.textContent = "";
+        rideChatOfflineNote.style.display = "none";
+      }
+    }
+
+    function setRideChatUiEnabled(enabled, noteMessage = "") {
+      if (rideChatInputEl) {
+        rideChatInputEl.disabled = !enabled;
+      }
+      if (rideChatSendButton) {
+        rideChatSendButton.disabled = !enabled;
+      }
+      if (!enabled && noteMessage) {
+        setRideChatNote(noteMessage);
+      } else if (enabled) {
+        setRideChatNote("");
+      }
+    }
+
+    function renderRideChatMessages(docs) {
+      if (!rideChatMessagesEl) return;
+      const atBottom =
+        rideChatMessagesEl.scrollHeight - rideChatMessagesEl.scrollTop - rideChatMessagesEl.clientHeight <
+        40;
+      rideChatMessagesEl.innerHTML = "";
+      if (!docs?.length) {
+        const placeholder = document.createElement("div");
+        placeholder.className = "ride-chat-placeholder";
+        placeholder.textContent = "No messages yet. Say hi!";
+        rideChatMessagesEl.appendChild(placeholder);
+        return;
+      }
+      docs.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        const senderRole = (data.senderRole || "").toLowerCase() === "driver" ? "driver" : "rider";
+        const senderId = data.senderUserId || "";
+        const isSelf = senderId && senderId === auth.currentUser?.uid;
+        const item = document.createElement("div");
+        item.className = `ride-chat-message ${isSelf ? "from-self" : "from-peer"}`;
+
+        const bubble = document.createElement("div");
+        bubble.className = "ride-chat-bubble";
+        bubble.innerHTML = sanitizeRideChatText(data.text || "");
+
+        const meta = document.createElement("div");
+        meta.className = "ride-chat-meta";
+        const nameLabel = isSelf ? "You" : senderRole === "driver" ? "Driver" : "Rider";
+        const timeLabel = formatRideChatTimestamp(data.createdAt);
+        meta.textContent = timeLabel ? `${nameLabel} • ${timeLabel}` : nameLabel;
+
+        item.appendChild(bubble);
+        item.appendChild(meta);
+        rideChatMessagesEl.appendChild(item);
+      });
+      if (atBottom) {
+        rideChatMessagesEl.scrollTop = rideChatMessagesEl.scrollHeight;
+      }
+    }
+
+    function teardownRideChat(hideCard = false) {
+      if (rideChatUnsub) {
+        rideChatUnsub();
+        rideChatUnsub = null;
+      }
+      rideChatCurrentRideId = null;
+      if (rideChatMessagesEl) {
+        rideChatMessagesEl.innerHTML = "";
+      }
+      setRideChatUiEnabled(false);
+      if (hideCard) {
+        hideRideChatCard();
+      }
+    }
+
+    function initRideChat(rideId) {
+      if (!rideId || !rideChatMessagesEl) {
+        teardownRideChat(true);
+        return;
+      }
+      if (rideChatCurrentRideId === rideId && rideChatUnsub) {
+        ensureRideChatCardVisible();
+        setRideChatUiEnabled(true);
+        return;
+      }
+      teardownRideChat();
+      rideChatCurrentRideId = rideId;
+      ensureRideChatCardVisible();
+      const messagesRef = collection(db, "ride_chats", rideId, "messages");
+      const chatQuery = query(messagesRef, orderBy("createdAt", "asc"), limit(RIDE_CHAT_FETCH_LIMIT));
+      rideChatUnsub = onSnapshot(
+        chatQuery,
+        (snapshot) => {
+          renderRideChatMessages(snapshot.docs);
+        },
+        (err) => {
+          console.warn("ride chat watcher error", err);
+          setRideChatUiEnabled(false, "Chat is unavailable right now.");
+        }
+      );
+    }
+
+    function updateRideChatState(rideId, status) {
+      const normalizedStatus = (status || "").toLowerCase();
+      const isActive = rideId && RIDE_CHAT_ACTIVE_STATUSES.has(normalizedStatus);
+      if (isActive) {
+        initRideChat(rideId);
+        setRideChatUiEnabled(true);
+        return;
+      }
+      if (!rideId || RIDE_CHAT_TERMINAL_STATUSES.has(normalizedStatus)) {
+        teardownRideChat(true);
+        return;
+      }
+      teardownRideChat(true);
+      setRideChatUiEnabled(false, "Chat becomes available once a driver is on the way.");
+    }
+
+    async function handleRideChatSend() {
+      if (!rideChatInputEl || !rideChatSendButton) return;
+      if (!rideChatCurrentRideId) return;
+      const user = auth.currentUser;
+      if (!user) {
+        setRideChatUiEnabled(false, "Sign in to chat with your driver.");
+        return;
+      }
+      const rawValue = rideChatInputEl.value || "";
+      const trimmed = rawValue.trim();
+      if (!trimmed) return;
+      const normalized = trimmed.slice(0, RIDE_CHAT_MAX_LENGTH);
+      const now = Date.now();
+      if (now - rideChatLastSendAt < RIDE_CHAT_RATE_LIMIT_MS) {
+        setRideChatNote("Please wait a moment before sending another message.");
+        return;
+      }
+      rideChatSendButton.disabled = true;
+      rideChatInputEl.disabled = true;
+      try {
+        const messagesRef = collection(db, "ride_chats", rideChatCurrentRideId, "messages");
+        const messageRef = doc(messagesRef);
+        await setDoc(messageRef, {
+          rideId: rideChatCurrentRideId,
+          messageId: messageRef.id,
+          senderRole: "rider",
+          senderUserId: user.uid,
+          text: normalized,
+          createdAt: serverTimestamp()
+        });
+        rideChatLastSendAt = now;
+        rideChatInputEl.value = "";
+        setRideChatUiEnabled(true);
+        setRideChatNote("");
+        if (rideChatMessagesEl) {
+          rideChatMessagesEl.scrollTop = rideChatMessagesEl.scrollHeight;
+        }
+      } catch (err) {
+        console.error("ride chat send error", err);
+        setRideChatNote("Unable to send message. Try again in a moment.");
+      } finally {
+        rideChatInputEl.disabled = false;
+        rideChatSendButton.disabled = false;
+      }
+    }
+
     function formatPinValue(value) {
       if (value == null) return "----";
       const str = String(value).trim().toUpperCase();
@@ -6310,6 +6695,7 @@
           setOverlayCopy("Ride update", destinationLabel);
           setRiderOverlayState(RIDER_STATES.DRIVER_TO_PICKUP);
       }
+      updateRideChatState(rideId, status);
       maybeToggleWaitlistPanel();
     }
 
@@ -6473,6 +6859,18 @@
           cancelError.textContent = err.message || "Could not cancel ride.";
         }
       });
+
+    if (rideChatSendButton) {
+      rideChatSendButton.addEventListener("click", handleRideChatSend);
+    }
+    if (rideChatInputEl) {
+      rideChatInputEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          handleRideChatSend();
+        }
+      });
+    }
 
     // Rider overlay buttons
     if (ratingStarsContainer) {
