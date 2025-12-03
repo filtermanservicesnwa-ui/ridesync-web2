@@ -177,7 +177,7 @@ describe("manual capture helpers", () => {
     expect(zeroTip.min).toBe(0);
   });
 
-  it("computes the hold amount using fare plus max tip", () => {
+  it("computes the hold amount using fare plus the selected tip", () => {
     expect(computeRideHoldAmountCents(1500, 1200)).toBe(2700);
     expect(computeRideHoldAmountCents(1500, 0)).toBe(1500);
     expect(computeRideHoldAmountCents(0, 0)).toBe(0);

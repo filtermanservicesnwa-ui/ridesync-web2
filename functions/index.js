@@ -499,9 +499,9 @@ function validateTipBounds(tipAmountCents, bounds = {}) {
   };
 }
 
-function computeRideHoldAmountCents(fareAmountCents, maxTipAmountCents) {
+function computeRideHoldAmountCents(fareAmountCents, tipAmountCents) {
   const fare = Math.max(0, Math.round(fareAmountCents || 0));
-  const tip = clampTipAmountCents(maxTipAmountCents, {
+  const tip = clampTipAmountCents(tipAmountCents, {
     min: MIN_RIDE_TIP_CENTS,
     max: MAX_ALLOWED_TIP_CENTS,
   });
@@ -3310,7 +3310,7 @@ exports.createRidePaymentIntent = functions
     const initialTipAmountCents = initialTipValidation.value;
     const authAmountCents = computeRideHoldAmountCents(
       fareAmountCents,
-      maxTipAmountCents
+      initialTipAmountCents
     );
     if (!Number.isFinite(authAmountCents) || authAmountCents <= 0) {
       throw new functions.https.HttpsError(
@@ -3357,8 +3357,9 @@ exports.createRidePaymentIntent = functions
           rideId,
           userId: uid,
           fareAmountCents,
-          maxTipAmountCents,
+          maxTipAmountCents: initialTipAmountCents,
           initialTipAmountCents,
+          tipSelectionLimitCents: maxTipAmountCents,
           purpose: "ride_manual_capture",
         },
       });
@@ -3368,7 +3369,7 @@ exports.createRidePaymentIntent = functions
         paymentStatus: "preauth_pending",
         paymentAuthAmountCents: authAmountCents,
         fareBaseAmountCents: fareAmountCents,
-        maxTipAmountCents,
+        maxTipAmountCents: initialTipAmountCents,
         tipAmountCents: initialTipAmountCents,
         tipAmount: initialTipAmountCents / 100,
         updatedAt: FieldValue.serverTimestamp(),
@@ -3379,8 +3380,9 @@ exports.createRidePaymentIntent = functions
         paymentIntentId: paymentIntent.id,
         authAmountCents,
         fareAmountCents,
-        maxTipAmountCents,
+        maxTipAmountCents: initialTipAmountCents,
         initialTipAmountCents,
+        tipSelectionLimitCents: maxTipAmountCents,
         livemode: paymentIntent?.livemode ?? null,
       };
     } catch (err) {
@@ -4729,11 +4731,23 @@ exports.confirmRidePaymentIntent = functions
       Number(intent.metadata?.initialTipAmountCents) ||
       Number(intent.metadata?.tip_amount_cents) ||
       MIN_RIDE_TIP_CENTS;
+    const paymentIntentAmountCents = Math.max(
+      0,
+      Math.round(Number(intent.amount) || 0)
+    );
+    const tipHoldAllowance = Math.max(
+      0,
+      paymentIntentAmountCents - Math.max(0, metadataFare)
+    );
+    const tipAuthorizationCents = Math.max(
+      MIN_RIDE_TIP_CENTS,
+      Math.min(metadataMaxTip, tipHoldAllowance)
+    );
 
     if (intent.status === "requires_capture") {
       const normalizedInitialTip = clampTipAmountCents(metadataInitialTip, {
         min: MIN_RIDE_TIP_CENTS,
-        max: metadataMaxTip,
+        max: tipAuthorizationCents,
       });
       await rideRef.update({
         paymentStatus: "preauthorized",
@@ -4742,7 +4756,7 @@ exports.confirmRidePaymentIntent = functions
         stripeAmount: metadataFare / 100,
         stripeCurrency: intent.currency || "usd",
         fareBaseAmountCents: metadataFare,
-        maxTipAmountCents: metadataMaxTip,
+        maxTipAmountCents: tipAuthorizationCents,
         tipAmountCents: normalizedInitialTip,
         tipAmount: normalizedInitialTip / 100,
         updatedAt: FieldValue.serverTimestamp(),
@@ -4868,9 +4882,21 @@ exports.captureRidePaymentIntent = functions
         MIN_RIDE_TIP_CENTS,
         Math.round(ride.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS)
       );
+    const paymentIntentAmountCents = Math.max(
+      0,
+      Math.round(Number(intent.amount) || 0)
+    );
+    const tipHoldAllowance = Math.max(
+      0,
+      paymentIntentAmountCents - baseFareAmountCents
+    );
+    const maxTipForCapture = Math.max(
+      MIN_RIDE_TIP_CENTS,
+      Math.min(maxTipFromMetadata, tipHoldAllowance)
+    );
     const tipValidation = validateTipBounds(finalTipInput, {
       min: MIN_RIDE_TIP_CENTS,
-      max: maxTipFromMetadata,
+      max: maxTipForCapture,
     });
     if (!tipValidation.ok) {
       const reason =

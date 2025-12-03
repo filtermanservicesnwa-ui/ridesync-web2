@@ -2411,7 +2411,7 @@
           style="display:none;"
         />
         <p id="preauthTipMessage" class="tip-hint">
-          Tips are optional. We'll place a temporary hold for your fare plus up to $12.00 if you add one.
+          Tips are optional. If you add one, we'll include it with your temporary hold.
         </p>
       </div>
       <div class="fare-box" id="preauthHoldSummary" style="margin-top:12px;">
@@ -7532,7 +7532,7 @@
           syncTipMessage.textContent = `We'll place a temporary hold for your fare plus ${formatCurrencyFromCents(
             selectedCents,
             "usd"
-          )}. You can adjust after the ride.`;
+          )}. You can adjust or remove it after the ride before we finish the charge.`;
         } else {
           syncTipMessage.textContent =
             "No tip selected. Tips are optional and go directly to your driver.";
@@ -8286,16 +8286,29 @@
           ? (ridePreauthState.selectedTipCents / 100).toFixed(2)
           : "";
       }
+      const selectedTipCents = Math.max(
+        0,
+        Math.round(ridePreauthState.selectedTipCents || 0)
+      );
       if (preauthHoldAmount) {
-        const hold =
-          ridePreauthState.fareAmountCents + ridePreauthState.maxTipAmountCents;
-        preauthHoldAmount.textContent = formatCurrencyFromCents(hold, "usd");
+        const holdAmountCents =
+          Math.max(0, Math.round(ridePreauthState.authAmountCents || 0)) ||
+          ridePreauthState.fareAmountCents + selectedTipCents;
+        preauthHoldAmount.textContent = formatCurrencyFromCents(
+          holdAmountCents,
+          "usd"
+        );
       }
       if (preauthTipMessage) {
-        preauthTipMessage.textContent = `Tips are optional. We’ll place a temporary hold for your fare plus up to ${formatCurrencyFromCents(
-          ridePreauthState.maxTipAmountCents,
-          "usd"
-        )} if you add one.`;
+        if (selectedTipCents > 0) {
+          preauthTipMessage.textContent = `Tips are optional. Your selected tip (${formatCurrencyFromCents(
+            selectedTipCents,
+            "usd"
+          )}) will be included in the temporary hold.`;
+        } else {
+          preauthTipMessage.textContent =
+            "Tips are optional. We'll only place a hold for your fare unless you add one.";
+        }
       }
     }
 
@@ -8871,10 +8884,6 @@
       }
       rideTipCaptureState.rideId = rideId;
       rideTipCaptureState.paymentIntentId = rideData.stripePaymentIntentId;
-      rideTipCaptureState.maxTipAmountCents = Math.max(
-        MIN_RIDE_TIP_CENTS,
-        Math.round(rideData.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS)
-      );
       rideTipCaptureState.baseFareAmountCents = Math.max(
         0,
         Math.round(
@@ -8883,6 +8892,26 @@
             resolveRideCheckoutAmountCents(rideData) ||
             0
         )
+      );
+      const paymentAuthAmountCents = Math.max(
+        0,
+        Math.round(rideData.paymentAuthAmountCents || 0)
+      );
+      const tipHoldAllowance = Math.max(
+        0,
+        paymentAuthAmountCents - rideTipCaptureState.baseFareAmountCents
+      );
+      const fallbackTipLimit = Math.max(
+        MIN_RIDE_TIP_CENTS,
+        Math.round(rideData.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS)
+      );
+      const effectiveTipLimit =
+        tipHoldAllowance > 0 || paymentAuthAmountCents > 0
+          ? tipHoldAllowance
+          : fallbackTipLimit;
+      rideTipCaptureState.maxTipAmountCents = Math.max(
+        MIN_RIDE_TIP_CENTS,
+        Math.round(effectiveTipLimit)
       );
       rideTipCaptureState.selectedTipCents = clampTipAmount(
         Math.round(rideData.tipAmountCents || MIN_RIDE_TIP_CENTS),
@@ -9719,6 +9748,7 @@
       ridePreauthState.rideId = rideId;
       ridePreauthState.fareAmountCents = fareAmountCents;
       ridePreauthState.maxTipAmountCents = DEFAULT_MAX_TIP_CENTS;
+      ridePreauthState.authAmountCents = 0;
       ridePreauthState.selectedTipCents = clampTipAmount(
         ridePreauthState.selectedTipCents,
         MIN_RIDE_TIP_CENTS,
@@ -9739,7 +9769,10 @@
           const payload = response?.data || response || {};
           ridePreauthState.maxTipAmountCents = Math.max(
             MIN_RIDE_TIP_CENTS,
-            Math.round(payload.maxTipAmountCents || ridePreauthState.maxTipAmountCents)
+            Math.round(
+              payload.maxTipAmountCents ??
+                ridePreauthState.maxTipAmountCents
+            )
           );
           ridePreauthState.selectedTipCents = clampTipAmount(
             payload.initialTipAmountCents ?? ridePreauthState.selectedTipCents,
@@ -9750,11 +9783,13 @@
             Math.max(
               0,
               Math.round(payload.authAmountCents || 0)
-            ) || fareAmountCents + ridePreauthState.maxTipAmountCents;
+            ) ||
+            ridePreauthState.fareAmountCents +
+              Math.max(0, ridePreauthState.selectedTipCents || 0);
           updatePreauthTipUi();
           await openPaymentOverlay({
             title: "Save your payment method",
-            subtitle: "We’ll place a temporary hold for your fare and any tip you add.",
+            subtitle: "We’ll place a temporary hold for your fare plus the tip you selected.",
             clientSecret: payload.clientSecret,
             livemode: payload.livemode ?? null,
             context: {
