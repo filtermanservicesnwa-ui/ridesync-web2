@@ -399,6 +399,107 @@
     .driver-state .button-row button {
       flex: 1 1 160px;
     }
+    .ride-chat-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border: 1px solid rgba(148,163,184,0.45);
+      border-radius: 18px;
+      padding: 14px;
+      background: rgba(2,6,23,0.95);
+      box-shadow: inset 0 0 0 rgba(0,0,0,0);
+    }
+    .ride-chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .ride-chat-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    .ride-chat-note {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      display: none;
+    }
+    .ride-chat-messages {
+      min-height: 160px;
+      max-height: 220px;
+      overflow-y: auto;
+      border: 1px solid rgba(148,163,184,0.2);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(15,23,42,0.8);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ride-chat-message {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-width: 90%;
+    }
+    .ride-chat-message.from-self {
+      align-self: flex-end;
+      text-align: right;
+    }
+    .ride-chat-message.from-peer {
+      align-self: flex-start;
+      text-align: left;
+    }
+    .ride-chat-bubble {
+      display: inline-flex;
+      padding: 8px 12px;
+      border-radius: 14px;
+      background: rgba(15,23,42,0.9);
+      border: 1px solid rgba(148,163,184,0.4);
+      color: #f9fafb;
+      font-size: 0.9rem;
+      line-height: 1.35;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .ride-chat-message.from-self .ride-chat-bubble {
+      background: rgba(59,130,246,0.18);
+      border-color: rgba(59,130,246,0.45);
+    }
+    .ride-chat-message.from-peer .ride-chat-bubble {
+      background: rgba(15,23,42,0.95);
+    }
+    .ride-chat-meta {
+      font-size: 0.7rem;
+      color: #94a3b8;
+    }
+    .ride-chat-placeholder {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      padding: 12px 0;
+    }
+    .ride-chat-input-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .ride-chat-input {
+      flex: 1 1 auto;
+      border-radius: 12px;
+      border: 1px solid #4b5563;
+      padding: 10px 12px;
+      background: #020617;
+      color: #f9fafb;
+      font-size: 0.9rem;
+    }
+    .ride-chat-input:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .ride-chat-send {
+      flex: 0 0 auto;
+    }
     .driver-geofence-status {
       font-size: 0.85rem;
       color: #9ca3af;
@@ -828,6 +929,44 @@
           <button id="closeActiveRideButton" class="overlay-close" type="button">Hide</button>
         </div>
 
+        <div
+          id="driverChatCard"
+          class="ride-chat-card"
+          style="display:none;"
+        >
+          <div class="ride-chat-header">
+            <div class="ride-chat-title">Chat with your rider</div>
+            <div id="driverChatOfflineNote" class="ride-chat-note">
+              Chat is available only while the ride is active.
+            </div>
+          </div>
+          <div
+            id="driverChatMessages"
+            class="ride-chat-messages"
+            role="log"
+            aria-live="polite"
+          ></div>
+          <div class="ride-chat-input-row">
+            <input
+              id="driverChatInput"
+              class="ride-chat-input"
+              type="text"
+              inputmode="text"
+              maxlength="500"
+              autocomplete="off"
+              placeholder="Type a message…"
+              aria-label="Message your rider"
+            />
+            <button
+              id="driverChatSendButton"
+              type="button"
+              class="ride-chat-send btn-primary btn-small"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+
         <div id="driverStateOffer" class="driver-state">
           <h3>New ride request</h3>
           <div class="state-subtitle">Review the details before accepting.</div>
@@ -1144,6 +1283,11 @@
     const driverOverlayRiderNames = document.getElementById("driverOverlayRiderNames");
     const driverOverlayMembership = document.getElementById("driverOverlayMembership");
     const driverOverlayChips = document.getElementById("driverOverlayChips");
+    const driverChatCard = document.getElementById("driverChatCard");
+    const driverChatMessagesEl = document.getElementById("driverChatMessages");
+    const driverChatInputEl = document.getElementById("driverChatInput");
+    const driverChatSendButton = document.getElementById("driverChatSendButton");
+    const driverChatOfflineNote = document.getElementById("driverChatOfflineNote");
     const driverStateOffer = document.getElementById("driverStateOffer");
     const driverStateNavPickup = document.getElementById("driverStateNavPickup");
     const driverStateEnterPickup = document.getElementById("driverStateEnterPickup");
@@ -1239,6 +1383,28 @@
     const NAV_ROUTE_REFRESH_MS = 15000;
     let lastPickupRouteAt = 0;
     let lastDropoffRouteAt = 0;
+    const DRIVER_CHAT_ACTIVE_STATUSES = new Set([
+      "driver_assigned",
+      "driver_arrived",
+      "arrived_at_pickup",
+      "pickup_code_verified",
+      "in_progress",
+      "arrived_at_dropoff"
+    ]);
+    const DRIVER_CHAT_TERMINAL_STATUSES = new Set([
+      "completed",
+      "dropoff_code_verified",
+      "canceled",
+      "canceled_by_driver",
+      "canceled_by_rider",
+      "driver_declined"
+    ]);
+    const DRIVER_CHAT_MAX_LENGTH = 500;
+    const DRIVER_CHAT_RATE_LIMIT_MS = 1200;
+    const DRIVER_CHAT_FETCH_LIMIT = 200;
+    let driverChatUnsub = null;
+    let driverChatCurrentRideId = null;
+    let driverChatLastSendAt = 0;
     // Web Audio tone to alert drivers when a new ride offer arrives.
     const rideAlertUnlockEvents = ["pointerdown", "touchstart", "keydown"];
     const AudioContextClass = window.AudioContext || window.webkitAudioContext || null;
@@ -1428,6 +1594,18 @@
         console.error(err);
       }
     });
+
+    if (driverChatSendButton) {
+      driverChatSendButton.addEventListener("click", handleDriverChatSend);
+    }
+    if (driverChatInputEl) {
+      driverChatInputEl.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          handleDriverChatSend();
+        }
+      });
+    }
 
     onAuthStateChanged(auth, async (user) => {
       currentUser = user;
@@ -1954,6 +2132,220 @@
       });
     }
 
+    function sanitizeDriverChatText(value) {
+      if (typeof value !== "string") return "";
+      return value.replace(/[&<>]/g, (char) => {
+        switch (char) {
+          case "&":
+            return "&amp;";
+          case "<":
+            return "&lt;";
+          case ">":
+            return "&gt;";
+          default:
+            return char;
+        }
+      });
+    }
+
+    function formatDriverChatTimestamp(ts) {
+      if (!ts) return "";
+      try {
+        const date =
+          typeof ts.toDate === "function"
+            ? ts.toDate()
+            : typeof ts.seconds === "number"
+            ? new Date(ts.seconds * 1000)
+            : new Date(ts);
+        if (Number.isNaN(date.getTime())) return "";
+        return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      } catch (_) {
+        return "";
+      }
+    }
+
+    function ensureDriverChatCardVisible() {
+      if (driverChatCard) {
+        driverChatCard.style.display = "flex";
+      }
+    }
+
+    function hideDriverChatCard() {
+      if (driverChatCard) {
+        driverChatCard.style.display = "none";
+      }
+    }
+
+    function setDriverChatNote(message = "") {
+      if (!driverChatOfflineNote) return;
+      if (message) {
+        driverChatOfflineNote.textContent = message;
+        driverChatOfflineNote.style.display = "block";
+      } else {
+        driverChatOfflineNote.textContent = "";
+        driverChatOfflineNote.style.display = "none";
+      }
+    }
+
+    function setDriverChatUiEnabled(enabled, noteMessage = "") {
+      if (driverChatInputEl) {
+        driverChatInputEl.disabled = !enabled;
+      }
+      if (driverChatSendButton) {
+        driverChatSendButton.disabled = !enabled;
+      }
+      if (!enabled && noteMessage) {
+        setDriverChatNote(noteMessage);
+      } else if (enabled) {
+        setDriverChatNote("");
+      }
+    }
+
+    function renderDriverChatMessages(docs) {
+      if (!driverChatMessagesEl) return;
+      const atBottom =
+        driverChatMessagesEl.scrollHeight -
+          driverChatMessagesEl.scrollTop -
+          driverChatMessagesEl.clientHeight <
+        40;
+      driverChatMessagesEl.innerHTML = "";
+      if (!docs?.length) {
+        const placeholder = document.createElement("div");
+        placeholder.className = "ride-chat-placeholder";
+        placeholder.textContent = "No messages yet. Keep your rider updated.";
+        driverChatMessagesEl.appendChild(placeholder);
+        return;
+      }
+      docs.forEach((docSnap) => {
+        const data = docSnap.data() || {};
+        const senderId = data.senderUserId || "";
+        const isSelf = Boolean(senderId && senderId === currentUser?.uid);
+        const item = document.createElement("div");
+        item.className = `ride-chat-message ${isSelf ? "from-self" : "from-peer"}`;
+
+        const bubble = document.createElement("div");
+        bubble.className = "ride-chat-bubble";
+        bubble.innerHTML = sanitizeDriverChatText(data.text || "");
+
+        const meta = document.createElement("div");
+        meta.className = "ride-chat-meta";
+        const nameLabel = isSelf ? "You" : "Rider";
+        const timeLabel = formatDriverChatTimestamp(data.createdAt);
+        meta.textContent = timeLabel ? `${nameLabel} • ${timeLabel}` : nameLabel;
+
+        item.appendChild(bubble);
+        item.appendChild(meta);
+        driverChatMessagesEl.appendChild(item);
+      });
+      if (atBottom) {
+        driverChatMessagesEl.scrollTop = driverChatMessagesEl.scrollHeight;
+      }
+    }
+
+    function teardownDriverChat(hideCard = false) {
+      if (driverChatUnsub) {
+        driverChatUnsub();
+        driverChatUnsub = null;
+      }
+      driverChatCurrentRideId = null;
+      if (driverChatMessagesEl) {
+        driverChatMessagesEl.innerHTML = "";
+      }
+      setDriverChatUiEnabled(false);
+      if (hideCard) {
+        hideDriverChatCard();
+      }
+    }
+
+    function initDriverChat(rideId) {
+      if (!rideId || !driverChatMessagesEl) {
+        teardownDriverChat(true);
+        return;
+      }
+      if (driverChatCurrentRideId === rideId && driverChatUnsub) {
+        ensureDriverChatCardVisible();
+        setDriverChatUiEnabled(true);
+        return;
+      }
+      teardownDriverChat();
+      driverChatCurrentRideId = rideId;
+      ensureDriverChatCardVisible();
+      const messagesRef = collection(db, "ride_chats", rideId, "messages");
+      const chatQuery = query(messagesRef, orderBy("createdAt", "asc"), limit(DRIVER_CHAT_FETCH_LIMIT));
+      driverChatUnsub = onSnapshot(
+        chatQuery,
+        (snapshot) => {
+          renderDriverChatMessages(snapshot.docs);
+        },
+        (err) => {
+          console.warn("driver chat watcher error", err);
+          setDriverChatUiEnabled(false, "Chat is unavailable right now.");
+        }
+      );
+    }
+
+    function updateDriverChatState(rideId, status) {
+      const normalizedStatus = (status || "").toLowerCase();
+      const isActive = rideId && DRIVER_CHAT_ACTIVE_STATUSES.has(normalizedStatus);
+      if (isActive) {
+        initDriverChat(rideId);
+        setDriverChatUiEnabled(true);
+        return;
+      }
+      if (!rideId || DRIVER_CHAT_TERMINAL_STATUSES.has(normalizedStatus)) {
+        teardownDriverChat(true);
+        return;
+      }
+      teardownDriverChat(true);
+      setDriverChatUiEnabled(false, "Chat becomes available once you accept the ride.");
+    }
+
+    async function handleDriverChatSend() {
+      if (!driverChatInputEl || !driverChatSendButton) return;
+      if (!driverChatCurrentRideId) return;
+      const user = auth.currentUser;
+      if (!user) {
+        setDriverChatUiEnabled(false, "Sign in to chat with riders.");
+        return;
+      }
+      const rawValue = driverChatInputEl.value || "";
+      const trimmed = rawValue.trim();
+      if (!trimmed) return;
+      const normalized = trimmed.slice(0, DRIVER_CHAT_MAX_LENGTH);
+      const now = Date.now();
+      if (now - driverChatLastSendAt < DRIVER_CHAT_RATE_LIMIT_MS) {
+        setDriverChatNote("Please wait a moment before sending another message.");
+        return;
+      }
+      driverChatSendButton.disabled = true;
+      driverChatInputEl.disabled = true;
+      try {
+        const messagesRef = collection(db, "ride_chats", driverChatCurrentRideId, "messages");
+        const messageRef = doc(messagesRef);
+        await setDoc(messageRef, {
+          rideId: driverChatCurrentRideId,
+          messageId: messageRef.id,
+          senderRole: "driver",
+          senderUserId: user.uid,
+          text: normalized,
+          createdAt: serverTimestamp()
+        });
+        driverChatLastSendAt = now;
+        driverChatInputEl.value = "";
+        setDriverChatUiEnabled(true);
+        setDriverChatNote("");
+        if (driverChatMessagesEl) {
+          driverChatMessagesEl.scrollTop = driverChatMessagesEl.scrollHeight;
+        }
+      } catch (err) {
+        console.error("driver chat send error", err);
+        setDriverChatNote("Unable to send message. Try again in a moment.");
+      } finally {
+        driverChatInputEl.disabled = false;
+        driverChatSendButton.disabled = false;
+      }
+    }
+
     function setDriverOverlayState(state, options = {}) {
       const { forceReveal = false } = options;
       driverOverlayState = state;
@@ -2431,6 +2823,7 @@
       latestDropoffEtaMinutes = null;
       earlyAssignmentRideId = null;
       earlyAssignmentTriggered = false;
+      teardownDriverChat(true);
       setDriverOverlayState(DRIVER_STATES.HIDDEN);
       if (!skipQueuedRideStart) {
         startQueuedRideIfAvailable();
@@ -2493,6 +2886,8 @@
           updateNavPickupView(ride);
           setDriverOverlayState(DRIVER_STATES.NAV_PICKUP, { forceReveal: true });
       }
+      const rideId = ride?.id || ride?.rideId || null;
+      updateDriverChatState(rideId, status);
     }
 
     function updateNavPickupView(ride) {

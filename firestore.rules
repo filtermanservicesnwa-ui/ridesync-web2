@@ -15,6 +15,49 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/drivers/$(request.auth.uid));
     }
 
+    function rideDocument(rideId) {
+      return get(/databases/$(database)/documents/rideRequests/$(rideId));
+    }
+
+    function isRideParticipant(rideId) {
+      if (!isSignedIn()) return false;
+      let rideSnap = rideDocument(rideId);
+      if (!rideSnap.exists) return false;
+      let ride = rideSnap.data;
+      return ride.userId == request.auth.uid ||
+        ride.startedByUserId == request.auth.uid ||
+        ride.driverId == request.auth.uid ||
+        ride.assignedDriverId == request.auth.uid;
+    }
+
+    function isRideParticipantWithRole(rideId, role) {
+      if (!isSignedIn()) return false;
+      if (!(role is string)) return false;
+      let rideSnap = rideDocument(rideId);
+      if (!rideSnap.exists) return false;
+      let ride = rideSnap.data;
+      if (role == "rider") {
+        return ride.userId == request.auth.uid || ride.startedByUserId == request.auth.uid;
+      }
+      if (role == "driver") {
+        return ride.driverId == request.auth.uid || ride.assignedDriverId == request.auth.uid;
+      }
+      return false;
+    }
+
+    function isValidChatMessage(rideId) {
+      let role = request.resource.data.senderRole;
+      return isRideParticipantWithRole(rideId, role) &&
+        request.resource.data.rideId == rideId &&
+        request.resource.data.senderUserId == request.auth.uid &&
+        (role == "rider" || role == "driver") &&
+        request.resource.data.text is string &&
+        request.resource.data.text.size() > 0 &&
+        request.resource.data.text.size() <= 1000 &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.messageId == request.resource.id;
+    }
+
     function isSafeUserProfileCreate(data) {
       return (!('membershipType' in data) || data.membershipType == "basic") &&
         (!('membershipStatus' in data) || data.membershipStatus == "none");
@@ -39,6 +82,12 @@ service cloud.firestore {
     match /rideRequests/{rideId} {
       allow read: if isSignedIn();
       allow write: if isDriver();
+    }
+
+    match /ride_chats/{rideId}/messages/{messageId} {
+      allow read: if isRideParticipant(rideId);
+      allow create: if isValidChatMessage(rideId);
+      allow update, delete: if false;
     }
 
     match /{document=**} {
