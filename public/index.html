@@ -6796,6 +6796,9 @@
         data.toDestination || data.toAddress || data.destAddress || "Destination";
       refreshRideTipCaptureState(rideId, data);
 
+      // If we were showing the loading screen after syncing, switch back so the overlay can appear.
+      showRideView();
+
       if (status === "canceled_by_driver" || status === "driver_declined") {
         const declineCopy =
           status === "driver_declined"
