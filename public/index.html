@@ -2319,8 +2319,53 @@
       <div id="syncMembershipTermsContainer" style="display:none;">
         <div class="section-title" style="margin-top:10px;">Membership terms</div>
         <div class="membership-terms-content" id="syncMembershipTermsContent">
-          <p><strong>Summary:</strong> RideSync memberships renew every 30 days. U OF A Unlimited is valid for eligible rides in Fayetteville, and NWA Unlimited is valid within the defined NWA service zone. Memberships are non-transferable, and misuse may result in suspension.</p>
-          <p><strong>Terms &amp; Conditions:</strong> Billing starts on purchase and auto-renews every 30 days until cancelled at least 24 hours before the next cycle. Membership fees are non-refundable and cover qualifying rides booked through RideSync within the applicable service zones. Ride credits cannot be shared or sold, and fraudulent activity may lead to plan suspension or termination. Service updates or price changes will be communicated in advance via the app or email.</p>
+          <p><strong>Effective Date:</strong> January 1st</p>
+          <p><strong>Customer Name:</strong> <span id="syncMembershipTermsCustomerName">RideSync Member</span></p>
+          <p><strong>Membership Type:</strong> <span id="syncMembershipTermsPlanLabel">—</span></p>
+
+          <h3>1. General Membership Rules</h3>
+          <p>All customers must have at minimum a Basic Membership to request rides. Your profile information (name, phone, license, student ID, or employer verification) must remain accurate and up to date at all times.</p>
+          <p><strong>Auto-Renewal:</strong> All paid memberships renew every 30 days. If you do not cancel at least 3 days before renewal, you will be charged automatically. No exceptions. Failure to cancel on time is your responsibility.</p>
+          <p><strong>No Refund Policy:</strong> Once billed, the membership payment is non-refundable. Canceling early does not result in a prorated refund.</p>
+          <p><strong>Bug / Error Reporting:</strong> If you find ANY bug, exploit, or system issue, you MUST report it immediately. Failure to report issues, intentionally exploiting bugs, or sharing them with others will result in immediate membership cancellation without refund. RideSync may pursue legal action for damages or abuse.</p>
+          <p><strong>Geofence Requirements:</strong> All unlimited rides must remain inside the official RideSync geofence. Leaving the geofence intentionally is a violation of this Agreement and may result in cancellation without refund.</p>
+
+          <hr>
+
+          <h3>2. U of A Unlimited Membership</h3>
+          <p>Eligibility requires an active U of A student ID that RideSync can verify at any time.</p>
+          <p><strong>Unlimited Rides Policy:</strong> Unlimited rides apply only inside the U of A service geofence. You cannot bring additional riders under your unlimited plan unless:</p>
+          <ul>
+            <li>They pay the normal Basic fare, OR</li>
+            <li>They also upgrade to their own unlimited membership.</li>
+          </ul>
+          <p>Sharing or attempting to share your membership results in immediate cancellation without refund and may include legal action for fraudulent use.</p>
+          <p><strong>Coverage Area:</strong> If your pickup or destination is outside the U of A zone, the ride converts into a Basic priced ride.</p>
+
+          <hr>
+
+          <h3>3. Northwest Arkansas Work Pass – Unlimited</h3>
+          <p>The Work Pass is NOT general unlimited transportation. It is ONLY for commuting to and from work within a 30-mile radius.</p>
+          <p><strong>Work-Only Travel:</strong> You receive one ride to work and one ride home each day, at no additional cost.</p>
+          <p>You cannot use the Work Pass for personal trips, store runs, entertainment, visiting friends, or any non-work purpose. Misuse results in cancellation without refund.</p>
+          <p><strong>Additional Riders:</strong> Only YOU are covered. Additional riders must pay Basic fare or have their own unlimited membership.</p>
+
+          <hr>
+
+          <h3>4. Behavior, Conduct, and Safety</h3>
+          <p>Any harassment, threats, unsafe behavior, intoxication, or abusive conduct may result in immediate suspension or permanent ban without refund.</p>
+          <p>You agree that all personal information you provide is accurate. If false data is discovered, RideSync may cancel your membership without refund.</p>
+
+          <hr>
+
+          <h3>5. Acceptance of Agreement</h3>
+          <p>By checking the box below and continuing to checkout, you agree:</p>
+          <ul>
+            <li>You understand and accept all terms above</li>
+            <li>You authorize RideSync to automatically bill your payment method</li>
+            <li>You acknowledge geofence and usage limitations</li>
+            <li>You understand that violating terms may result in cancellation without refund</li>
+          </ul>
         </div>
         <div class="membership-terms-footer">
           <label>
@@ -2581,6 +2626,7 @@
         Not now
       </button>
     </div>
+
   </div>
 
   <div id="driverComingSoonOverlay" class="overlay" aria-hidden="true">
@@ -3320,6 +3366,8 @@
     const syncMembershipHint = document.getElementById("syncMembershipHint");
     const syncMembershipTermsContainer = document.getElementById("syncMembershipTermsContainer");
     const syncMembershipTermsCheckbox = document.getElementById("syncMembershipTermsCheckbox");
+    const syncMembershipTermsCustomerName = document.getElementById("syncMembershipTermsCustomerName");
+    const syncMembershipTermsPlanLabel = document.getElementById("syncMembershipTermsPlanLabel");
     const syncTipOptions = document.getElementById("syncTipOptions");
     const syncTipCustomInput = document.getElementById("syncTipCustomInput");
     const syncTipMessage = document.getElementById("syncTipMessage");
@@ -7366,10 +7414,43 @@
       syncConfirmTotal.textContent = total ? `$${total.toFixed(2)}` : "—";
     }
 
+    function resolveSyncMemberDisplayName(profile = currentUserProfile) {
+      if (profile) {
+        const first = (profile.firstName || "").trim();
+        const last = (profile.lastName || "").trim();
+        const combined = `${first} ${last}`.trim();
+        if (combined) return combined;
+        if (profile.fullName) return profile.fullName;
+        if (profile.displayName) return profile.displayName;
+        if (profile.name) return profile.name;
+        if (profile.email) return profile.email;
+      }
+      const authUser = auth?.currentUser;
+      return (
+        (authUser?.displayName || authUser?.email || "RideSync Member").trim() ||
+        "RideSync Member"
+      );
+    }
+
+    function updateSyncMembershipTermsDetails(planKey) {
+      if (syncMembershipTermsCustomerName) {
+        syncMembershipTermsCustomerName.textContent =
+          resolveSyncMemberDisplayName() || "RideSync Member";
+      }
+      if (syncMembershipTermsPlanLabel) {
+        const normalized = normalizePlanKey(
+          planKey || syncSelectedMembershipPlan || getDefaultSyncMembershipPlan()
+        );
+        syncMembershipTermsPlanLabel.textContent =
+          formatMembershipPlanLabel(normalized);
+      }
+    }
+
     function updateSyncMembershipTermsVisibility() {
       if (!syncMembershipTermsContainer) return;
       if (syncMembershipUpgradeMode) {
         syncMembershipTermsContainer.style.display = "block";
+        updateSyncMembershipTermsDetails(syncSelectedMembershipPlan);
       } else {
         syncMembershipTermsContainer.style.display = "none";
         syncMembershipTermsAccepted = false;
