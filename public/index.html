@@ -45,45 +45,6 @@
       overflow-x: hidden;
       transition: background 0.5s ease;
     }
-    #snowOverlay,
-    #rainOverlay {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 5;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.6s ease, visibility 0.6s ease;
-      mix-blend-mode: screen;
-    }
-    .weather-snow #snowOverlay {
-      opacity: 0.85;
-      visibility: visible;
-      background-image:
-        radial-gradient(circle, rgba(255,255,255,0.9) 2px, transparent 2px),
-        radial-gradient(circle, rgba(255,255,255,0.6) 2px, transparent 2px);
-      background-size: 8px 8px, 10px 10px;
-      animation: snow-fall 20s linear infinite;
-    }
-    .weather-rain #rainOverlay {
-      opacity: 0.45;
-      visibility: visible;
-      background-image: linear-gradient(
-        to bottom right,
-        rgba(255,255,255,0.2) 0%,
-        rgba(255,255,255,0.0) 45%
-      );
-      background-size: 2px 18px;
-      animation: rain-fall 0.6s linear infinite;
-    }
-    @keyframes snow-fall {
-      0% { background-position: 0 -100px, 0 0; }
-      100% { background-position: 0 600px, 0 400px; }
-    }
-    @keyframes rain-fall {
-      0% { background-position: 0 -40px; }
-      100% { background-position: 0 40px; }
-    }
     body.weather-clear {
       --weather-bg: radial-gradient(circle at top, #4da3ff 0%, #001020 85%);
       --weather-panel-bg: rgba(2,6,23,0.92);
@@ -1937,8 +1898,6 @@
       Sync Driver (Coming Soon)
     </button>
   </div>
-  <div id="snowOverlay" class="weather-snow-overlay" aria-hidden="true"></div>
-  <div id="rainOverlay" class="weather-rain-overlay" aria-hidden="true"></div>
   <div id="map"></div>
   <div class="card">
     <!-- AUTH VIEW -->
