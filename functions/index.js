@@ -1310,6 +1310,62 @@ async function applyReferralCodeToRide({
   return outcome;
 }
 
+async function rollbackReferralCodeRedemption({ code, userId, rideId }) {
+  const codeKey = sanitizeReferralCode(code);
+  if (!codeKey || !userId || !rideId) {
+    return;
+  }
+  const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(codeKey);
+  const usageRef = db
+    .collection(REFERRAL_USAGE_COLLECTION)
+    .doc(buildReferralUsageDocId(codeKey, userId));
+  const redemptionRef = db.collection(REFERRAL_REDEMPTIONS_COLLECTION).doc(rideId);
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const codeSnap = await tx.get(codeRef);
+      if (codeSnap.exists) {
+        const currentUsage = Number(codeSnap.data()?.usageCount || 0);
+        const nextUsage = Math.max(0, currentUsage - 1);
+        tx.update(codeRef, {
+          usageCount: nextUsage,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      const usageSnap = await tx.get(usageRef);
+      if (usageSnap.exists) {
+        const current = Number(usageSnap.data()?.usageCount || 0);
+        const nextCount = Math.max(0, current - 1);
+        if (nextCount <= 0) {
+          tx.delete(usageRef);
+        } else {
+          tx.update(usageRef, {
+            usageCount: nextCount,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
+      }
+
+      tx.set(
+        redemptionRef,
+        {
+          status: "reverted",
+          revertedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+  } catch (rollbackError) {
+    functions.logger.error("[referral] rollback failed", {
+      code: codeKey,
+      userId,
+      rideId,
+      error: rollbackError?.message || rollbackError,
+    });
+  }
+}
+
 async function createStripeCustomerForUser({
   stripeClient,
   uid,
@@ -4661,6 +4717,7 @@ exports.createRideRequest = functions
     let uid = null;
     let rideRef = null;
     let rideDoc = null;
+    let referralRollbackContext = null;
 
     try {
       uid = requireAuth(context);
@@ -4740,6 +4797,11 @@ exports.createRideRequest = functions
         referralDescription = referralResult.description || "";
         referralCode = referralResult.code || referralCode;
         amountCents = Math.max(0, amountCents - referralDiscountCents);
+        referralRollbackContext = {
+          code: referralCode,
+          userId: uid,
+          rideId: rideRef.id,
+        };
       }
       const paymentMeta = resolveRidePaymentStatus(membershipType, amountCents);
 
@@ -4836,6 +4898,7 @@ exports.createRideRequest = functions
     removeUndefinedFields(rideDoc);
 
     await rideRef.set(rideDoc);
+    referralRollbackContext = null;
     await upsertRideRecord(rideRef.id, {
       userId: uid,
       membershipType,
@@ -4867,7 +4930,10 @@ exports.createRideRequest = functions
         amountCents,
         ride: serializeRideForClient(rideDoc),
       };
-    } catch (error) {
+  } catch (error) {
+    if (referralRollbackContext) {
+      await rollbackReferralCodeRedemption(referralRollbackContext);
+    }
       functions.logger.error("[createRideRequest] failed", {
         uid: uid || context?.auth?.uid || null,
         rideId: rideRef?.id || null,
