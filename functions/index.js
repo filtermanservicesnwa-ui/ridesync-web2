@@ -4506,8 +4506,7 @@ exports.joinRideGroup = functions.https.onCall(async (data, context) => {
     const pickupCovered = membershipCoverage.pickupInside;
     const fareBreakdown = serverRideTotals.fareBreakdown;
     const totalCents =
-      serverRideTotals.totalCents ||
-      Math.max(0, Math.round(host.totalCents || 0));
+      serverRideTotals.totalCents ?? Math.max(0, Math.round(host.totalCents || 0));
     const sanitizedMinutes = serverRideTotals.sanitizedMinutes;
     const chargeContext = calculateRideChargeContext({
       membershipType,
