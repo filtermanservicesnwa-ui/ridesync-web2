@@ -11,7 +11,8 @@
   "functions": {
     "applyMembershipPlanUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/applyMembershipPlanHttp",
     "createRideCheckoutSessionUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/createRideCheckoutSession",
-    "finalizeMembershipCheckoutSessionUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/finalizeMembershipCheckoutSession"
+    "finalizeMembershipCheckoutSessionUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/finalizeMembershipCheckoutSession",
+    "getWeatherThemeUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/getWeatherTheme"
   },
   "maps": {
     "apiKey": "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0",

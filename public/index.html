@@ -22,11 +22,17 @@
     :root {
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --weather-bg: radial-gradient(circle at top, #1d4ed8, #020617 55%);
+      --weather-panel-bg: rgba(2,6,23,0.92);
+      --weather-panel-border: rgba(148,163,184,0.45);
+      --weather-overlay-bg: rgba(2,6,23,0.92);
+      --weather-overlay-border: rgba(148,163,184,0.45);
+      --weather-ambient-glow: rgba(59,130,246,0.4);
     }
     body {
       margin: 0;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: radial-gradient(circle at top, #1d4ed8, #020617 55%);
+      background: var(--weather-bg);
       color: #f9fafb;
       min-height: 100vh;
       display: flex;
@@ -35,6 +41,134 @@
       justify-content: center;
       gap: 12px;
       padding: 10px;
+      position: relative;
+      overflow-x: hidden;
+      transition: background 0.5s ease;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      background: radial-gradient(circle at 20% -10%, rgba(255,255,255,0.15), transparent 60%);
+      mix-blend-mode: screen;
+      transition: opacity 0.6s ease;
+      z-index: 0;
+    }
+    body.weather-rain::before {
+      opacity: 0.35;
+      background-image: linear-gradient(
+        120deg,
+        rgba(255,255,255,0.08) 0%,
+        rgba(255,255,255,0.02) 40%,
+        rgba(255,255,255,0) 60%
+      );
+      background-size: 2px 180px;
+      animation: weatherRain 6s linear infinite;
+    }
+    body.weather-snow::before {
+      opacity: 0.4;
+      background-image: radial-gradient(rgba(255,255,255,0.8) 1px, transparent 1px);
+      background-size: 140px 140px;
+      animation: weatherSnow 18s linear infinite;
+    }
+    body.weather-fog::before {
+      opacity: 0.5;
+      background: radial-gradient(circle, rgba(255,255,255,0.18), transparent 65%);
+      filter: blur(4px);
+      animation: weatherFog 22s linear infinite;
+    }
+    body.weather-storm::before {
+      opacity: 0.25;
+      background: radial-gradient(circle at top, rgba(255,255,255,0.35), transparent 55%);
+      animation: weatherStorm 7s ease-in-out infinite;
+    }
+    body.weather-hot::before {
+      opacity: 0.3;
+      background: radial-gradient(circle at 70% -10%, rgba(255,255,255,0.25), transparent 60%);
+      animation: weatherHeat 14s ease-in-out infinite;
+    }
+    @keyframes weatherRain {
+      from { background-position: 0 0; }
+      to { background-position: 0 180px; }
+    }
+    @keyframes weatherSnow {
+      from { background-position: 0 0; }
+      to { background-position: 40px 140px; }
+    }
+    @keyframes weatherFog {
+      0% { transform: translate3d(0,0,0); }
+      50% { transform: translate3d(-10px, 8px, 0); }
+      100% { transform: translate3d(0,0,0); }
+    }
+    @keyframes weatherStorm {
+      0%, 100% { opacity: 0.25; }
+      40% { opacity: 0.4; }
+      45% { opacity: 0.05; }
+      50% { opacity: 0.45; }
+      60% { opacity: 0.2; }
+    }
+    @keyframes weatherHeat {
+      0% { transform: translate3d(0,0,0) scale(1); }
+      50% { transform: translate3d(6px,-6px,0) scale(1.05); }
+      100% { transform: translate3d(0,0,0) scale(1); }
+    }
+    body.weather-clear {
+      --weather-bg: radial-gradient(circle at top, #4da3ff 0%, #001020 85%);
+      --weather-panel-bg: rgba(2,6,23,0.92);
+      --weather-panel-border: rgba(148,163,184,0.45);
+      --weather-overlay-bg: rgba(2,8,23,0.9);
+      --weather-overlay-border: rgba(148,163,184,0.45);
+      --weather-ambient-glow: rgba(59,130,246,0.4);
+    }
+    body.weather-clouds {
+      --weather-bg: linear-gradient(to bottom, #7e8da3 5%, #1c2433 95%);
+      --weather-panel-bg: rgba(15,23,42,0.92);
+      --weather-panel-border: rgba(148,163,184,0.3);
+      --weather-overlay-bg: rgba(12,19,31,0.92);
+      --weather-overlay-border: rgba(148,163,184,0.35);
+      --weather-ambient-glow: rgba(148,163,184,0.35);
+    }
+    body.weather-rain {
+      --weather-bg: linear-gradient(to bottom, #364a63 0%, #0b141f 100%);
+      --weather-panel-bg: rgba(7,12,22,0.9);
+      --weather-panel-border: rgba(59,130,246,0.35);
+      --weather-overlay-bg: rgba(7,12,22,0.88);
+      --weather-overlay-border: rgba(59,130,246,0.35);
+      --weather-ambient-glow: rgba(59,130,246,0.5);
+    }
+    body.weather-storm {
+      --weather-bg: radial-gradient(circle at top, #3b4a6b 0%, #050814 95%);
+      --weather-panel-bg: rgba(5,9,18,0.94);
+      --weather-panel-border: rgba(147,197,253,0.35);
+      --weather-overlay-bg: rgba(5,9,18,0.9);
+      --weather-overlay-border: rgba(147,197,253,0.35);
+      --weather-ambient-glow: rgba(147,197,253,0.5);
+    }
+    body.weather-snow {
+      --weather-bg: linear-gradient(to bottom, #cfd9e8 0%, #7f8fa6 40%, #1a2433 100%);
+      --weather-panel-bg: rgba(20,30,44,0.9);
+      --weather-panel-border: rgba(226,232,240,0.45);
+      --weather-overlay-bg: rgba(15,23,35,0.88);
+      --weather-overlay-border: rgba(226,232,240,0.35);
+      --weather-ambient-glow: rgba(226,232,240,0.5);
+    }
+    body.weather-fog {
+      --weather-bg: linear-gradient(to bottom, #b9c2cd 0%, #707b86 50%, #151922 100%);
+      --weather-panel-bg: rgba(18,22,33,0.9);
+      --weather-panel-border: rgba(203,213,225,0.3);
+      --weather-overlay-bg: rgba(12,15,25,0.9);
+      --weather-overlay-border: rgba(203,213,225,0.3);
+      --weather-ambient-glow: rgba(203,213,225,0.4);
+    }
+    body.weather-hot {
+      --weather-bg: linear-gradient(to bottom, #ffb347 0%, #ff5f3c 55%, #3a0811 100%);
+      --weather-panel-bg: rgba(31,8,15,0.92);
+      --weather-panel-border: rgba(248,113,113,0.45);
+      --weather-overlay-bg: rgba(31,8,15,0.9);
+      --weather-overlay-border: rgba(248,113,113,0.45);
+      --weather-ambient-glow: rgba(251,146,60,0.5);
     }
     body.landing-active {
       overflow: hidden;
@@ -55,7 +189,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: radial-gradient(circle at top, #1d4ed8, #020617 55%);
+      background: var(--weather-bg);
       padding: clamp(18px, 6vw, 32px);
       gap: clamp(24px, 6vw, 48px);
       text-align: center;
@@ -63,6 +197,17 @@
     }
     .main-landing.active {
       display: flex;
+    }
+    .main-landing.home-screen {
+      backdrop-filter: blur(12px);
+    }
+    .home-weather-label {
+      min-height: 1.2em;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.85;
     }
     .main-landing-logo {
       width: clamp(120px, 30vw, 200px);
@@ -81,7 +226,7 @@
       background: linear-gradient(145deg, #ef4444, #1d4ed8);
       box-shadow:
         0 18px 45px rgba(2,6,23,0.65),
-        0 0 25px rgba(59,130,246,0.45),
+        0 0 25px var(--weather-ambient-glow),
         inset 0 0 12px rgba(248,250,252,0.25);
       color: #f9fafb;
       font-size: 1.1rem;
@@ -100,7 +245,7 @@
       transform: translateY(-4px);
       box-shadow:
         0 24px 60px rgba(2,6,23,0.75),
-        0 0 30px rgba(59,130,246,0.6),
+        0 0 30px var(--weather-ambient-glow),
         inset 0 0 14px rgba(248,250,252,0.35);
     }
     .landing-button:focus-visible {
@@ -121,14 +266,14 @@
       color: #cbd5f5;
       box-shadow:
         0 16px 40px rgba(2,6,23,0.65),
-        0 0 22px rgba(59,130,246,0.4),
+        0 0 22px var(--weather-ambient-glow),
         inset 0 0 10px rgba(15,23,42,0.6);
     }
     .landing-button-secondary:hover,
     .landing-button-secondary:focus-visible {
       box-shadow:
         0 22px 55px rgba(2,6,23,0.75),
-        0 0 28px rgba(59,130,246,0.5),
+        0 0 28px var(--weather-ambient-glow),
         inset 0 0 14px rgba(15,23,42,0.8);
     }
     .driver-coming-soon-shell {
@@ -740,7 +885,7 @@
     .payment-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(2,6,23,0.88);
+      background: var(--weather-overlay-bg);
       backdrop-filter: blur(8px);
       display: none;
       align-items: center;
@@ -753,9 +898,9 @@
     }
     .payment-panel {
       width: min(480px, 100%);
-      background: rgba(15,23,42,0.95);
+      background: var(--weather-panel-bg);
       border-radius: 18px;
-      border: 1px solid rgba(148,163,184,0.4);
+      border: 1px solid var(--weather-panel-border);
       padding: 20px;
       display: flex;
       flex-direction: column;
@@ -797,9 +942,9 @@
     }
     .payment-status-overlay .payment-result-card {
       width: min(420px, 100%);
-      background: rgba(15,23,42,0.95);
+      background: var(--weather-panel-bg);
       border-radius: 20px;
-      border: 1px solid rgba(148,163,184,0.4);
+      border: 1px solid var(--weather-panel-border);
       padding: 24px;
       box-shadow: 0 30px 80px rgba(0,0,0,0.6);
       text-align: center;
@@ -943,7 +1088,7 @@
     .overlay {
       position: fixed;
       inset: 0;
-      background: rgba(2,6,23,0.9);
+      background: var(--weather-overlay-bg);
       backdrop-filter: blur(10px);
       display: none;
       align-items: center;
@@ -955,9 +1100,9 @@
     .overlay.active { display: flex; }
     .cooldown-panel {
       width: min(420px, 100%);
-      background: rgba(15,23,42,0.96);
+      background: var(--weather-panel-bg);
       border-radius: 20px;
-      border: 1px solid rgba(148,163,184,0.45);
+      border: 1px solid var(--weather-panel-border);
       padding: clamp(18px, 4vw, 28px);
       display: flex;
       flex-direction: column;
@@ -989,8 +1134,8 @@
       width: min(520px, 100%);
       max-height: 100%;
       overflow-y: auto;
-      background: rgba(2,6,23,0.95);
-      border: 1px solid rgba(148,163,184,0.45);
+      background: var(--weather-panel-bg);
+      border: 1px solid var(--weather-panel-border);
       border-radius: 20px;
       padding: 20px;
       display: flex;
@@ -1568,10 +1713,10 @@
     }
   </style>
 </head>
-<body class="landing-active">
+<body id="appRoot" class="landing-active weather-clear">
   <div
     id="mainLandingPage"
-    class="main-landing active"
+    class="main-landing home-screen active"
     role="region"
     aria-label="RideSync mode selection"
     aria-hidden="false"
@@ -1580,6 +1725,7 @@
       Sync Rider
     </button>
     <img src="/icons/icon-256.png" alt="RideSync logo" class="main-landing-logo" />
+    <div id="homeWeatherLabel" class="home-weather-label" aria-live="polite"></div>
     <button id="landingSyncDriver" type="button" class="landing-button landing-button-secondary">
       Sync Driver (Coming Soon)
     </button>
@@ -2841,6 +2987,111 @@
     const storage = getStorage(app);
     const FUNCTIONS_REGION = "us-central1";
     const functionsClient = getFunctions(app, FUNCTIONS_REGION);
+    const WEATHER_THEME_KEYS = [
+      "clear",
+      "clouds",
+      "rain",
+      "storm",
+      "snow",
+      "fog",
+      "hot",
+    ];
+    const WEATHER_THEME_CLASSES = WEATHER_THEME_KEYS.map((key) => `weather-${key}`);
+    const WEATHER_THEME_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+    const weatherRootElement = document.getElementById("appRoot") || document.body;
+    const weatherLabelElement = document.getElementById("homeWeatherLabel");
+    let currentWeatherTheme = "clear";
+    let weatherThemeIntervalId = null;
+
+    function resolveWeatherThemeKey(theme) {
+      const key = (theme || "")
+        .toString()
+        .trim()
+        .toLowerCase();
+      return WEATHER_THEME_KEYS.includes(key) ? key : "clear";
+    }
+
+    function applyWeatherTheme(theme) {
+      const root = weatherRootElement;
+      if (!root) {
+        return;
+      }
+      const normalized = resolveWeatherThemeKey(theme);
+      if (normalized === currentWeatherTheme && root.classList.contains(`weather-${normalized}`)) {
+        return;
+      }
+      WEATHER_THEME_CLASSES.forEach((cls) => root.classList.remove(cls));
+      root.classList.add(`weather-${normalized}`);
+      currentWeatherTheme = normalized;
+    }
+
+    function renderWeatherLabel(payload = {}) {
+      if (!weatherLabelElement) {
+        return;
+      }
+      const readableCondition = (payload.condition || "").trim();
+      const numericTemp = Number(payload.tempF);
+      const hasTemp = Number.isFinite(numericTemp);
+      const roundedTemp = hasTemp ? `${Math.round(numericTemp)}°F` : "";
+      if (!readableCondition && !roundedTemp) {
+        weatherLabelElement.textContent = "";
+        return;
+      }
+      const conditionText = readableCondition || "Clear";
+      weatherLabelElement.textContent = roundedTemp
+        ? `Fayetteville: ${conditionText}, ${roundedTemp}`
+        : `Fayetteville: ${conditionText}`;
+    }
+
+    function resolveWeatherThemeUrl() {
+      const endpoint = functionsConfig.getWeatherThemeUrl || "/getWeatherTheme";
+      if (/^https?:\/\//i.test(endpoint)) {
+        return endpoint;
+      }
+      if (endpoint.startsWith("/")) {
+        return endpoint;
+      }
+      return `/${endpoint}`;
+    }
+
+    async function requestWeatherTheme() {
+      const endpoint = resolveWeatherThemeUrl();
+      const response = await fetch(endpoint, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Weather theme endpoint failed with status ${response.status}`);
+      }
+      return response.json();
+    }
+
+    async function refreshWeatherTheme(options = {}) {
+      const { silent = false } = options;
+      try {
+        const payload = await requestWeatherTheme();
+        applyWeatherTheme(payload?.theme);
+        renderWeatherLabel({
+          condition: payload?.condition || payload?.conditionLabel || "",
+          tempF: payload?.tempF,
+        });
+      } catch (err) {
+        if (!silent) {
+          console.warn("[RideSync] Weather theming unavailable", err);
+        }
+        applyWeatherTheme("clear");
+        renderWeatherLabel({ condition: "Clear" });
+      }
+    }
+
+    function startWeatherThemePolling() {
+      refreshWeatherTheme();
+      if (weatherThemeIntervalId) {
+        clearInterval(weatherThemeIntervalId);
+      }
+      weatherThemeIntervalId = window.setInterval(() => {
+        refreshWeatherTheme({ silent: true });
+      }, WEATHER_THEME_REFRESH_INTERVAL_MS);
+    }
+
+    startWeatherThemePolling();
 
     const stripeConfig = APP_CONFIG.stripe || {};
     const fareConfig = APP_CONFIG.fares || {};

@@ -35,6 +35,97 @@ const STRIPE_SECRET_PARAMS = [
   STRIPE_UOFA_PRICE_ID,
   STRIPE_NWA_PRICE_ID,
 ];
+const WEATHER_API_SECRET = defineSecret("OPENWEATHER_API_KEY");
+const WEATHER_SECRET_PARAMS = [WEATHER_API_SECRET];
+const WEATHER_LOCATION = Object.freeze({
+  city: "Fayetteville",
+  state: "AR",
+  country: "US",
+});
+const WEATHER_API_ENDPOINT = "https://api.openweathermap.org/data/2.5/weather";
+const WEATHER_TIMEOUT_MS = 4500;
+const WEATHER_THEME_FALLBACK = "clear";
+const WEATHER_FOG_CONDITIONS = new Set([
+  "mist",
+  "fog",
+  "haze",
+  "smoke",
+  "dust",
+  "sand",
+  "ash",
+]);
+const WEATHER_RAIN_CONDITIONS = new Set(["rain", "drizzle"]);
+
+function deriveWeatherTheme(conditionMain, tempF) {
+  const normalizedCondition = (conditionMain || "").toLowerCase();
+  if (normalizedCondition === "thunderstorm") {
+    return "storm";
+  }
+  if (WEATHER_RAIN_CONDITIONS.has(normalizedCondition)) {
+    return "rain";
+  }
+  if (normalizedCondition === "snow") {
+    return "snow";
+  }
+  if (WEATHER_FOG_CONDITIONS.has(normalizedCondition)) {
+    return "fog";
+  }
+  if (typeof tempF === "number" && Number.isFinite(tempF) && tempF >= 90) {
+    return "hot";
+  }
+  if (normalizedCondition === "clouds") {
+    return "clouds";
+  }
+  return WEATHER_THEME_FALLBACK;
+}
+
+async function fetchWeatherSnapshot(apiKey) {
+  if (!apiKey) {
+    throw new Error("Missing OpenWeather API key");
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, WEATHER_TIMEOUT_MS);
+  try {
+    const params = new URLSearchParams({
+      q: `${WEATHER_LOCATION.city},${WEATHER_LOCATION.state},${WEATHER_LOCATION.country}`,
+      units: "imperial",
+      appid: apiKey,
+    });
+    const response = await fetch(`${WEATHER_API_ENDPOINT}?${params.toString()}`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Weather API responded with status ${response.status}`);
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function buildWeatherThemePayload(weatherJson) {
+  if (!weatherJson || typeof weatherJson !== "object") {
+    return {
+      theme: WEATHER_THEME_FALLBACK,
+      condition: "Clear",
+      tempF: null,
+      fallback: true,
+    };
+  }
+  const mainCondition = weatherJson?.weather?.[0]?.main || null;
+  const tempF = Number(weatherJson?.main?.temp ?? NaN);
+  const resolvedTemp = Number.isFinite(tempF) ? tempF : null;
+  const theme = deriveWeatherTheme(mainCondition, resolvedTemp);
+  return {
+    theme,
+    condition: mainCondition || "Clear",
+    tempF: resolvedTemp,
+    fetchedAt: Date.now(),
+    fallback: false,
+  };
+}
 
 const runtimeConfig = (() => {
   try {
@@ -5020,6 +5111,44 @@ exports.getDriverAvailabilityStats = functions.https.onCall(async (_data, contex
     );
   }
 });
+
+exports.getWeatherTheme = functions
+  .runWith({
+    secrets: WEATHER_SECRET_PARAMS,
+    timeoutSeconds: 15,
+    memory: "128MB",
+  })
+  .https.onRequest(async (req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+    if (req.method !== "GET") {
+      res.status(405).json({ error: "Method not allowed" });
+      return;
+    }
+
+    const weatherApiKey = readEnvValue("OPENWEATHER_API_KEY");
+    try {
+      const weatherJson = await fetchWeatherSnapshot(weatherApiKey);
+      const payload = buildWeatherThemePayload(weatherJson);
+      res.set("Cache-Control", "public, max-age=300, s-maxage=300");
+      res.status(200).json(payload);
+    } catch (err) {
+      functions.logger.error("[getWeatherTheme] Weather lookup failed", {
+        error: err?.message || err,
+      });
+      res.status(200).json({
+        theme: WEATHER_THEME_FALLBACK,
+        condition: "Clear",
+        tempF: null,
+        fallback: true,
+      });
+    }
+  });
 
 exports.__testables = {
   computeFareForMembership,
