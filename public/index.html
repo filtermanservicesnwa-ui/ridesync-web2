@@ -209,14 +209,23 @@
       text-transform: uppercase;
       opacity: 0.85;
     }
-    .main-landing-logo {
-      width: clamp(120px, 30vw, 200px);
-      height: clamp(120px, 30vw, 200px);
-      object-fit: contain;
-      filter: drop-shadow(0 12px 32px rgba(15,23,42,0.8));
-      opacity: 0.35;
-      transition: opacity 0.2s ease;
+    .main-landing-wordmark {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 0.25em;
+      font-size: clamp(2.6rem, 9vw, 4.8rem);
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #f8fafc;
+      text-shadow:
+        0 12px 32px rgba(15,23,42,0.8),
+        0 0 24px rgba(248,250,252,0.25);
       pointer-events: none;
+    }
+    .main-landing-wordmark .brand-accent {
+      color: #ef4444;
     }
     .landing-button {
       width: clamp(160px, 32vw, 200px);
@@ -1724,7 +1733,10 @@
     <button id="landingSyncRider" type="button" class="landing-button">
       Sync Rider
     </button>
-    <img src="/icons/icon-256.png" alt="RideSync logo" class="main-landing-logo" />
+    <div class="main-landing-wordmark" aria-label="RideSync">
+      <span class="brand-accent">Ride</span>
+      <span>Sync</span>
+    </div>
     <div id="homeWeatherLabel" class="home-weather-label" aria-live="polite"></div>
     <button id="landingSyncDriver" type="button" class="landing-button landing-button-secondary">
       Sync Driver (Coming Soon)
