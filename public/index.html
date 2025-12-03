@@ -724,14 +724,68 @@
       margin: 12px 0;
       scroll-behavior: smooth;
     }
+    .membership-terms-fullscreen {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 99999;
+      padding: 16px;
+    }
+    .membership-terms-container {
+      width: 90%;
+      max-width: 480px;
+      background: #fff;
+      border-radius: 16px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      max-height: 90vh;
+      color: #0f172a;
+      box-shadow: 0 25px 60px rgba(2,6,23,0.45);
+    }
+    .membership-terms-container h2 {
+      margin-top: 0;
+      color: #0f172a;
+    }
+    .membership-terms-scroll {
+      flex: 1;
+      overflow-y: auto;
+      margin-top: 12px;
+      padding-right: 6px;
+      color: #1f2937;
+    }
+    .membership-terms-scroll h3 {
+      margin-bottom: 4px;
+      color: #0f172a;
+    }
+    .membership-terms-scroll p,
+    .membership-terms-scroll ul {
+      margin-top: 4px;
+      margin-bottom: 10px;
+    }
+    .membership-terms-scroll ul {
+      padding-left: 20px;
+    }
+    .membership-terms-scroll hr {
+      border: none;
+      border-top: 1px solid rgba(148,163,184,0.4);
+      margin: 16px 0;
+    }
     .membership-terms-footer {
+      margin-top: 12px;
       display: flex;
       flex-direction: column;
       gap: 10px;
-      margin-top: 6px;
     }
     .membership-terms-footer label {
-      margin: 0;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 0.9rem;
+      color: #0f172a;
     }
 
     .payment-overlay {
@@ -2581,6 +2635,80 @@
         Not now
       </button>
     </div>
+
+    <div id="membershipTermsPage" class="membership-terms-fullscreen" style="display:none;">
+      <div class="membership-terms-container" role="dialog" aria-modal="true" aria-labelledby="membershipTermsTitle">
+        <h2 id="membershipTermsTitle">RideSync Membership Agreement</h2>
+        <p><strong>Effective Date:</strong> January 1st</p>
+        <p><strong>Customer Name:</strong> <span id="membershipTermsCustomerName"></span></p>
+        <p><strong>Membership Type:</strong> <span id="membershipTermsPlanLabel"></span></p>
+
+        <div class="membership-terms-scroll">
+          <h3>1. General Membership Rules</h3>
+          <p>All customers must have at minimum a Basic Membership to request rides. Your profile information (name, phone, license, student ID, or employer verification) must remain accurate and up to date at all times.</p>
+
+          <p><strong>Auto-Renewal:</strong> All paid memberships renew every 30 days. If you do not cancel at least 3 days before renewal, you will be charged automatically. No exceptions. Failure to cancel on time is your responsibility.</p>
+
+          <p><strong>No Refund Policy:</strong> Once billed, the membership payment is non-refundable. Canceling early does not result in a prorated refund.</p>
+
+          <p><strong>Bug / Error Reporting:</strong> If you find ANY bug, exploit, or system issue, you MUST report it immediately. Failure to report issues, intentionally exploiting bugs, or sharing them with others will result in immediate membership cancellation without refund. RideSync may pursue legal action for damages or abuse.</p>
+
+          <p><strong>Geofence Requirements:</strong> All unlimited rides must remain inside the official RideSync geofence. Leaving the geofence intentionally is a violation of this Agreement and may result in cancellation without refund.</p>
+
+          <hr>
+
+          <h3>2. U of A Unlimited Membership</h3>
+          <p>Eligibility requires an active U of A student ID that RideSync can verify at any time.</p>
+
+          <p><strong>Unlimited Rides Policy:</strong> Unlimited rides apply only inside the U of A service geofence. You cannot bring additional riders under your unlimited plan unless:</p>
+          <ul>
+            <li>They pay the normal Basic fare, OR</li>
+            <li>They also upgrade to their own unlimited membership.</li>
+          </ul>
+          <p>Sharing or attempting to share your membership results in immediate cancellation without refund and may include legal action for fraudulent use.</p>
+
+          <p><strong>Coverage Area:</strong> If your pickup or destination is outside the U of A zone, the ride converts into a Basic priced ride.</p>
+
+          <hr>
+
+          <h3>3. Northwest Arkansas Work Pass – Unlimited</h3>
+          <p>The Work Pass is NOT general unlimited transportation. It is ONLY for commuting to and from work within a 30-mile radius.</p>
+
+          <p><strong>Work-Only Travel:</strong> You receive one ride to work and one ride home each day, at no additional cost.</p>
+
+          <p>You cannot use the Work Pass for personal trips, store runs, entertainment, visiting friends, or any non-work purpose. Misuse results in cancellation without refund.</p>
+
+          <p><strong>Additional Riders:</strong> Only YOU are covered. Additional riders must pay Basic fare or have their own unlimited membership.</p>
+
+          <hr>
+
+          <h3>4. Behavior, Conduct, and Safety</h3>
+          <p>Any harassment, threats, unsafe behavior, intoxication, or abusive conduct may result in immediate suspension or permanent ban without refund.</p>
+
+          <p>You agree that all personal information you provide is accurate. If false data is discovered, RideSync may cancel your membership without refund.</p>
+
+          <hr>
+
+          <h3>5. Acceptance of Agreement</h3>
+          <p>By checking the box below and continuing to checkout, you agree:</p>
+          <ul>
+            <li>You understand and accept all terms above</li>
+            <li>You authorize RideSync to automatically bill your payment method</li>
+            <li>You acknowledge geofence and usage limitations</li>
+            <li>You understand that violating terms may result in cancellation without refund</li>
+          </ul>
+        </div>
+
+        <div class="membership-terms-footer">
+          <label>
+            <input type="checkbox" id="membershipTermsAgree" />
+            <span>I have read and agree to the RideSync Membership Terms.</span>
+          </label>
+          <button id="membershipTermsContinue" class="btn-primary" disabled>Continue to Checkout</button>
+          <button id="membershipTermsCancel" class="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="driverComingSoonOverlay" class="overlay" aria-hidden="true">
@@ -3177,6 +3305,16 @@
       selectedPlan: null,
       processing: false,
     };
+    const MEMBERSHIP_TERMS_REQUIRED_PLANS = new Set([
+      "uofa_unlimited",
+      "nwa_unlimited",
+    ]);
+    let membershipTermsPendingPlan = null;
+    let membershipTermsResolver = null;
+    let membershipTermsRejecter = null;
+    let membershipTermsHiddenOverlay = null;
+    let membershipTermsHiddenOverlayPrevDisplay = "";
+    let membershipTermsCancelAction = null;
 
     let joinMode = false;
     let joinTargetRide = null;
@@ -3336,6 +3474,12 @@
     const membershipCheckoutButton = document.getElementById("membershipCheckoutButton");
     const membershipCheckoutClose = document.getElementById("membershipCheckoutClose");
     const membershipCheckoutCancel = document.getElementById("membershipCheckoutCancel");
+    const membershipTermsPage = document.getElementById("membershipTermsPage");
+    const membershipTermsCustomerName = document.getElementById("membershipTermsCustomerName");
+    const membershipTermsPlanLabel = document.getElementById("membershipTermsPlanLabel");
+    const membershipTermsAgree = document.getElementById("membershipTermsAgree");
+    const membershipTermsContinue = document.getElementById("membershipTermsContinue");
+    const membershipTermsCancel = document.getElementById("membershipTermsCancel");
 
     const riderEmailDetailEl = document.getElementById("riderEmailDetail");
     const riderPhoneDetailEl = document.getElementById("riderPhoneDetail");
@@ -4743,6 +4887,93 @@
       membershipCheckoutOptions.appendChild(fragment);
     }
 
+    function planRequiresMembershipTerms(planKey) {
+      return MEMBERSHIP_TERMS_REQUIRED_PLANS.has(normalizePlanKey(planKey));
+    }
+
+    function resolveProfileDisplayName(profile = currentUserProfile) {
+      if (profile) {
+        const first = (profile.firstName || "").trim();
+        const last = (profile.lastName || "").trim();
+        const combined = `${first} ${last}`.trim();
+        if (combined) return combined;
+        if (profile.fullName) return profile.fullName;
+        if (profile.displayName) return profile.displayName;
+        if (profile.name) return profile.name;
+        if (profile.email) return profile.email;
+      }
+      const authUser = auth?.currentUser;
+      return (
+        (authUser?.displayName || authUser?.email || "RideSync Member").trim() ||
+        "RideSync Member"
+      );
+    }
+
+    function updateMembershipTermsDetails(planKey) {
+      if (membershipTermsCustomerName) {
+        membershipTermsCustomerName.textContent =
+          resolveProfileDisplayName() || "RideSync Member";
+      }
+      if (membershipTermsPlanLabel) {
+        membershipTermsPlanLabel.textContent = formatMembershipPlanLabel(planKey);
+      }
+    }
+
+    function resetMembershipTermsState({ restoreOverlay = true } = {}) {
+      if (membershipTermsPage) {
+        membershipTermsPage.style.display = "none";
+        membershipTermsPage.setAttribute("aria-hidden", "true");
+      }
+      if (restoreOverlay && membershipTermsHiddenOverlay) {
+        membershipTermsHiddenOverlay.style.display =
+          membershipTermsHiddenOverlayPrevDisplay || "";
+      }
+      membershipTermsPendingPlan = null;
+      membershipTermsResolver = null;
+      membershipTermsRejecter = null;
+      membershipTermsCancelAction = null;
+      membershipTermsHiddenOverlay = null;
+      membershipTermsHiddenOverlayPrevDisplay = "";
+      if (membershipTermsAgree) {
+        membershipTermsAgree.checked = false;
+      }
+      if (membershipTermsContinue) {
+        membershipTermsContinue.disabled = true;
+      }
+    }
+
+    function ensureMembershipTerms(planKey, { overlayToHide, onCancel } = {}) {
+      const normalizedPlan = normalizePlanKey(planKey || "basic");
+      if (!planRequiresMembershipTerms(normalizedPlan) || !membershipTermsPage) {
+        return Promise.resolve();
+      }
+      if (typeof membershipTermsResolver === "function") {
+        resetMembershipTermsState({ restoreOverlay: false });
+      }
+      membershipTermsHiddenOverlay = overlayToHide || null;
+      membershipTermsHiddenOverlayPrevDisplay =
+        membershipTermsHiddenOverlay?.style?.display || "";
+      if (membershipTermsHiddenOverlay) {
+        membershipTermsHiddenOverlay.style.display = "none";
+      }
+      membershipTermsPendingPlan = normalizedPlan;
+      membershipTermsCancelAction =
+        typeof onCancel === "function" ? onCancel : null;
+      updateMembershipTermsDetails(normalizedPlan);
+      if (membershipTermsAgree) {
+        membershipTermsAgree.checked = false;
+      }
+      if (membershipTermsContinue) {
+        membershipTermsContinue.disabled = true;
+      }
+      membershipTermsPage.style.display = "flex";
+      membershipTermsPage.setAttribute("aria-hidden", "false");
+      return new Promise((resolve, reject) => {
+        membershipTermsResolver = resolve;
+        membershipTermsRejecter = reject;
+      });
+    }
+
     function selectMembershipCheckoutPlan(planKey) {
       membershipCheckoutState.selectedPlan = normalizePlanKey(planKey || "basic");
       setMembershipCheckoutError("");
@@ -4776,9 +5007,34 @@
       setMembershipMessage("");
     }
 
-    async function startMembershipCheckout() {
+    async function handleMembershipCheckoutButtonClick() {
       const planKey =
         membershipCheckoutState.selectedPlan || getProfilePlanKey() || "basic";
+      if (!planRequiresStripeCheckout(planKey)) {
+        setMembershipMessage(
+          "Basic rides are billed from your fare overlay. No membership checkout needed."
+        );
+        closeMembershipCheckoutOverlay();
+        return;
+      }
+      try {
+        await ensureMembershipTerms(planKey, {
+          overlayToHide: membershipCheckoutOverlay,
+          onCancel: closeMembershipCheckoutOverlay,
+        });
+      } catch (_err) {
+        return;
+      }
+      await startMembershipCheckout(planKey);
+    }
+
+    async function startMembershipCheckout(planKeyOverride) {
+      const planKey = normalizePlanKey(
+        planKeyOverride ||
+          membershipCheckoutState.selectedPlan ||
+          getProfilePlanKey() ||
+          "basic"
+      );
       if (!planRequiresStripeCheckout(planKey)) {
         setMembershipMessage(
           "Basic rides are billed from your fare overlay. No membership checkout needed."
@@ -7094,7 +7350,10 @@
     }
 
     if (membershipCheckoutButton) {
-      membershipCheckoutButton.addEventListener("click", startMembershipCheckout);
+      membershipCheckoutButton.addEventListener(
+        "click",
+        handleMembershipCheckoutButtonClick
+      );
     }
     if (membershipCheckoutClose) {
       membershipCheckoutClose.addEventListener("click", closeMembershipCheckoutOverlay);
@@ -7106,6 +7365,38 @@
       membershipCheckoutOverlay.addEventListener("click", (event) => {
         if (event.target === membershipCheckoutOverlay) {
           closeMembershipCheckoutOverlay();
+        }
+      });
+    }
+    if (membershipTermsAgree && membershipTermsContinue) {
+      membershipTermsAgree.addEventListener("change", () => {
+        membershipTermsContinue.disabled = !membershipTermsAgree.checked;
+      });
+    }
+    if (membershipTermsContinue) {
+      membershipTermsContinue.addEventListener("click", () => {
+        if (membershipTermsContinue.disabled) {
+          return;
+        }
+        const resolver = membershipTermsResolver;
+        const planKey = membershipTermsPendingPlan;
+        resetMembershipTermsState();
+        if (typeof resolver === "function") {
+          resolver(planKey);
+        }
+      });
+    }
+    if (membershipTermsCancel) {
+      membershipTermsCancel.addEventListener("click", () => {
+        const rejecter = membershipTermsRejecter;
+        const cancelAction = membershipTermsCancelAction;
+        const planKey = membershipTermsPendingPlan;
+        resetMembershipTermsState({ restoreOverlay: false });
+        if (typeof cancelAction === "function") {
+          cancelAction(planKey);
+        }
+        if (typeof rejecter === "function") {
+          rejecter(new Error("Membership terms were not accepted."));
         }
       });
     }
