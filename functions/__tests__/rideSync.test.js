@@ -59,6 +59,9 @@ const {
   clampTipAmountCents,
   validateTipBounds,
   computeRideHoldAmountCents,
+  computeReferralDiscountCents,
+  evaluateReferralCodeEligibility,
+  resolveReservePickupDetails,
 } = require("../index").__testables;
 
 describe("fare calculation", () => {
@@ -181,5 +184,58 @@ describe("manual capture helpers", () => {
     expect(computeRideHoldAmountCents(1500, 1200)).toBe(2700);
     expect(computeRideHoldAmountCents(1500, 0)).toBe(1500);
     expect(computeRideHoldAmountCents(0, 0)).toBe(0);
+  });
+});
+
+describe("referral helpers", () => {
+  it("caps flat discounts at the fare amount", () => {
+    expect(computeReferralDiscountCents({ amountOffCents: 600 }, 500)).toBe(500);
+    expect(computeReferralDiscountCents({ amountOffCents: 600 }, 800)).toBe(600);
+  });
+
+  it("validates plan eligibility and produces descriptions", () => {
+    const ok = evaluateReferralCodeEligibility({
+      codeKey: "WELCOME5",
+      codeData: {
+        description: "Welcome discount",
+        allowedPlans: ["basic"],
+        amountOffCents: 500,
+      },
+      userUsageCount: 0,
+      estimatedFareCents: 1500,
+      plan: "basic",
+    });
+    expect(ok.valid).toBe(true);
+    expect(ok.discountCents).toBe(500);
+
+    const denied = evaluateReferralCodeEligibility({
+      codeKey: "UOFAONLY",
+      codeData: {
+        allowedPlans: ["uofa_unlimited"],
+        amountOffCents: 500,
+      },
+      userUsageCount: 0,
+      estimatedFareCents: 1500,
+      plan: "basic",
+    });
+    expect(denied.valid).toBe(false);
+  });
+});
+
+describe("reservation helpers", () => {
+  it("rejects reservations that are too close", () => {
+    const past = resolveReservePickupDetails(
+      new Date(Date.now() - 2 * 60000).toISOString()
+    );
+    expect(past.reserveFeeCents).toBe(0);
+    expect(past.reserveTimeIso).toBeNull();
+  });
+
+  it("applies the reserve fee for future pickups", () => {
+    const future = resolveReservePickupDetails(
+      new Date(Date.now() + 30 * 60000).toISOString()
+    );
+    expect(future.reserveFeeCents).toBe(500);
+    expect(typeof future.reserveTimeIso).toBe("string");
   });
 });
