@@ -36,6 +36,106 @@
       gap: 12px;
       padding: 10px;
     }
+    body.landing-active {
+      overflow: hidden;
+    }
+    body.landing-active .card,
+    body.landing-active .site-footer,
+    body.landing-active .top-right {
+      display: none;
+    }
+    body.landing-active #map {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .main-landing {
+      position: fixed;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at top, #1d4ed8, #020617 55%);
+      padding: clamp(18px, 6vw, 32px);
+      gap: clamp(24px, 6vw, 48px);
+      text-align: center;
+      z-index: 40;
+    }
+    .main-landing.active {
+      display: flex;
+    }
+    .main-landing-logo {
+      width: clamp(120px, 30vw, 200px);
+      height: clamp(120px, 30vw, 200px);
+      object-fit: contain;
+      filter: drop-shadow(0 12px 32px rgba(15,23,42,0.8));
+    }
+    .landing-button {
+      width: clamp(160px, 32vw, 200px);
+      height: clamp(160px, 32vw, 200px);
+      border-radius: 50%;
+      border: 3px solid rgba(248,250,252,0.5);
+      background: linear-gradient(145deg, #ef4444, #1d4ed8);
+      box-shadow:
+        0 18px 45px rgba(2,6,23,0.65),
+        0 0 25px rgba(59,130,246,0.45),
+        inset 0 0 12px rgba(248,250,252,0.25);
+      color: #f9fafb;
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 0 16px;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    }
+    .landing-button:hover {
+      transform: translateY(-4px);
+      box-shadow:
+        0 24px 60px rgba(2,6,23,0.75),
+        0 0 30px rgba(59,130,246,0.6),
+        inset 0 0 14px rgba(248,250,252,0.35);
+    }
+    .landing-button:focus-visible {
+      transform: translateY(-4px);
+      box-shadow:
+        0 24px 60px rgba(2,6,23,0.75),
+        0 0 30px rgba(59,130,246,0.6),
+        inset 0 0 14px rgba(248,250,252,0.35);
+      outline: 3px solid rgba(248,250,252,0.65);
+      outline-offset: 6px;
+    }
+    .landing-button:active {
+      transform: translateY(2px) scale(0.98);
+    }
+    .landing-button-secondary {
+      background: linear-gradient(145deg, rgba(248,250,252,0.08), rgba(15,23,42,0.85));
+      border-color: rgba(148,163,184,0.6);
+      color: #cbd5f5;
+      box-shadow:
+        0 16px 40px rgba(2,6,23,0.65),
+        0 0 22px rgba(59,130,246,0.4),
+        inset 0 0 10px rgba(15,23,42,0.6);
+    }
+    .landing-button-secondary:hover,
+    .landing-button-secondary:focus-visible {
+      box-shadow:
+        0 22px 55px rgba(2,6,23,0.75),
+        0 0 28px rgba(59,130,246,0.5),
+        inset 0 0 14px rgba(15,23,42,0.8);
+    }
+    .driver-coming-soon-shell {
+      text-align: center;
+    }
+    .driver-coming-soon-copy {
+      font-size: 1.05rem;
+      color: #cbd5f5;
+      margin: 0;
+    }
     .site-footer {
       width: 100%;
       max-width: 520px;
@@ -1373,7 +1473,22 @@
     }
   </style>
 </head>
-<body>
+<body class="landing-active">
+  <div
+    id="mainLandingPage"
+    class="main-landing active"
+    role="region"
+    aria-label="RideSync mode selection"
+    aria-hidden="false"
+  >
+    <button id="landingSyncRider" type="button" class="landing-button">
+      Sync Rider
+    </button>
+    <img src="/icons/icon-256.png" alt="RideSync logo" class="main-landing-logo" />
+    <button id="landingSyncDriver" type="button" class="landing-button landing-button-secondary">
+      Sync Driver (Coming Soon)
+    </button>
+  </div>
   <div id="map"></div>
   <div class="top-right" id="loginStatus"></div>
 
@@ -2340,6 +2455,21 @@
     </div>
   </div>
 
+  <div id="driverComingSoonOverlay" class="overlay" aria-hidden="true">
+    <div class="rider-overlay-shell driver-coming-soon-shell" role="dialog" aria-modal="true">
+      <div class="overlay-header">
+        <div>
+          <div class="overlay-title">Driver Dashboard</div>
+          <div class="overlay-subtitle">Coming soon</div>
+        </div>
+        <button id="driverComingSoonClose" type="button" class="overlay-close">
+          Close
+        </button>
+      </div>
+      <p class="driver-coming-soon-copy">Driver Dashboard Coming Soon</p>
+    </div>
+  </div>
+
   <div
     id="cooldownOverlay"
     class="overlay cooldown-overlay"
@@ -2968,6 +3098,53 @@
     const profilePicInput = document.getElementById("profilePicInput");
     const licensePicInput = document.getElementById("licensePicInput");
     const studentIdPicInput = document.getElementById("studentIdPicInput");
+    const mainLandingPage = document.getElementById("mainLandingPage");
+    const landingSyncRiderButton = document.getElementById("landingSyncRider");
+    const landingSyncDriverButton = document.getElementById("landingSyncDriver");
+    const driverComingSoonOverlay = document.getElementById("driverComingSoonOverlay");
+    const driverComingSoonClose = document.getElementById("driverComingSoonClose");
+    const appBody = document.body;
+
+    function dismissLandingPage() {
+      if (mainLandingPage && mainLandingPage.classList.contains("active")) {
+        mainLandingPage.classList.remove("active");
+        mainLandingPage.setAttribute("aria-hidden", "true");
+      }
+      if (appBody && appBody.classList.contains("landing-active")) {
+        appBody.classList.remove("landing-active");
+      }
+    }
+
+    function showDriverComingSoonModal() {
+      if (!driverComingSoonOverlay) return;
+      driverComingSoonOverlay.classList.add("active");
+      driverComingSoonOverlay.setAttribute("aria-hidden", "false");
+    }
+
+    function hideDriverComingSoonModal() {
+      if (!driverComingSoonOverlay) return;
+      driverComingSoonOverlay.classList.remove("active");
+      driverComingSoonOverlay.setAttribute("aria-hidden", "true");
+    }
+
+    landingSyncRiderButton?.addEventListener("click", () => {
+      hideDriverComingSoonModal();
+      dismissLandingPage();
+    });
+
+    landingSyncDriverButton?.addEventListener("click", () => {
+      showDriverComingSoonModal();
+    });
+
+    driverComingSoonClose?.addEventListener("click", () => {
+      hideDriverComingSoonModal();
+    });
+
+    driverComingSoonOverlay?.addEventListener("click", (event) => {
+      if (event.target === driverComingSoonOverlay) {
+        hideDriverComingSoonModal();
+      }
+    });
 
     const avatarEl = document.getElementById("avatar");
     const riderNameEl = document.getElementById("riderName");
