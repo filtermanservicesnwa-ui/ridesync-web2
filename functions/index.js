@@ -397,6 +397,13 @@ const MEMBERSHIP_TIER_TO_PLAN = Object.freeze({
   UOFA: "uofa_unlimited",
   NWA: "nwa_unlimited",
 });
+const RESERVATION_FEE_CENTS = 500;
+const RESERVATION_MIN_LEAD_MINUTES = 5;
+const RESERVATION_MAX_LEAD_MINUTES = 24 * 60;
+const REFERRAL_CODES_COLLECTION = "referralCodes";
+const REFERRAL_USAGE_COLLECTION = "referralCodeUsage";
+const REFERRAL_REDEMPTIONS_COLLECTION = "referralCodeRedemptions";
+const REFERRAL_DEFAULT_DESCRIPTION = "Referral code applied.";
 
 function normalizeMembershipTier(value = "") {
   const normalized = String(value || "")
@@ -998,6 +1005,367 @@ function deriveServerRideTotals({
   };
 }
 
+function sanitizeReferralCode(code) {
+  if (typeof code !== "string") {
+    return null;
+  }
+  const trimmed = code.trim().toUpperCase();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.replace(/[^A-Z0-9_-]/g, "");
+}
+
+function buildReferralUsageDocId(code, userId) {
+  return `${code}_${userId || "anon"}`;
+}
+
+function resolveTimestampMillis(value) {
+  if (!value) return null;
+  if (value instanceof Timestamp) {
+    return value.toMillis();
+  }
+  if (value && typeof value.toMillis === "function") {
+    try {
+      return value.toMillis();
+    } catch (_) {
+      return null;
+    }
+  }
+  const millis = new Date(value).getTime();
+  return Number.isFinite(millis) ? millis : null;
+}
+
+function computeReferralDiscountCents(codeConfig = {}, estimatedFareCents = 0) {
+  const fareCents = Math.max(0, Math.round(estimatedFareCents || 0));
+  if (fareCents <= 0) {
+    return 0;
+  }
+  if (codeConfig.freeRide === true || codeConfig.discountType === "free") {
+    return fareCents;
+  }
+  const amountOff = Number(codeConfig.amountOffCents);
+  const percentOff = Number(codeConfig.percentOff);
+  let discount = 0;
+  if (Number.isFinite(amountOff) && amountOff > 0) {
+    discount = Math.round(amountOff);
+  } else if (Number.isFinite(percentOff) && percentOff > 0) {
+    discount = Math.round((fareCents * percentOff) / 100);
+  }
+  const capCandidates = [
+    codeConfig.maxPercentDiscountCents,
+    codeConfig.maxDiscountCents,
+  ];
+  capCandidates.forEach((cap) => {
+    const capValue = Number(cap);
+    if (Number.isFinite(capValue) && capValue > 0) {
+      discount = Math.min(discount, Math.round(capValue));
+    }
+  });
+  return Math.max(0, Math.min(fareCents, discount));
+}
+
+function evaluateReferralCodeEligibility({
+  codeKey,
+  codeData,
+  userUsageCount = 0,
+  estimatedFareCents = 0,
+  nowMillis = Date.now(),
+  plan = "basic",
+}) {
+  if (!codeData) {
+    return { valid: false, message: "Referral code is invalid or expired." };
+  }
+  if (codeData.disabled === true || codeData.status === "disabled") {
+    return { valid: false, message: "Referral code is inactive." };
+  }
+  if (codeData.active === false && codeData.status !== "active") {
+    return { valid: false, message: "Referral code is inactive." };
+  }
+  const startsAtMillis = resolveTimestampMillis(codeData.startsAt || codeData.startsOn);
+  if (startsAtMillis && nowMillis < startsAtMillis) {
+    return { valid: false, message: "Referral code is not active yet." };
+  }
+  const expiresAtMillis = resolveTimestampMillis(
+    codeData.expiresAt || codeData.expiresOn || codeData.expiration
+  );
+  if (expiresAtMillis && nowMillis > expiresAtMillis) {
+    return { valid: false, message: "Referral code is invalid or expired." };
+  }
+  const usageLimit = Number(codeData.usageLimit);
+  const usageCount = Number(codeData.usageCount) || 0;
+  if (
+    Number.isFinite(usageLimit) &&
+    usageLimit > 0 &&
+    usageCount >= usageLimit
+  ) {
+    return { valid: false, message: "Referral code has been fully redeemed." };
+  }
+  const maxPerUser = Number(codeData.maxPerUser);
+  if (
+    Number.isFinite(maxPerUser) &&
+    maxPerUser > 0 &&
+    userUsageCount >= maxPerUser
+  ) {
+    return { valid: false, message: "You have already used this referral code." };
+  }
+  const allowedPlansRaw = Array.isArray(codeData.allowedPlans)
+    ? codeData.allowedPlans
+    : null;
+  if (allowedPlansRaw && allowedPlansRaw.length) {
+    const allowedPlans = allowedPlansRaw.map((p) =>
+      normalizeMembershipPlan(p || "")
+    );
+    if (
+      !allowedPlans.includes("all") &&
+      !allowedPlans.includes(normalizeMembershipPlan(plan))
+    ) {
+      return { valid: false, message: "Referral code is not available for your plan." };
+    }
+  }
+  const minFareCents = Number(codeData.minFareCents);
+  const targetFareCents = Math.max(0, Math.round(estimatedFareCents || 0));
+  if (
+    Number.isFinite(minFareCents) &&
+    minFareCents > 0 &&
+    targetFareCents < minFareCents
+  ) {
+    return {
+      valid: false,
+      message: "Your fare is too low for this referral code.",
+    };
+  }
+  const discountCents = computeReferralDiscountCents(codeData, targetFareCents);
+  if (!discountCents) {
+    return { valid: false, message: "Referral code does not apply to this fare." };
+  }
+  return {
+    valid: true,
+    discountCents,
+    description: codeData.description || REFERRAL_DEFAULT_DESCRIPTION,
+    code: codeKey,
+  };
+}
+
+function resolveReservePickupDetails(reserveTimeIso) {
+  if (!reserveTimeIso) {
+    return {
+      reserveFeeCents: 0,
+      reserveTimeIso: null,
+      reserveTimestamp: null,
+    };
+  }
+  const scheduledDate = new Date(reserveTimeIso);
+  const timestamp = scheduledDate.getTime();
+  if (!Number.isFinite(timestamp)) {
+    return {
+      reserveFeeCents: 0,
+      reserveTimeIso: null,
+      reserveTimestamp: null,
+    };
+  }
+  const now = Date.now();
+  const diffMinutes = (timestamp - now) / 60000;
+  if (
+    diffMinutes < RESERVATION_MIN_LEAD_MINUTES ||
+    diffMinutes > RESERVATION_MAX_LEAD_MINUTES
+  ) {
+    return {
+      reserveFeeCents: 0,
+      reserveTimeIso: null,
+      reserveTimestamp: null,
+    };
+  }
+  const clampedIso = new Date(timestamp).toISOString();
+  return {
+    reserveFeeCents: RESERVATION_FEE_CENTS,
+    reserveTimeIso: clampedIso,
+    reserveTimestamp: Timestamp.fromMillis(timestamp),
+  };
+}
+
+function formatReserveTimeForNotification(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  if (!Number.isFinite(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleString("en-US", {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+async function evaluateReferralCodeForUser({
+  code,
+  userId,
+  estimatedFareCents,
+  plan,
+}) {
+  const codeKey = sanitizeReferralCode(code);
+  if (!codeKey) {
+    return { valid: false, message: "Referral code is invalid or expired." };
+  }
+  const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(codeKey);
+  const usageDocId = buildReferralUsageDocId(codeKey, userId || "anon");
+  const usageRef = db.collection(REFERRAL_USAGE_COLLECTION).doc(usageDocId);
+  const [codeSnap, usageSnap] = await Promise.all([
+    codeRef.get(),
+    userId ? usageRef.get() : Promise.resolve(null),
+  ]);
+  if (!codeSnap.exists) {
+    return { valid: false, message: "Referral code is invalid or expired." };
+  }
+  const codeData = codeSnap.data() || {};
+  const userUsageCount =
+    usageSnap && usageSnap.exists ? Number(usageSnap.data()?.usageCount || 0) : 0;
+  return evaluateReferralCodeEligibility({
+    codeKey,
+    codeData,
+    userUsageCount,
+    estimatedFareCents,
+    plan,
+  });
+}
+
+async function applyReferralCodeToRide({
+  code,
+  userId,
+  estimatedFareCents,
+  plan,
+  rideId,
+}) {
+  if (!code || !userId || !rideId) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Referral code request is missing required fields."
+    );
+  }
+  const codeKey = sanitizeReferralCode(code);
+  if (!codeKey) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Referral code is invalid."
+    );
+  }
+  const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(codeKey);
+  const usageRef = db
+    .collection(REFERRAL_USAGE_COLLECTION)
+    .doc(buildReferralUsageDocId(codeKey, userId));
+  const redemptionRef = db.collection(REFERRAL_REDEMPTIONS_COLLECTION).doc(rideId);
+  let outcome = null;
+  await db.runTransaction(async (tx) => {
+    const codeSnap = await tx.get(codeRef);
+    if (!codeSnap.exists) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Referral code is invalid or expired."
+      );
+    }
+    const codeData = codeSnap.data() || {};
+    const usageSnap = await tx.get(usageRef);
+    const userUsageCount = usageSnap.exists
+      ? Number(usageSnap.data()?.usageCount || 0)
+      : 0;
+    const evaluation = evaluateReferralCodeEligibility({
+      codeKey,
+      codeData,
+      userUsageCount,
+      estimatedFareCents,
+      plan,
+    });
+    if (!evaluation.valid || !evaluation.discountCents) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        evaluation.message || "Referral code is invalid or expired."
+      );
+    }
+    tx.update(codeRef, {
+      usageCount: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(
+      usageRef,
+      {
+        code: codeKey,
+        userId,
+        usageCount: userUsageCount + 1,
+        lastRideId: rideId,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    tx.set(redemptionRef, {
+      code: codeKey,
+      userId,
+      rideId,
+      discountCents: evaluation.discountCents,
+      description: evaluation.description || "",
+      status: "applied",
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    outcome = evaluation;
+  });
+  return outcome;
+}
+
+async function rollbackReferralCodeRedemption({ code, userId, rideId }) {
+  const codeKey = sanitizeReferralCode(code);
+  if (!codeKey || !userId || !rideId) {
+    return;
+  }
+  const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(codeKey);
+  const usageRef = db
+    .collection(REFERRAL_USAGE_COLLECTION)
+    .doc(buildReferralUsageDocId(codeKey, userId));
+  const redemptionRef = db.collection(REFERRAL_REDEMPTIONS_COLLECTION).doc(rideId);
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const codeSnap = await tx.get(codeRef);
+      if (codeSnap.exists) {
+        const currentUsage = Number(codeSnap.data()?.usageCount || 0);
+        const nextUsage = Math.max(0, currentUsage - 1);
+        tx.update(codeRef, {
+          usageCount: nextUsage,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      const usageSnap = await tx.get(usageRef);
+      if (usageSnap.exists) {
+        const current = Number(usageSnap.data()?.usageCount || 0);
+        const nextCount = Math.max(0, current - 1);
+        if (nextCount <= 0) {
+          tx.delete(usageRef);
+        } else {
+          tx.update(usageRef, {
+            usageCount: nextCount,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
+      }
+
+      tx.set(
+        redemptionRef,
+        {
+          status: "reverted",
+          revertedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+  } catch (rollbackError) {
+    functions.logger.error("[referral] rollback failed", {
+      code: codeKey,
+      userId,
+      rideId,
+      error: rollbackError?.message || rollbackError,
+    });
+  }
+}
+
 async function createStripeCustomerForUser({
   stripeClient,
   uid,
@@ -1278,6 +1646,8 @@ async function upsertRideRecord(rideId, record = {}) {
     finalFareAmountCents = null,
     tipAmountCents = null,
     totalChargedCents = null,
+    referralDiscountCents = 0,
+    reserveFeeCents = 0,
   } = record;
   const normalizedPlan = normalizeMembershipPlan(membershipType || "basic");
   const normalizedStatus = (membershipStatus || "none").toLowerCase();
@@ -1299,6 +1669,8 @@ async function upsertRideRecord(rideId, record = {}) {
     totalChargedCents,
     finalCents + tipCents
   );
+  const referralCents = normalizeCents(referralDiscountCents, 0);
+  const reserveCents = normalizeCents(reserveFeeCents, 0);
   const recordRef = db.collection("rideRecords").doc(rideId);
   const payloadToSave = removeUndefinedFields({
     rideId,
@@ -1318,6 +1690,8 @@ async function upsertRideRecord(rideId, record = {}) {
     tip_amount: tipCents / 100,
     totalChargedCents: totalCents,
     total_charged: totalCents / 100,
+    referralDiscountCents: referralCents,
+    reserveFeeCents: reserveCents,
     updatedAt: FieldValue.serverTimestamp(),
   });
   await recordRef.set(payloadToSave, { merge: true });
@@ -1727,10 +2101,18 @@ exports.notifyDriverOnNewRide = functions.firestore
       }
 
       const title = "New Ride";
-      const body =
-        ride.membershipType === "uofa_unlimited"
-          ? "New U of A pooled ride is waiting."
-          : "You have a new RideSync request.";
+      let body = null;
+      if (ride.reserveTimeIso) {
+        const whenLabel = formatReserveTimeForNotification(ride.reserveTimeIso);
+        body = whenLabel
+          ? `Reserved pickup at ${whenLabel}.`
+          : "Scheduled pickup request is waiting.";
+      } else {
+        body =
+          ride.membershipType === "uofa_unlimited"
+            ? "New U of A pooled ride is waiting."
+            : "You have a new RideSync request.";
+      }
 
       const message = {
         notification: {
@@ -1743,6 +2125,9 @@ exports.notifyDriverOnNewRide = functions.firestore
         },
         tokens
       };
+      if (ride.reserveTimeIso) {
+        message.data.reserveTimeIso = ride.reserveTimeIso;
+      }
 
       const response = await admin.messaging().sendMulticast(message);
       console.log(
@@ -4332,6 +4717,7 @@ exports.createRideRequest = functions
     let uid = null;
     let rideRef = null;
     let rideDoc = null;
+    let referralRollbackContext = null;
 
     try {
       uid = requireAuth(context);
@@ -4380,6 +4766,7 @@ exports.createRideRequest = functions
       const fareBreakdown = serverRideTotals.fareBreakdown;
       const totalCents = serverRideTotals.totalCents;
       const sanitizedMinutes = serverRideTotals.sanitizedMinutes;
+      const reserveDetails = resolveReservePickupDetails(rideInput.reserveTimeIso);
 
       const chargeContext = calculateRideChargeContext({
         membershipType,
@@ -4390,7 +4777,32 @@ exports.createRideRequest = functions
         estimatedDurationMinutes: sanitizedMinutes,
         coverageOverride: membershipCoverage,
       });
-      const amountCents = Math.max(0, Math.round(chargeContext.amountCents || 0));
+      let amountCents = Math.max(0, Math.round(chargeContext.amountCents || 0));
+      if (reserveDetails.reserveFeeCents) {
+        amountCents += reserveDetails.reserveFeeCents;
+      }
+      rideRef = db.collection("rideRequests").doc();
+      let referralCode = sanitizeReferralCode(rideInput.referralCode);
+      let referralDiscountCents = 0;
+      let referralDescription = "";
+      if (referralCode) {
+        const referralResult = await applyReferralCodeToRide({
+          code: referralCode,
+          userId: uid,
+          estimatedFareCents: amountCents,
+          plan: membershipType,
+          rideId: rideRef.id,
+        });
+        referralDiscountCents = Math.max(0, referralResult.discountCents || 0);
+        referralDescription = referralResult.description || "";
+        referralCode = referralResult.code || referralCode;
+        amountCents = Math.max(0, amountCents - referralDiscountCents);
+        referralRollbackContext = {
+          code: referralCode,
+          userId: uid,
+          rideId: rideRef.id,
+        };
+      }
       const paymentMeta = resolveRidePaymentStatus(membershipType, amountCents);
 
       rideDoc = buildRidePayload(
@@ -4427,6 +4839,12 @@ exports.createRideRequest = functions
       rideDoc.stripeAmountCents = amountCents;
       rideDoc.stripeAmount = amountCents / 100;
       rideDoc.stripeCurrency = "usd";
+      rideDoc.reserveFeeCents = reserveDetails.reserveFeeCents || 0;
+      rideDoc.reserveTimeIso = reserveDetails.reserveTimeIso || null;
+      rideDoc.reservePickupAt = reserveDetails.reserveTimestamp || null;
+      rideDoc.referralCode = referralCode || null;
+      rideDoc.referralDiscountCents = referralDiscountCents;
+      rideDoc.referralDescription = referralDescription || null;
       rideDoc.totalCents = totalCents;
       rideDoc.fare = fareBreakdown;
       rideDoc.extraStops = extraStops.length ? extraStops : [];
@@ -4473,7 +4891,6 @@ exports.createRideRequest = functions
         Object.assign(rideDoc, pinUpdates);
       }
 
-      rideRef = db.collection("rideRequests").doc();
       if (rideDoc.isGroupRide && !rideDoc.groupId) {
         rideDoc.groupId = rideRef.id;
       }
@@ -4481,6 +4898,7 @@ exports.createRideRequest = functions
     removeUndefinedFields(rideDoc);
 
     await rideRef.set(rideDoc);
+    referralRollbackContext = null;
     await upsertRideRecord(rideRef.id, {
       userId: uid,
       membershipType,
@@ -4489,6 +4907,8 @@ exports.createRideRequest = functions
       finalFareAmountCents: amountCents,
       tipAmountCents: 0,
       totalChargedCents: amountCents,
+      referralDiscountCents,
+      reserveFeeCents: reserveDetails.reserveFeeCents || 0,
     }).catch((err) => {
       console.error("[RideSync][ledger] Failed to write ride record", {
         rideId: rideRef.id,
@@ -4510,7 +4930,10 @@ exports.createRideRequest = functions
         amountCents,
         ride: serializeRideForClient(rideDoc),
       };
-    } catch (error) {
+  } catch (error) {
+    if (referralRollbackContext) {
+      await rollbackReferralCodeRedemption(referralRollbackContext);
+    }
       functions.logger.error("[createRideRequest] failed", {
         uid: uid || context?.auth?.uid || null,
         rideId: rideRef?.id || null,
@@ -4520,6 +4943,32 @@ exports.createRideRequest = functions
       throw error;
     }
   });
+
+exports.validateReferralCodeForRide = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  const codeInput = data?.code || data?.referralCode;
+  const contextInput = data?.context || {};
+  const plan =
+    contextInput.plan || contextInput.membershipType || contextInput.ridePlan || "basic";
+  const estimatedFareCents = Math.max(
+    0,
+    Math.round(
+      Number(
+        contextInput.estimatedFareCents ??
+          contextInput.estimatedFare ??
+          contextInput.totalCents ??
+          0
+      ) || 0
+    )
+  );
+  const evaluation = await evaluateReferralCodeForUser({
+    code: codeInput,
+    userId: uid,
+    estimatedFareCents,
+    plan,
+  });
+  return evaluation;
+});
 
 exports.joinRideGroup = functions.https.onCall(async (data, context) => {
   const uid = requireAuth(context);
@@ -5163,4 +5612,7 @@ exports.__testables = {
   clampTipAmountCents,
   validateTipBounds,
   computeRideHoldAmountCents,
+  computeReferralDiscountCents,
+  evaluateReferralCodeEligibility,
+  resolveReservePickupDetails,
 };

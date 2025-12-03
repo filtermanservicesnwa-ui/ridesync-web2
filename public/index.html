@@ -1222,6 +1222,51 @@
       color: #94a3b8;
       margin-top: -6px;
     }
+    .fare-section {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.25);
+      background: rgba(15,23,42,0.65);
+    }
+    .fare-section .small {
+      margin-top: 6px;
+      color: #94a3b8;
+    }
+    .field-label {
+      display: block;
+      font-size: 0.85rem;
+      color: #cbd5f5;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .select-input,
+    .text-input {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(148,163,184,0.4);
+      background: rgba(2,6,23,0.82);
+      color: #f8fafc;
+      font-size: 1rem;
+      padding: 10px 12px;
+    }
+    .select-input:focus,
+    .text-input:focus {
+      outline: 2px solid rgba(34,197,94,0.4);
+      border-color: rgba(34,197,94,0.6);
+    }
+    .inline-input-row {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .inline-input-row input {
+      flex: 1;
+    }
+    .inline-input-row button {
+      flex-shrink: 0;
+      align-self: stretch;
+    }
     .payment-fare-summary {
       border-top: 1px solid rgba(148,163,184,0.25);
       padding-top: 8px;
@@ -2607,11 +2652,42 @@
         </div>
       </div>
 
-      <div class="section-title" style="margin-top:4px;">Membership</div>
-      <div id="syncMembershipList" class="sync-membership-list"></div>
-      <div id="syncMembershipHint" class="small"></div>
+      <div id="reserveTimeSection" class="fare-section">
+        <label for="reserveTimeSelect" class="field-label">
+          Reserve pickup time (optional)
+        </label>
+        <select id="reserveTimeSelect" class="select-input">
+          <option value="asap">ASAP (no reservation)</option>
+        </select>
+        <p id="reserveTimeHint" class="small">
+          Scheduling a pickup adds a $5 reserve fee.
+        </p>
+      </div>
 
-      <div class="section-title">Tip your driver</div>
+      <div id="referralCodeSection" class="fare-section">
+        <label for="referralCodeInput" class="field-label">
+          Referral code (optional)
+        </label>
+        <div class="inline-input-row">
+          <input
+            id="referralCodeInput"
+            type="text"
+            class="text-input"
+            autocomplete="off"
+            placeholder="Enter referral code"
+          />
+          <button
+            id="applyReferralCodeButton"
+            type="button"
+            class="btn-secondary btn-small"
+          >
+            Apply
+          </button>
+        </div>
+        <p id="referralCodeMessage" class="small" aria-live="polite"></p>
+      </div>
+
+      <div class="section-title" style="margin-top:12px;">Tip your driver</div>
       <div id="syncTipOptions" class="tip-options">
         <button class="tip-button" type="button" data-tip="0">No tip</button>
         <button class="tip-button" type="button" data-tip="2">$2</button>
@@ -2632,6 +2708,10 @@
       <p id="syncTipMessage" class="sync-tip-note">
         Tips go directly to your driver. You can adjust after the ride.
       </p>
+
+      <div class="section-title" style="margin-top:18px;">Membership</div>
+      <div id="syncMembershipList" class="sync-membership-list"></div>
+      <div id="syncMembershipHint" class="small"></div>
 
       <div id="syncMembershipTermsContainer" style="display:none;">
         <div class="section-title" style="margin-top:10px;">Membership terms</div>
@@ -3266,6 +3346,13 @@
       MIN_RIDE_TIP_CENTS,
       Math.round(paymentConfig.maxTipHoldCents || 1200)
     );
+    const RESERVE_FEE_CENTS = 500;
+    const RESERVE_TIME_OPTIONS = [
+      { value: "asap", label: "ASAP (no reservation)", minutes: null },
+      { value: "15m", label: "In 15 minutes (+$5)", minutes: 15 },
+      { value: "30m", label: "In 30 minutes (+$5)", minutes: 30 },
+      { value: "60m", label: "In 1 hour (+$5)", minutes: 60 },
+    ];
 
     function normalizeStripeKeyForMode(key, mode) {
       const trimmed = typeof key === "string" ? key.trim() : "";
@@ -3400,6 +3487,10 @@
     const joinRideGroupFn = httpsCallable(functionsClient, "joinRideGroup");
     const cancelRideRequestFn = httpsCallable(functionsClient, "cancelRideRequest");
     const submitRideRatingFn = httpsCallable(functionsClient, "submitRideRating");
+    const validateReferralCodeForRideFn = httpsCallable(
+      functionsClient,
+      "validateReferralCodeForRide"
+    );
     const confirmRidePaymentIntentFn = httpsCallable(
       functionsClient,
       "confirmRidePaymentIntent"
@@ -3790,6 +3881,13 @@
     const syncTipOptions = document.getElementById("syncTipOptions");
     const syncTipCustomInput = document.getElementById("syncTipCustomInput");
     const syncTipMessage = document.getElementById("syncTipMessage");
+    const reserveTimeSection = document.getElementById("reserveTimeSection");
+    const reserveTimeSelect = document.getElementById("reserveTimeSelect");
+    const reserveTimeHint = document.getElementById("reserveTimeHint");
+    const referralCodeSection = document.getElementById("referralCodeSection");
+    const referralCodeInput = document.getElementById("referralCodeInput");
+    const applyReferralCodeButton = document.getElementById("applyReferralCodeButton");
+    const referralCodeMessage = document.getElementById("referralCodeMessage");
     const syncConfirmButton = document.getElementById("syncConfirmButton");
     const syncConfirmClose = document.getElementById("syncConfirmClose");
     const syncConfirmCancel = document.getElementById("syncConfirmCancel");
@@ -4045,6 +4143,17 @@
       authAmountCents: 0,
       pendingResolve: null,
       pendingReject: null,
+    };
+
+    const syncConfirmState = {
+      reserveFeeCents: 0,
+      reserveTimeIso: null,
+      reserveOption: "asap",
+      referral: {
+        code: null,
+        discountCents: 0,
+        description: "",
+      },
     };
 
     const rideTipCaptureState = {
@@ -7820,6 +7929,32 @@
       syncMembershipList.appendChild(fragment);
     }
 
+    function resetSyncConfirmState() {
+      syncConfirmState.reserveFeeCents = 0;
+      syncConfirmState.reserveTimeIso = null;
+      syncConfirmState.reserveOption = "asap";
+      syncConfirmState.referral = {
+        code: null,
+        discountCents: 0,
+        description: "",
+      };
+    }
+
+    function getBaseFareCents() {
+      const total = Number(lastRideMetrics?.fareBreakdown?.total || 0);
+      if (!Number.isFinite(total)) {
+        return 0;
+      }
+      return Math.max(0, Math.round(total * 100));
+    }
+
+    function getChargeableFareCents() {
+      let cents = getBaseFareCents();
+      cents += Math.max(0, Number(syncConfirmState.reserveFeeCents) || 0);
+      cents -= Math.max(0, Number(syncConfirmState.referral.discountCents) || 0);
+      return Math.max(0, cents);
+    }
+
     function updateSyncConfirmTotalDisplay() {
       if (!syncConfirmTotal) return;
       if (syncMembershipUpgradeMode) {
@@ -7829,9 +7964,146 @@
           : formatPlanPriceLabel(syncSelectedMembershipPlan);
         return;
       }
-      const total = Number(lastRideMetrics?.fareBreakdown?.total || 0);
-      syncConfirmTotal.textContent = total ? `$${total.toFixed(2)}` : "—";
+      const cents = getChargeableFareCents();
+      syncConfirmTotal.textContent = cents
+        ? formatCurrencyFromCents(cents, "usd")
+        : "—";
     }
+
+    function populateReserveTimeSelect() {
+      if (!reserveTimeSelect) return;
+      reserveTimeSelect.innerHTML = "";
+      RESERVE_TIME_OPTIONS.forEach((option) => {
+        const opt = document.createElement("option");
+        opt.value = option.value;
+        opt.textContent = option.label;
+        reserveTimeSelect.add(opt);
+      });
+      reserveTimeSelect.value = syncConfirmState.reserveOption || "asap";
+    }
+
+    function formatLocalPickupTimeLabel(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return "";
+      }
+      return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+
+    function updateReserveTimeHint() {
+      if (!reserveTimeHint) return;
+      if (syncConfirmState.reserveTimeIso) {
+        const date = new Date(syncConfirmState.reserveTimeIso);
+        const label = formatLocalPickupTimeLabel(date);
+        if (label) {
+          reserveTimeHint.textContent = `Scheduled pickup at ${label}. A $5 reserve fee applies.`;
+          return;
+        }
+      }
+      reserveTimeHint.textContent = "Scheduling a pickup adds a $5 reserve fee.";
+    }
+
+    function applyReserveTimeSelection(value) {
+      const normalized = value || "asap";
+      syncConfirmState.reserveOption = normalized;
+      if (normalized === "asap") {
+        syncConfirmState.reserveFeeCents = 0;
+        syncConfirmState.reserveTimeIso = null;
+      } else {
+        const option = RESERVE_TIME_OPTIONS.find((opt) => opt.value === normalized);
+        const minutes = option?.minutes ?? 0;
+        const now = new Date();
+        syncConfirmState.reserveFeeCents = minutes > 0 ? RESERVE_FEE_CENTS : 0;
+        syncConfirmState.reserveTimeIso =
+          minutes > 0 ? new Date(now.getTime() + minutes * 60000).toISOString() : null;
+      }
+      updateReserveTimeHint();
+      updateSyncConfirmTotalDisplay();
+    }
+
+    function handleReserveTimeSelectChange() {
+      if (!reserveTimeSelect) return;
+      applyReserveTimeSelection(reserveTimeSelect.value);
+    }
+
+    function updateReferralMessage(message) {
+      if (referralCodeMessage) {
+        referralCodeMessage.textContent = message || "";
+      }
+    }
+
+    function clearReferralState(message = "") {
+      syncConfirmState.referral = { code: null, discountCents: 0, description: "" };
+      updateReferralMessage(message);
+      updateSyncConfirmTotalDisplay();
+    }
+
+    function setReferralState({ code, discountCents, description }) {
+      syncConfirmState.referral = {
+        code: code || null,
+        discountCents: Math.max(0, Math.round(discountCents || 0)),
+        description: description || "",
+      };
+      updateReferralMessage(
+        syncConfirmState.referral.description ||
+          (syncConfirmState.referral.code ? "Referral code applied." : "")
+      );
+      updateSyncConfirmTotalDisplay();
+    }
+
+    function buildReferralFareContext() {
+      return {
+        plan: getProfilePlanKey(),
+        membershipStatus: currentUserProfile?.membershipStatus || "none",
+        pickupCovered: !!lastRideMetrics?.pickupCovered,
+        estimatedFareCents:
+          getBaseFareCents() + Math.max(0, syncConfirmState.reserveFeeCents || 0),
+        durationMinutes: lastRideMetrics?.durationMinutes
+          ? Number(lastRideMetrics.durationMinutes.toFixed(1))
+          : null,
+        distanceMeters: lastRideMetrics?.distanceMeters || null,
+        userId: auth?.currentUser?.uid || null,
+      };
+    }
+
+    async function handleReferralCodeApply() {
+      if (!applyReferralCodeButton || !referralCodeInput) return;
+      const code = referralCodeInput.value.trim();
+      if (!code) {
+        clearReferralState("Enter a code first.");
+        return;
+      }
+      updateReferralMessage("");
+      if (!validateReferralCodeForRideFn) {
+        updateReferralMessage("Referral validation is unavailable right now.");
+        return;
+      }
+      applyReferralCodeButton.disabled = true;
+      try {
+        const payload = {
+          code,
+          context: buildReferralFareContext(),
+        };
+        const response = await validateReferralCodeForRideFn(payload);
+        const result = response?.data || {};
+        if (!result.valid) {
+          clearReferralState(result.message || "Code is invalid or expired.");
+          return;
+        }
+        setReferralState({
+          code,
+          discountCents: result.discountCents || 0,
+          description: result.description || "",
+        });
+      } catch (err) {
+        console.error("validateReferralCodeForRide failed", err);
+        updateReferralMessage("Could not apply code. Try again.");
+      } finally {
+        applyReferralCodeButton.disabled = false;
+      }
+    }
+
+    populateReserveTimeSelect();
+    updateReserveTimeHint();
 
     function resolveSyncMemberDisplayName(profile = currentUserProfile) {
       if (profile) {
@@ -8085,7 +8357,11 @@
     }
 
     function openSyncConfirmOverlay(options = {}) {
-      const { preserveError = false, preserveSelection = false } = options;
+      const {
+        preserveError = false,
+        preserveSelection = false,
+        preserveFareExtras = false,
+      } = options;
       if (!syncConfirmOverlay) return false;
       if (!currentUserProfile) {
         profileError.textContent = "Load your RideSync profile before syncing a destination.";
@@ -8124,6 +8400,27 @@
           ? `$${total.toFixed(2)}`
           : "—";
       }
+      if (!preserveFareExtras) {
+        resetSyncConfirmState();
+        if (referralCodeInput) {
+          referralCodeInput.value = "";
+        }
+        updateReferralMessage("");
+      } else if (referralCodeInput && syncConfirmState.referral.code) {
+        referralCodeInput.value = syncConfirmState.referral.code;
+        updateReferralMessage(
+          syncConfirmState.referral.description ||
+            (syncConfirmState.referral.code ? "Referral code applied." : "")
+        );
+      } else if (referralCodeInput) {
+        referralCodeInput.value = "";
+      }
+      populateReserveTimeSelect();
+      if (reserveTimeSelect) {
+        reserveTimeSelect.value = syncConfirmState.reserveOption || "asap";
+      }
+      updateReserveTimeHint();
+      updateSyncConfirmTotalDisplay();
       initializeSyncMembershipSelection({ preserveSelection });
       const presetMatch = isPresetTipValue(
         ridePreauthState.selectedTipCents || MIN_RIDE_TIP_CENTS
@@ -8196,7 +8493,11 @@
             : err?.message || "Could not sync this ride.";
         }
         setSyncConfirmBusy(false);
-        openSyncConfirmOverlay({ preserveError: true, preserveSelection: true });
+        openSyncConfirmOverlay({
+          preserveError: true,
+          preserveSelection: true,
+          preserveFareExtras: true,
+        });
       }
     }
 
@@ -8206,6 +8507,32 @@
 
     if (syncTipCustomInput) {
       syncTipCustomInput.addEventListener("input", handleSyncTipCustomInput);
+    }
+
+    if (reserveTimeSelect) {
+      reserveTimeSelect.addEventListener("change", handleReserveTimeSelectChange);
+    }
+
+    if (applyReferralCodeButton) {
+      applyReferralCodeButton.addEventListener("click", handleReferralCodeApply);
+    }
+
+    if (referralCodeInput) {
+      referralCodeInput.addEventListener("input", () => {
+        const value = referralCodeInput.value.trim();
+        if (!value) {
+          clearReferralState("");
+          return;
+        }
+        if (
+          syncConfirmState.referral.code &&
+          value !== syncConfirmState.referral.code
+        ) {
+          clearReferralState("");
+          return;
+        }
+        updateReferralMessage("");
+      });
     }
 
     if (syncConfirmClose) {
@@ -10346,6 +10673,16 @@
       const fare = lastRideMetrics.fareBreakdown;
       const totalValue = Number.isFinite(fare.total) ? fare.total : 0;
       const totalCents = Math.max(0, Math.round(totalValue * 100));
+      const reserveFeeCents = Math.max(0, Math.round(syncConfirmState.reserveFeeCents || 0));
+      const reserveTimeIso = syncConfirmState.reserveTimeIso || null;
+      const referralCode =
+        (syncConfirmState.referral.code || "").trim() || null;
+      const referralDiscountCents = Math.max(
+        0,
+        Math.round(syncConfirmState.referral.discountCents || 0)
+      );
+      const referralDescription =
+        syncConfirmState.referral.description?.trim() || "";
 
       const cd = await checkCooldown(user.uid, plan);
       if (cd.allowed === false) {
@@ -10416,6 +10753,11 @@
         distanceMeters: lastRideMetrics.distanceMeters || null,
         fare,
         totalCents,
+          reserveFeeCents,
+          reserveTimeIso,
+          referralCode,
+          referralDiscountCents,
+          referralDescription: referralDescription || null,
         extraStops: extraStopsPayload,
         status
       };
