@@ -1089,7 +1089,9 @@
       getAuth,
       onAuthStateChanged,
       signInWithEmailAndPassword,
-      signOut
+      signOut,
+      setPersistence,
+      browserLocalPersistence
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
     import {
       getFirestore,
@@ -1207,6 +1209,11 @@
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+    } catch (err) {
+      console.warn("Failed to set driver auth persistence", err);
+    }
     const db = getFirestore(app);
     const messagingPublicVapidKey = messagingConfig.publicVapidKey || "";
     const messaging = (() => {
