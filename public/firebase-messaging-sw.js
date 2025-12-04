@@ -42,7 +42,7 @@ function loadAppConfig() {
         icon: "/icons/icon-192.png",
         badge: "/icons/icon-192.png",
         data: {
-          click_action: "https://ride-sync-nwa.web.app/driver.html"
+          click_action: "https://ridesync.live/driver.html" // Ensure driver pushes land on the Netlify domain
         }
       };
 
@@ -55,7 +55,7 @@ function loadAppConfig() {
 
 self.addEventListener("notificationclick", function (event) {
   event.notification.close();
-  const targetUrl = "https://ride-sync-nwa.web.app/driver.html";
+  const targetUrl = "https://ridesync.live/driver.html"; // Mirror the driver portal domain used above
 
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {

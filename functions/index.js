@@ -147,6 +147,10 @@ const DEFAULT_ADMIN_ALLOWED_ORIGINS = [
   "https://ride-sync-nwa.firebaseapp.com/admin",
   "https://ridesync.app",
   "https://www.ridesync.app",
+  "https://ridesync.live", // Netlify host (ridesync.live) needed so Firebase Auth callbacks accept the new domain
+  "https://ridesync.live/admin",
+  "https://www.ridesync.live",
+  "https://www.ridesync.live/admin",
   "http://localhost:5000",
   "http://localhost:4173",
   "http://localhost:5173",
@@ -2560,7 +2564,7 @@ exports.notifyDriverOnNewRide = functions.firestore
         },
         data: {
           rideId: rideId,
-          click_action: "https://ride-sync-nwa.web.app/driver.html"
+          click_action: "https://ridesync.live/driver.html" // Push drivers to the Netlify-hosted portal
         },
         tokens
       };
@@ -3026,6 +3030,8 @@ exports.applyMembershipPlan = functions
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://ride-sync-nwa.web.app",
   "https://ride-sync-nwa.firebaseapp.com",
+  "https://ridesync.live", // Netlify production host so callable auth endpoints trust ridesync.live
+  "https://www.ridesync.live",
   "https://app.ridesync.com",
   "http://localhost:5000",
   "http://127.0.0.1:5000",
@@ -3812,7 +3818,7 @@ function resolveCheckoutAmountCents(payload = {}) {
 const DEFAULT_CHECKOUT_BASE_URL =
   process.env.CHECKOUT_BASE_URL ||
   runtimeConfig?.app?.checkout_base_url ||
-  "https://ride-sync-nwa.web.app";
+  "https://ridesync.live"; // Netlify production domain now drives checkout redirects
 
 function sanitizeRedirectBaseUrl(value) {
   if (typeof value !== "string") {
@@ -3860,7 +3866,7 @@ function resolveCheckoutRedirectBaseUrl({
       return sanitized;
     }
   }
-  return "https://ride-sync-nwa.web.app";
+  return "https://ridesync.live"; // Fallback to Netlify host if no origin provided
 }
 
 async function createRideCheckoutSessionInternal({
