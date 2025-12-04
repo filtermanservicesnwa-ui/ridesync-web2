@@ -43,6 +43,47 @@ function formatTimestamp(ms) {
   return new Date(ms).toLocaleString();
 }
 
+const HTML_ESCAPE_LOOKUP = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+const HTML_ESCAPE_REGEX = /[&<>"']/g;
+
+function escapeHtml(value) {
+  const str = value == null ? "" : String(value);
+  return str.replace(HTML_ESCAPE_REGEX, (char) => HTML_ESCAPE_LOOKUP[char] || char);
+}
+
+function safeDisplay(value, fallback = "—") {
+  const base = value == null ? "" : String(value);
+  if (!base.trim().length) {
+    return escapeHtml(fallback);
+  }
+  return escapeHtml(base);
+}
+
+function sanitizeHttpUrl(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const parsed = new URL(trimmed, window.location.origin);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.toString();
+    }
+  } catch (err) {
+    return null;
+  }
+  return null;
+}
+
 async function loadConfig() {
   const res = await fetch(APP_CONFIG_URL, { cache: "no-store" });
   if (!res.ok) {
@@ -246,17 +287,22 @@ function renderActivityFeed() {
   }
   activityFeedEl.innerHTML = activity
     .map((event) => {
-      const time = formatTimestamp(event.time);
+      const time = escapeHtml(formatTimestamp(event.time));
+      const name = safeDisplay(event.name, "Unknown");
+      const email = safeDisplay(event.email, "no email");
       if (event.type === "user_signup") {
-        return `<li><strong>${time}</strong> · New user signup: ${event.name || "Unknown"} (${event.email || "no email"})</li>`;
+        return `<li><strong>${time}</strong> · New user signup: ${name} (${email})</li>`;
       }
       if (event.type === "membership_signup") {
-        return `<li><strong>${time}</strong> · Membership: ${event.plan || "plan"} – ${event.email || "no email"}</li>`;
+        const plan = safeDisplay(event.plan, "plan");
+        return `<li><strong>${time}</strong> · Membership: ${plan} – ${email}</li>`;
       }
       if (event.type === "membership_request") {
-        return `<li><strong>${time}</strong> · U of A request (${event.status || "pending"}): ${event.name || "Unknown"} (${event.email || "no email"})</li>`;
+        const status = safeDisplay(event.status, "pending");
+        return `<li><strong>${time}</strong> · U of A request (${status}): ${name} (${email})</li>`;
       }
-      return `<li><strong>${time}</strong> · ${event.type}</li>`;
+      const type = safeDisplay(event.type, "event");
+      return `<li><strong>${time}</strong> · ${type}</li>`;
     })
     .join("");
 }
@@ -271,20 +317,25 @@ function renderPendingTable() {
   }
   pendingBodyEl.innerHTML = pending
     .map((request) => {
-      const requestedAt = formatTimestamp(request.requestedAt);
-      const studentIdLink = request.studentIdImageUrl
-        ? `<a href="${request.studentIdImageUrl}" target="_blank" rel="noreferrer">View ID</a>`
+      const requestedAt = escapeHtml(formatTimestamp(request.requestedAt));
+      const studentIdUrl = sanitizeHttpUrl(request.studentIdImageUrl);
+      const studentIdLink = studentIdUrl
+        ? `<a href="${escapeHtml(studentIdUrl)}" target="_blank" rel="noreferrer noopener">View ID</a>`
         : "—";
+      const name = safeDisplay(request.name, "Unknown");
+      const email = safeDisplay(request.email, "—");
+      const plan = safeDisplay(request.plan || request.planKey, "uofa_unlimited");
+      const requestId = escapeHtml(request.id || request.requestId || "");
       return `<tr>
-        <td>${request.name || "Unknown"}</td>
-        <td>${request.email || "—"}</td>
-        <td>${request.plan || "uofa_unlimited"}</td>
+        <td>${name}</td>
+        <td>${email}</td>
+        <td>${plan}</td>
         <td>${studentIdLink}</td>
         <td>${requestedAt}</td>
         <td>
           <div class="admin-action-row">
-            <button class="btn-success" data-approve="${request.id}">Approve</button>
-            <button class="btn-danger" data-reject="${request.id}">Reject</button>
+            <button class="btn-success" data-approve="${requestId}">Approve</button>
+            <button class="btn-danger" data-reject="${requestId}">Reject</button>
           </div>
         </td>
       </tr>`;
@@ -300,17 +351,24 @@ function renderUserResults(users = []) {
   }
   userDetailsEl.innerHTML = users
     .map((user) => {
-      const membershipLine = `${user.membershipType || "basic"} (${user.membershipStatus || "none"})`;
-      const expires = user.membershipExpiresAt ? formatTimestamp(user.membershipExpiresAt) : "—";
+      const membershipLine = escapeHtml(
+        `${user.membershipType || "basic"} (${user.membershipStatus || "none"})`
+      );
+      const expires = user.membershipExpiresAt
+        ? escapeHtml(formatTimestamp(user.membershipExpiresAt))
+        : "—";
+      const name = safeDisplay(user.name, "Unknown");
+      const email = safeDisplay(user.email, "—");
+      const userIdAttr = escapeHtml(user.userId || "");
       return `<div class="admin-user-card">
-        <div><strong>Name</strong><br/>${user.name || "Unknown"}</div>
-        <div><strong>Email</strong><br/>${user.email || "—"}</div>
+        <div><strong>Name</strong><br/>${name}</div>
+        <div><strong>Email</strong><br/>${email}</div>
         <div><strong>Membership</strong><br/>${membershipLine}</div>
         <div><strong>Expires</strong><br/>${expires}</div>
         <div class="admin-action-row">
-          <button class="btn-secondary" data-plan="basic" data-user="${user.userId}">Set Basic</button>
-          <button class="btn-secondary" data-plan="uofa_unlimited" data-user="${user.userId}">Set U of A Unlimited</button>
-          <button class="btn-secondary" data-plan="nwa_unlimited" data-user="${user.userId}">Set NWA Work Pass</button>
+          <button class="btn-secondary" data-plan="basic" data-user="${userIdAttr}">Set Basic</button>
+          <button class="btn-secondary" data-plan="uofa_unlimited" data-user="${userIdAttr}">Set U of A Unlimited</button>
+          <button class="btn-secondary" data-plan="nwa_unlimited" data-user="${userIdAttr}">Set NWA Work Pass</button>
         </div>
       </div>`;
     })
