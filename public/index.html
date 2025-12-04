@@ -3672,12 +3672,12 @@
         const focusWasInside = mainLandingPage.contains(document.activeElement);
         mainLandingPage.classList.remove("active");
         mainLandingPage.setAttribute("aria-hidden", "true");
-        mainLandingPage.setAttribute("inert", "");
         if (focusWasInside) {
           landingSyncRiderButton?.blur();
           landingSyncDriverButton?.blur();
           emailEl?.focus?.();
         }
+        mainLandingPage.setAttribute("inert", "");
       }
       if (appBody && appBody.classList.contains("landing-active")) {
         appBody.classList.remove("landing-active");
