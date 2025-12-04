@@ -2804,7 +2804,9 @@
       createUserWithEmailAndPassword,
       signOut,
       setPersistence,
-      browserLocalPersistence
+      browserLocalPersistence,
+      browserSessionPersistence,
+      indexedDBLocalPersistence
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
     import {
       getFirestore,
@@ -2929,6 +2931,25 @@
       return stripeJsPromise;
     }
 
+    async function ensureAuthPersistence(authInstance) {
+      if (!authInstance) return null;
+      const strategies = [
+        { label: "local", value: browserLocalPersistence },
+        { label: "indexedDb", value: indexedDBLocalPersistence },
+        { label: "session", value: browserSessionPersistence },
+      ];
+      for (const strategy of strategies) {
+        if (!strategy.value) continue;
+        try {
+          await setPersistence(authInstance, strategy.value);
+          return strategy.label;
+        } catch (err) {
+          console.warn(`Failed to set auth persistence (${strategy.label})`, err);
+        }
+      }
+      return null;
+    }
+
     const APP_CONFIG = await loadAppConfig();
     const firebaseConfig =
       APP_CONFIG.firebaseConfig ||
@@ -2949,10 +2970,9 @@
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
-    try {
-      await setPersistence(auth, browserLocalPersistence);
-    } catch (err) {
-      console.warn("Failed to set auth persistence (rider app)", err);
+    const persistenceStrategy = await ensureAuthPersistence(auth);
+    if (!persistenceStrategy) {
+      console.warn("Auth persistence fallback failed; using Firebase default.");
     }
     const db = getFirestore(app);
     const storage = getStorage(app);
@@ -3956,6 +3976,102 @@
     let cooldownOverlayUnlockAt = null;
     let cooldownOverlayTimerId = null;
 
+    const ACTIVE_RIDE_STORAGE_KEY = "ridesync.activeRide.v1";
+    const TERMINAL_RIDE_STATUSES = new Set([
+      "completed",
+      "canceled",
+      "canceled_by_driver",
+      "canceled_by_rider",
+      "driver_declined",
+      "expired",
+      "payment_failed",
+      "payment_canceled",
+      "ride_timed_out",
+      "no_show",
+      "archived"
+    ]);
+
+    function normalizeRideStatusForProtection(value) {
+      if (typeof value !== "string") return "";
+      return value.trim().toLowerCase();
+    }
+
+    function persistProtectedRideState(state = {}) {
+      if (!state?.rideId || !state?.userId) {
+        return;
+      }
+      const payload = {
+        rideId: state.rideId,
+        userId: state.userId,
+        status: state.status || null,
+        toDestination: state.toDestination || null,
+        isGroupRide: !!state.isGroupRide,
+        poolType: state.poolType || null,
+        cachedAt: Date.now()
+      };
+      try {
+        if (window?.localStorage) {
+          window.localStorage.setItem(
+            ACTIVE_RIDE_STORAGE_KEY,
+            JSON.stringify(payload)
+          );
+        }
+      } catch (err) {
+        console.warn("Ride protection persist failed", err);
+      }
+    }
+
+    function loadProtectedRideState() {
+      try {
+        if (!window?.localStorage) return null;
+        const raw = window.localStorage.getItem(ACTIVE_RIDE_STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch (err) {
+        console.warn("Ride protection load failed", err);
+        return null;
+      }
+    }
+
+    function clearProtectedRideState() {
+      try {
+        if (window?.localStorage) {
+          window.localStorage.removeItem(ACTIVE_RIDE_STORAGE_KEY);
+        }
+      } catch (err) {
+        console.warn("Ride protection clear failed", err);
+      }
+    }
+
+    function rememberRideProtectionState(rideId, rideData = {}) {
+      if (!rideId) return;
+      const normalizedStatus = normalizeRideStatusForProtection(rideData.status);
+      if (normalizedStatus && TERMINAL_RIDE_STATUSES.has(normalizedStatus)) {
+        clearProtectedRideState();
+        return;
+      }
+      const userId = rideData.userId || auth?.currentUser?.uid || null;
+      if (!userId) return;
+      const destinationLabel =
+        rideData.toDestination ||
+        rideData.destination ||
+        rideData.destinationLabel ||
+        rideData.fare?.membershipLabel ||
+        null;
+      const maxRiders = Number(
+        rideData.maxRiders ?? rideData.currentRiderCount ?? 1
+      );
+      const protectionPayload = {
+        rideId,
+        userId,
+        status: rideData.status || null,
+        toDestination: destinationLabel,
+        isGroupRide: rideData.isGroupRide === true || maxRiders > 1,
+        poolType: rideData.poolType || null
+      };
+      persistProtectedRideState(protectionPayload);
+    }
+
     const riderCancelableStatuses = new Set([
       "pending_driver",
       "pooled_pending_driver",
@@ -4038,6 +4154,7 @@
         updateCancelButtonVisibility();
         closeRideFareOverlay(true);
         resetFinalTipUi();
+        clearProtectedRideState();
       }
 
       function resetJoinModeUi() {
@@ -5458,23 +5575,17 @@
     logoutButton.addEventListener("click", async () => {
       stopDriverAvailabilityWatchers();
       await signOut(auth);
-      currentRideId = null;
-      currentRideStatus = null;
+      clearCurrentRideState();
       joinMode = false;
       joinTargetRide = null;
-      if (currentRideWatcher) {
-        currentRideWatcher();
-        currentRideWatcher = null;
-      }
-      if (groupOccupancyUnsub) {
-        groupOccupancyUnsub();
-        groupOccupancyUnsub = null;
-      }
-      hideGroupQr();
       clearPoolGroupUI();
       resetTripPlanner();
-      joinBanner.style.display = "none";
-      ridersSection.style.display = "block";
+      if (joinBanner) {
+        joinBanner.style.display = "none";
+      }
+      if (ridersSection) {
+        ridersSection.style.display = "block";
+      }
       showAuthView();
       updateCancelButtonVisibility();
     });
@@ -5735,6 +5846,7 @@
 
     onAuthStateChanged(auth, async (user) => {
       if (!user) {
+        clearCurrentRideState();
         stopDriverAvailabilityWatchers();
         stopRiderPresenceHeartbeat(true);
         currentUserProfile = null;
@@ -5761,6 +5873,7 @@
       subscribeToDriverAvailability();
       initMapOnce();
       startDriverAvailabilityWatchers();
+      await resumeActiveRideSession(user);
       let pendingOverlay = false;
       if (hasPendingMembershipCheckoutReturn()) {
         pendingOverlay = true;
@@ -7218,6 +7331,7 @@
         const data = snap.data();
         currentRideStatus = data.status || null;
         updateCancelButtonVisibility();
+        rememberRideProtectionState(rideId, data);
         handleRideSnapshot(rideId, data);
       });
     }
@@ -9948,6 +10062,11 @@
 
     async function activateRideAfterCreation(rideId, ridePayload) {
       currentRideId = rideId;
+      rememberRideProtectionState(rideId, {
+        ...(ridePayload || {}),
+        status: ridePayload?.status || "pending",
+        userId: auth?.currentUser?.uid || ridePayload?.userId || null
+      });
       startRideStatusWatcher(rideId);
       updateCancelButtonVisibility();
       if (ridePayload?.isGroupRide) {
@@ -9967,6 +10086,61 @@
       setOverlayCopy("Syncing your ride", overlaySubtitle);
       setRiderOverlayState(RIDER_STATES.SEARCHING);
       showRideView();
+    }
+
+    async function resumeActiveRideSession(user) {
+      if (!user || currentRideId) {
+        return false;
+      }
+      const cachedState = loadProtectedRideState();
+      if (cachedState?.userId && cachedState.userId !== user.uid) {
+        clearProtectedRideState();
+      }
+      if (
+        cachedState?.rideId &&
+        cachedState.userId === user.uid &&
+        !TERMINAL_RIDE_STATUSES.has(
+          normalizeRideStatusForProtection(cachedState.status)
+        )
+      ) {
+        await activateRideAfterCreation(cachedState.rideId, cachedState);
+        return true;
+      }
+      const latestRide = await lookupLatestActiveRide(user.uid);
+      if (latestRide) {
+        rememberRideProtectionState(latestRide.id, latestRide);
+        await activateRideAfterCreation(latestRide.id, latestRide);
+        return true;
+      }
+      clearProtectedRideState();
+      return false;
+    }
+
+    async function lookupLatestActiveRide(userId) {
+      if (!userId) return null;
+      try {
+        const ridesRef = collection(db, "rideRequests");
+        const recentQuery = query(
+          ridesRef,
+          where("userId", "==", userId),
+          orderBy("createdAt", "desc"),
+          limit(5)
+        );
+        const snap = await getDocs(recentQuery);
+        let activeRide = null;
+        snap.forEach((docSnap) => {
+          if (activeRide) return;
+          const data = docSnap.data();
+          const normalizedStatus = normalizeRideStatusForProtection(data.status);
+          if (!TERMINAL_RIDE_STATUSES.has(normalizedStatus)) {
+            activeRide = { id: docSnap.id, ...data };
+          }
+        });
+        return activeRide;
+      } catch (err) {
+        console.warn("Active ride lookup failed", err);
+        return null;
+      }
     }
 
     async function handlePaymentSuccess(paymentIntent) {
@@ -10554,6 +10728,15 @@
           joinTargetRide?.toAddress ||
           "";
         currentRideId = rideId;
+        rememberRideProtectionState(rideId, {
+          status: "pool_searching",
+          toDestination: joinDestination,
+          isGroupRide:
+            joinTargetRide?.isGroupRide === true ||
+            Number(joinTargetRide?.maxRiders || 1) > 1,
+          poolType: joinTargetRide?.poolType || null,
+          userId: user.uid
+        });
         joinMode = false;
         joinTargetRide = null;
         startRideStatusWatcher(rideId);
