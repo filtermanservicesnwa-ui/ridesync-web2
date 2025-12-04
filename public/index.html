@@ -4150,6 +4150,7 @@
       "no_show",
       "archived"
     ]);
+    const MAX_RIDE_RESUME_AGE_MINUTES = 360;
 
     function normalizeRideStatusForProtection(value) {
       if (typeof value !== "string") return "";
@@ -4205,8 +4206,7 @@
 
     function rememberRideProtectionState(rideId, rideData = {}) {
       if (!rideId) return;
-      const normalizedStatus = normalizeRideStatusForProtection(rideData.status);
-      if (normalizedStatus && TERMINAL_RIDE_STATUSES.has(normalizedStatus)) {
+      if (!isRideResumeEligible(rideData)) {
         clearProtectedRideState();
         return;
       }
@@ -6957,6 +6957,39 @@
         return null;
       }
       return null;
+    }
+
+    function deriveRideRecencyTimestamp(ride = {}) {
+      const recencyCandidates = [
+        ride.updatedAt,
+        ride.updated_at,
+        ride.createdAt,
+        ride.created_at,
+        ride.cachedAt,
+        ride.completedAt,
+        ride.dropoffCompletedAt,
+        ride.dropoff_code_verified_at,
+      ];
+      for (const field of recencyCandidates) {
+        const millis = parseTimestampMillis(field);
+        if (typeof millis === "number") {
+          return millis;
+        }
+      }
+      return null;
+    }
+
+    function isRideResumeEligible(ride = {}) {
+      const normalizedStatus = normalizeRideStatusForProtection(ride.status);
+      if (!normalizedStatus || TERMINAL_RIDE_STATUSES.has(normalizedStatus)) {
+        return false;
+      }
+      const rideTimestamp = deriveRideRecencyTimestamp(ride);
+      if (rideTimestamp == null) {
+        return true;
+      }
+      const ageMinutes = (Date.now() - rideTimestamp) / 60000;
+      return ageMinutes <= MAX_RIDE_RESUME_AGE_MINUTES;
     }
 
     function resolveRidePickupEtaSeconds(ride) {
@@ -10556,6 +10589,27 @@
       showRideView();
     }
 
+    async function fetchActiveRideById(rideId) {
+      if (!rideId) {
+        return null;
+      }
+      try {
+        const rideRef = doc(db, "rideRequests", rideId);
+        const snap = await getDoc(rideRef);
+        if (!snap.exists()) {
+          return null;
+        }
+        const data = snap.data() || {};
+        if (!isRideResumeEligible(data)) {
+          return null;
+        }
+        return { id: snap.id, ...data };
+      } catch (err) {
+        console.warn("Active ride lookup by id failed", err);
+        return null;
+      }
+    }
+
     async function resumeActiveRideSession(user) {
       if (!user || currentRideId) {
         return false;
@@ -10567,12 +10621,15 @@
       if (
         cachedState?.rideId &&
         cachedState.userId === user.uid &&
-        !TERMINAL_RIDE_STATUSES.has(
-          normalizeRideStatusForProtection(cachedState.status)
-        )
+        isRideResumeEligible(cachedState)
       ) {
-        await activateRideAfterCreation(cachedState.rideId, cachedState);
-        return true;
+        const confirmedRide = await fetchActiveRideById(cachedState.rideId);
+        if (confirmedRide) {
+          rememberRideProtectionState(confirmedRide.id, confirmedRide);
+          await activateRideAfterCreation(confirmedRide.id, confirmedRide);
+          return true;
+        }
+        clearProtectedRideState();
       }
       const latestRide = await lookupLatestActiveRide(user.uid);
       if (latestRide) {
@@ -10599,8 +10656,7 @@
         snap.forEach((docSnap) => {
           if (activeRide) return;
           const data = docSnap.data();
-          const normalizedStatus = normalizeRideStatusForProtection(data.status);
-          if (!TERMINAL_RIDE_STATUSES.has(normalizedStatus)) {
+          if (isRideResumeEligible(data)) {
             activeRide = { id: docSnap.id, ...data };
           }
         });
