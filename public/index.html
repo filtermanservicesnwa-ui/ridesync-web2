@@ -17,6 +17,17 @@
   <!-- QR code library -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 
+  <script type="importmap">
+    {
+      "imports": {
+        "@/lib/firebase": "/src/lib/firebase.ts",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js"
+      }
+    }
+  </script>
+
   <style>
     * { box-sizing: border-box; }
     :root {
@@ -2963,9 +2974,8 @@
   </footer>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import { auth, db } from "@/lib/firebase";
     import {
-      getAuth,
       onAuthStateChanged,
       signInWithEmailAndPassword,
       createUserWithEmailAndPassword,
@@ -2976,7 +2986,6 @@
       indexedDBLocalPersistence
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
     import {
-      getFirestore,
       doc,
       getDoc,
       collection,
@@ -2999,6 +3008,8 @@
       getFunctions,
       httpsCallable
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-functions.js";
+
+    const FIREBASE_PROJECT_ID = "ride-sync-nwa";
 
     async function loadAppConfig() {
       if (window.__rideSyncConfigPromise) {
@@ -3118,9 +3129,6 @@
     }
 
     const APP_CONFIG = await loadAppConfig();
-    const firebaseConfig =
-      APP_CONFIG.firebaseConfig ||
-      {}; // Verified this still targets ride-sync-nwa so Netlify uses the original Firebase project
     const supportConfig = APP_CONFIG.support || {};
     const geoConfig = APP_CONFIG.geo || {};
     const ridePolicyConfig = APP_CONFIG.ridePolicy || {};
@@ -3135,16 +3143,13 @@
         : ["places"];
     let googleMapsLoadFailed = false;
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
     const persistenceStrategy = await ensureAuthPersistence(auth);
     if (!persistenceStrategy) {
       console.warn("Auth persistence fallback failed; using Firebase default.");
     }
-    const db = getFirestore(app);
-    const storage = getStorage(app);
+    const storage = getStorage(auth.app);
     const FUNCTIONS_REGION = "us-central1";
-    const functionsClient = getFunctions(app, FUNCTIONS_REGION);
+    const functionsClient = getFunctions(auth.app, FUNCTIONS_REGION);
     const stripeConfig = APP_CONFIG.stripe || {};
     const fareConfig = APP_CONFIG.fares || {};
     const paymentConfig = APP_CONFIG.payments || {};
@@ -10684,9 +10689,9 @@
       if (defaultRelative) {
         endpoints.push(defaultRelative);
       }
-      if (firebaseConfig?.projectId) {
+      if (FIREBASE_PROJECT_ID) {
         const functionUrl = normalizeCheckoutEndpoint(
-          `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/createRideCheckoutSession`
+          `https://us-central1-${FIREBASE_PROJECT_ID}.cloudfunctions.net/createRideCheckoutSession`
         );
         if (functionUrl) {
           endpoints.push(functionUrl);
@@ -10719,9 +10724,9 @@
       if (defaultRelative) {
         endpoints.push(defaultRelative);
       }
-      if (firebaseConfig?.projectId) {
+      if (FIREBASE_PROJECT_ID) {
         const functionUrl = normalizeCheckoutEndpoint(
-          `https://us-central1-${firebaseConfig.projectId}.cloudfunctions.net/finalizeMembershipCheckoutSession`
+          `https://us-central1-${FIREBASE_PROJECT_ID}.cloudfunctions.net/finalizeMembershipCheckoutSession`
         );
         if (functionUrl) {
           endpoints.push(functionUrl);

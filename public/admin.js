@@ -1,6 +1,7 @@
 const APP_CONFIG_URL = "/app-config.json";
 const LOCAL_STORAGE_TOKEN_KEY = "ridesyncAdminToken";
 const REFRESH_INTERVAL_MS = 60_000;
+const FIREBASE_PROJECT_ID = "ride-sync-nwa";
 
 const adminState = {
   token: null,
@@ -104,9 +105,8 @@ function resolveEndpoint(overrides, key, fallbackBase, path) {
 
 function buildAdminEndpoints(config = {}) {
   const functionsConfig = config.functions || {};
-  const projectId = config.firebaseConfig?.projectId || null;
-  const defaultBase = projectId
-    ? `https://us-central1-${projectId}.cloudfunctions.net`
+  const defaultBase = FIREBASE_PROJECT_ID
+    ? `https://us-central1-${FIREBASE_PROJECT_ID}.cloudfunctions.net`
     : "";
   return {
     login: resolveEndpoint(functionsConfig, "adminLoginUrl", defaultBase, "adminLogin"),

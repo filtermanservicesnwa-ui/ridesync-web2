@@ -8,6 +8,17 @@
   <!-- QR code library for boarding / dropoff codes -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 
+  <script type="importmap">
+    {
+      "imports": {
+        "@/lib/firebase": "/src/lib/firebase.ts",
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js"
+      }
+    }
+  </script>
+
   <style>
     * { box-sizing: border-box; }
     body {
@@ -1087,9 +1098,8 @@
   </footer>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+    import { auth, db } from "@/lib/firebase";
     import {
-      getAuth,
       onAuthStateChanged,
       signInWithEmailAndPassword,
       signOut,
@@ -1097,7 +1107,6 @@
       browserLocalPersistence
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
     import {
-      getFirestore,
       collection,
       doc,
       getDoc,
@@ -1183,9 +1192,6 @@
     }
 
     const APP_CONFIG = await loadAppConfig();
-    const firebaseConfig =
-      APP_CONFIG.firebaseConfig ||
-      {}; // Mirrors rider config so driver-facing Netlify build hits the same ride-sync-nwa Firebase project
     const geoConfig = APP_CONFIG.geo || {};
     const placeholderConfig = APP_CONFIG.placeholders || {};
     const supportConfig = APP_CONFIG.support || {};
@@ -1212,18 +1218,15 @@
     const PROFILE_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
     const PROFILE_PHOTO_MAX_DIMENSION = 512;
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
     try {
       await setPersistence(auth, browserLocalPersistence);
     } catch (err) {
       console.warn("Failed to set driver auth persistence", err);
     }
-    const db = getFirestore(app);
     const messagingPublicVapidKey = messagingConfig.publicVapidKey || "";
     const messaging = (() => {
       try {
-        return getMessaging(app);
+        return getMessaging(auth.app);
       } catch (err) {
         console.warn("Messaging init failed", err);
         return null;
