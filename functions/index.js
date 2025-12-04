@@ -820,6 +820,10 @@ const DEFAULT_FARE_CONSTANTS = {
   UNLIMITED_PROCESSING_FEE_RATE: 0.04,
 };
 
+const FARE_OVERRIDES_ENABLED =
+  process.env.FARE_OVERRIDES_ENABLED === "true" ||
+  runtimeConfig?.fares?.allow_overrides === true;
+
 const MIN_ESTIMATED_DURATION_MINUTES = 3;
 const MAX_ALLOWED_ESTIMATED_MINUTES = 600;
 const MAX_ASSUMED_SPEED_MPH = 38;
@@ -841,6 +845,9 @@ function resolveFareConstants() {
   const faresConfig = runtimeConfig?.fares || {};
   const env = process.env || {};
   const read = (envKey, configKey, fallback) => {
+    if (!FARE_OVERRIDES_ENABLED) {
+      return fallback;
+    }
     const envValue = coercePositiveNumber(env[envKey]);
     if (envValue !== null) {
       return envValue;
