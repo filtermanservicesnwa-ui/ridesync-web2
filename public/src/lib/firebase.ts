@@ -3,12 +3,12 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyA4BPyi7sDZtcsOZM-FDzl2DQl61WtUcejo",
+  apiKey: "AIzaSyA4BPyi7sDZtcsOZM-FDzl2DQ61wUTcejo",
   authDomain: "ride-sync-nwa.firebaseapp.com",
   projectId: "ride-sync-nwa",
   storageBucket: "ride-sync-nwa.firebasestorage.app",
   messagingSenderId: "221636626778",
-  appId: "1:221636626778:web:fe1afd1f95a1674789b6b3"
+  appId: "1:221636626778:web:fe1afd1f95a16747898b63"
 };
 
 // Ensure Firebase initializes ONLY once
