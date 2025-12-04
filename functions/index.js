@@ -2053,7 +2053,7 @@ function buildRidePayload(rideInput = {}, context = {}) {
   payload.status = normalizeRideStatus(payload.status, payload.poolType);
   payload.paymentMethod = "stripe";
   payload.paymentStatus =
-    context.amountCents > 0 ? "preauthorized" : "included";
+    context.amountCents > 0 ? "pending_payment" : "included";
   payload.stripeAmountCents = context.amountCents || 0;
   payload.stripeAmount = (context.amountCents || 0) / 100;
   payload.stripeCurrency = "usd";
@@ -2512,20 +2512,32 @@ function ensurePinUpdates(ride = {}, overrides = {}) {
 
 exports.notifyDriverOnNewRide = functions.firestore
   .document("rideRequests/{rideId}")
-  .onCreate(async (snap, context) => {
-    const ride = snap.data();
+  .onWrite(async (change, context) => {
+    if (!change.after.exists) {
+      return null;
+    }
+    const ride = change.after.data() || {};
     const rideId = context.params.rideId;
 
     try {
       const status = ride.status || "pending";
-      // Only notify on fresh rides that need a driver
       const notifyStatuses = ["pending_driver", "pooled_pending_driver", "pending"];
       if (!notifyStatuses.includes(status)) {
-        console.log(`[notifyDriverOnNewRide] Ride ${rideId} status=${status}, skipping.`);
         return null;
       }
 
-      // Find online drivers with FCM tokens (for now there's just you)
+      const paymentStatus = (ride.paymentStatus || "").toLowerCase();
+      const paymentReadyStatuses = new Set(["paid", "included"]);
+      if (!paymentReadyStatuses.has(paymentStatus)) {
+        return null;
+      }
+
+      const alreadyNotified =
+        ride.driverNotificationStatus === "sent" || Boolean(ride.driverNotifiedAt);
+      if (alreadyNotified) {
+        return null;
+      }
+
       const driversSnap = await db
         .collection("drivers")
         .where("isOnline", "==", true)
@@ -2575,7 +2587,7 @@ exports.notifyDriverOnNewRide = functions.firestore
         },
         data: {
           rideId: rideId,
-          click_action: "https://ridesync.live/driver.html" // Push drivers to the Netlify-hosted portal
+          click_action: "https://ridesync.live/driver.html"
         },
         tokens
       };
@@ -2614,6 +2626,11 @@ exports.notifyDriverOnNewRide = functions.firestore
           `[notifyDriverOnNewRide] Cleaned up ${cleanupPromises.length} invalid driver tokens.`
         );
       }
+
+      await change.after.ref.update({
+        driverNotificationStatus: "sent",
+        driverNotifiedAt: FieldValue.serverTimestamp(),
+      });
 
       return null;
     } catch (err) {
@@ -4289,10 +4306,13 @@ exports.createRidePaymentIntent = functions
         const existingIntent = await stripeClient.paymentIntents.retrieve(
           existingIntentId
         );
-        if (existingIntent && existingIntent.status === "requires_capture") {
+        if (
+          existingIntent &&
+          ["requires_capture", "processing", "succeeded"].includes(existingIntent.status)
+        ) {
           throw new functions.https.HttpsError(
             "failed-precondition",
-            "Ride payment has already been preauthorized."
+            "Ride payment has already been processed."
           );
         }
         if (existingIntent && existingIntent.status !== "canceled") {
@@ -4314,7 +4334,6 @@ exports.createRidePaymentIntent = functions
       const paymentIntent = await stripeClient.paymentIntents.create({
         amount: authAmountCents,
         currency: "usd",
-        capture_method: "manual",
         automatic_payment_methods: { enabled: true },
         metadata: {
           rideId,
@@ -4323,13 +4342,13 @@ exports.createRidePaymentIntent = functions
           maxTipAmountCents: initialTipAmountCents,
           initialTipAmountCents,
           tipSelectionLimitCents: maxTipAmountCents,
-          purpose: "ride_manual_capture",
+          purpose: "ride_upfront_charge",
         },
       });
 
       await rideRef.update({
         stripePaymentIntentId: paymentIntent.id,
-        paymentStatus: "preauth_pending",
+        paymentStatus: "pending_payment",
         paymentAuthAmountCents: authAmountCents,
         fareBaseAmountCents: fareAmountCents,
         maxTipAmountCents: initialTipAmountCents,
@@ -5105,15 +5124,8 @@ function resolveRidePaymentStatus(membershipType, amountCents) {
       paymentMethod: "included",
     };
   }
-  const normalizedPlan = normalizeMembershipPlan(membershipType || "basic");
-  if (normalizedPlan === "basic") {
-    return {
-      paymentStatus: "pending",
-      paymentMethod: "stripe",
-    };
-  }
   return {
-    paymentStatus: "preauthorized",
+    paymentStatus: "pending_payment",
     paymentMethod: "stripe",
   };
 }
@@ -5726,8 +5738,8 @@ exports.confirmRidePaymentIntent = functions
         "You can only update payments for your own rides."
       );
     }
-    const stripeClient = getStripeClient();
-    const intent = await stripeClient.paymentIntents.retrieve(paymentIntentId);
+  const stripeClient = getStripeClient();
+  let intent = await stripeClient.paymentIntents.retrieve(paymentIntentId);
     const metadataRideId = intent.metadata?.rideId;
     const metadataUserId = intent.metadata?.userId;
     if (!metadataRideId) {
@@ -5757,47 +5769,13 @@ exports.confirmRidePaymentIntent = functions
     const metadataFare = Number(intent.metadata?.fareAmountCents) ||
       Number(intent.metadata?.base_amount_cents) ||
       Math.max(0, Math.round(ride.stripeAmountCents || resolveRideFareAmountCents(ride)));
-    const metadataMaxTip =
-      Number(intent.metadata?.maxTipAmountCents) ||
-      Math.max(MIN_RIDE_TIP_CENTS, Math.round(ride.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS));
-    const metadataInitialTip =
-      Number(intent.metadata?.initialTipAmountCents) ||
-      Number(intent.metadata?.tip_amount_cents) ||
-      MIN_RIDE_TIP_CENTS;
-    const paymentIntentAmountCents = Math.max(
-      0,
-      Math.round(Number(intent.amount) || 0)
-    );
-    const tipHoldAllowance = Math.max(
-      0,
-      paymentIntentAmountCents - Math.max(0, metadataFare)
-    );
-    const tipAuthorizationCents = Math.max(
-      MIN_RIDE_TIP_CENTS,
-      Math.min(metadataMaxTip, tipHoldAllowance)
-    );
 
-    if (intent.status === "requires_capture") {
-      const normalizedInitialTip = clampTipAmountCents(metadataInitialTip, {
-        min: MIN_RIDE_TIP_CENTS,
-        max: tipAuthorizationCents,
-      });
-      await rideRef.update({
-        paymentStatus: "preauthorized",
-        stripePaymentIntentId: intent.id,
-        stripeAmountCents: metadataFare,
-        stripeAmount: metadataFare / 100,
-        stripeCurrency: intent.currency || "usd",
-        fareBaseAmountCents: metadataFare,
-        maxTipAmountCents: tipAuthorizationCents,
-        tipAmountCents: normalizedInitialTip,
-        tipAmount: normalizedInitialTip / 100,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-      return { status: "preauthorized" };
-    }
+  if (intent.status === "requires_capture") {
+    await stripeClient.paymentIntents.capture(paymentIntentId);
+    intent = await stripeClient.paymentIntents.retrieve(paymentIntentId);
+  }
 
-    if (intent.status !== "succeeded") {
+  if (intent.status !== "succeeded") {
       throw new functions.https.HttpsError(
         "failed-precondition",
         `Stripe payment is ${intent.status}.`
@@ -6679,6 +6657,7 @@ exports.__testables = {
   clampTipAmountCents,
   validateTipBounds,
   computeRideHoldAmountCents,
+  resolveRidePaymentStatus,
   computeReferralDiscountCents,
   evaluateReferralCodeEligibility,
   resolveReservePickupDetails,
