@@ -4051,6 +4051,7 @@
     let directionsRenderer;
     let pickupMarker;
     let destMarker;
+    let destinationGeocoder = null;
     let destinationPreviewMap;
     let destinationPreviewPickupMarker;
     let destinationPreviewDestMarker;
@@ -6428,11 +6429,13 @@
     }
 
     async function updateRouteAndFare() {
-      if (googleMapsLoadFailed) return;
-      if (!window.google || !google.maps) return;
-      profileError.textContent = "";
+      if (googleMapsLoadFailed) return false;
+      if (!window.google || !google.maps) return false;
+      if (profileError) {
+        profileError.textContent = "";
+      }
       if (!currentLocation || !destinationLatLng || !directionsService) {
-        return;
+        return false;
       }
 
       const request = {
@@ -6448,86 +6451,200 @@
         }));
       }
 
-      directionsService.route(request, (result, status) => {
-        if (status !== "OK" || !result?.routes?.length) {
-          console.warn("Directions failed", status);
-          return;
-        }
-        directionsRenderer.setDirections(result);
-
-        const legs = result.routes[0].legs || [];
-        const totalDurationSec = legs.reduce(
-          (sum, leg) => sum + (leg?.duration?.value || 0),
-          0
-        );
-        const totalDistanceMeters = legs.reduce(
-          (sum, leg) => sum + (leg?.distance?.value || 0),
-          0
-        );
-
-        const minutes = totalDurationSec / 60;
-        const plan = normalizePlanKey(
-          currentUserProfile?.membershipType || currentUserProfile?.membership || "basic"
-        );
-
-        let pickupCovered = false;
-        if (plan === "uofa_unlimited" && currentLocation) {
-          pickupCovered =
-            haversineDistanceMiles(
-              FAYETTEVILLE_CENTER.lat,
-              FAYETTEVILLE_CENTER.lng,
-              currentLocation.lat,
-              currentLocation.lng
-            ) <= FAYETTEVILLE_RADIUS_MILES;
-        } else if (plan === "nwa_unlimited" && currentLocation) {
-          pickupCovered =
-            haversineDistanceMiles(
-              NWA_CENTER.lat,
-              NWA_CENTER.lng,
-              currentLocation.lat,
-              currentLocation.lng
-            ) <= NWA_RADIUS_MILES;
-        }
-
-        const fareInfo = computeFareForMembership(plan, minutes, pickupCovered);
-
-        lastRideMetrics = {
-          durationMinutes: minutes,
-          distanceMeters: totalDistanceMeters,
-          inHomeZone: pickupCovered,
-          pickupCovered,
-          fareBreakdown: fareInfo,
-          membershipLabel: fareInfo.membershipLabel
-        };
-
-        if (fareNotReady) {
-          fareNotReady.style.display = "none";
-        }
-        if (fareReady) {
-          fareReady.style.display = "block";
-        }
-        if (fareTime) {
-          fareTime.textContent = `${minutes.toFixed(1)} min`;
-        }
-        if (fareDistance) {
-          fareDistance.textContent = `${(totalDistanceMeters / 1609.34).toFixed(2)} mi`;
-        }
-        if (fareMembership) {
-          let fareMembershipLabel = fareInfo.membershipLabel;
-          if (plan === "uofa_unlimited" || plan === "nwa_unlimited") {
-            fareMembershipLabel = pickupCovered
-              ? `${fareInfo.membershipLabel} • Covered pickup`
-              : `${fareInfo.membershipLabel} • Outside coverage`;
+      return await new Promise((resolve) => {
+        directionsService.route(request, (result, status) => {
+          if (status !== "OK" || !result?.routes?.length) {
+            console.warn("Directions failed", status);
+            resolve(false);
+            return;
           }
-          fareMembership.textContent = fareMembershipLabel;
-        }
-        if (fareTotal) {
-          fareTotal.textContent = `$${fareInfo.total.toFixed(2)}`;
-        }
+          directionsRenderer.setDirections(result);
 
-        updateSyncButtonLabel();
-        updateTripPreviewMap();
+          const legs = result.routes[0].legs || [];
+          const totalDurationSec = legs.reduce(
+            (sum, leg) => sum + (leg?.duration?.value || 0),
+            0
+          );
+          const totalDistanceMeters = legs.reduce(
+            (sum, leg) => sum + (leg?.distance?.value || 0),
+            0
+          );
+
+          const minutes = totalDurationSec / 60;
+          const plan = normalizePlanKey(
+            currentUserProfile?.membershipType || currentUserProfile?.membership || "basic"
+          );
+
+          let pickupCovered = false;
+          if (plan === "uofa_unlimited" && currentLocation) {
+            pickupCovered =
+              haversineDistanceMiles(
+                FAYETTEVILLE_CENTER.lat,
+                FAYETTEVILLE_CENTER.lng,
+                currentLocation.lat,
+                currentLocation.lng
+              ) <= FAYETTEVILLE_RADIUS_MILES;
+          } else if (plan === "nwa_unlimited" && currentLocation) {
+            pickupCovered =
+              haversineDistanceMiles(
+                NWA_CENTER.lat,
+                NWA_CENTER.lng,
+                currentLocation.lat,
+                currentLocation.lng
+              ) <= NWA_RADIUS_MILES;
+          }
+
+          const fareInfo = computeFareForMembership(plan, minutes, pickupCovered);
+
+          lastRideMetrics = {
+            durationMinutes: minutes,
+            distanceMeters: totalDistanceMeters,
+            inHomeZone: pickupCovered,
+            pickupCovered,
+            fareBreakdown: fareInfo,
+            membershipLabel: fareInfo.membershipLabel
+          };
+
+          if (fareNotReady) {
+            fareNotReady.style.display = "none";
+          }
+          if (fareReady) {
+            fareReady.style.display = "block";
+          }
+          if (fareTime) {
+            fareTime.textContent = `${minutes.toFixed(1)} min`;
+          }
+          if (fareDistance) {
+            fareDistance.textContent = `${(totalDistanceMeters / 1609.34).toFixed(2)} mi`;
+          }
+          if (fareMembership) {
+            let fareMembershipLabel = fareInfo.membershipLabel;
+            if (plan === "uofa_unlimited" || plan === "nwa_unlimited") {
+              fareMembershipLabel = pickupCovered
+                ? `${fareInfo.membershipLabel} • Covered pickup`
+                : `${fareInfo.membershipLabel} • Outside coverage`;
+            }
+            fareMembership.textContent = fareMembershipLabel;
+          }
+          if (fareTotal) {
+            fareTotal.textContent = `$${fareInfo.total.toFixed(2)}`;
+          }
+
+          updateSyncButtonLabel();
+          updateTripPreviewMap();
+          resolve(true);
+        });
       });
+    }
+
+    function getDestinationGeocoder() {
+      if (googleMapsLoadFailed) {
+        return null;
+      }
+      if (!window.google || !google.maps) {
+        return null;
+      }
+      if (!destinationGeocoder) {
+        destinationGeocoder = new google.maps.Geocoder();
+      }
+      return destinationGeocoder;
+    }
+
+    async function geocodeDestinationInput(address) {
+      const trimmed = address?.trim();
+      if (!trimmed) {
+        throw new Error("Enter a destination before syncing.");
+      }
+      if (googleMapsLoadFailed) {
+        throw new Error("Maps aren't available right now. Please refresh and try again.");
+      }
+      const geocoder = getDestinationGeocoder();
+      if (!geocoder) {
+        throw new Error("Maps are still loading. Try again in a moment.");
+      }
+      return await new Promise((resolve, reject) => {
+        geocoder.geocode(
+          {
+            address: trimmed,
+            componentRestrictions: { country: "us" }
+          },
+          (results, status) => {
+            if (status === "OK" && results?.length) {
+              resolve(results[0]);
+              return;
+            }
+            if (status === "ZERO_RESULTS") {
+              reject(
+                new Error(
+                  "We couldn't find that destination. Try a more complete address."
+                )
+              );
+              return;
+            }
+            if (status === "OVER_QUERY_LIMIT") {
+              reject(
+                new Error("We're seeing a lot of lookups. Please try again shortly.")
+              );
+              return;
+            }
+            reject(
+              new Error("Maps couldn't look up that destination. Please try again.")
+            );
+          }
+        );
+      });
+    }
+
+    async function ensureDestinationReadyForSync() {
+      if (destinationLatLng && lastRideMetrics) {
+        return true;
+      }
+      if (!destinationEl) {
+        return false;
+      }
+      const typedDestination = destinationEl.value.trim();
+      if (!destinationLatLng) {
+        try {
+          const place = await geocodeDestinationInput(typedDestination);
+          if (!place?.geometry?.location) {
+            throw new Error("Choose a destination from the list to continue.");
+          }
+          lastDestinationPlace = place;
+          lastDestinationIsFayetteville = isFayettevilleFromPlace(place);
+          destinationLatLng = place.geometry.location;
+          if (destinationEl && place.formatted_address) {
+            destinationEl.value = place.formatted_address;
+          }
+          if (destMarker) {
+            destMarker.setPosition(destinationLatLng);
+            destMarker.setVisible(true);
+          }
+        } catch (err) {
+          console.error("Destination geocode failed", err);
+          if (profileError) {
+            profileError.textContent =
+              err?.message ||
+              "We couldn't find that destination. Please try again.";
+          }
+          destinationEl.focus();
+          return false;
+        }
+      }
+
+      initMapOnce();
+      ensureBackgroundMapReady();
+
+      if (!lastRideMetrics) {
+        const routeReady = await updateRouteAndFare();
+        if (!routeReady) {
+          if (profileError) {
+            profileError.textContent =
+              "We couldn't calculate your fare yet. Check your pickup or destination.";
+          }
+          return false;
+        }
+      }
+      return true;
     }
 
     function clearDestinationSelection(options = {}) {
@@ -11283,6 +11400,18 @@
     syncButton.addEventListener("click", async () => {
       if (joinMode && joinTargetRide) {
         await handleJoinRide();
+        return;
+      }
+      if (syncButton) {
+        syncButton.disabled = true;
+        syncButton.textContent = "Checking…";
+      }
+      const ready = await ensureDestinationReadyForSync();
+      if (syncButton) {
+        syncButton.disabled = false;
+        updateSyncButtonLabel();
+      }
+      if (!ready) {
         return;
       }
       openSyncConfirmOverlay();
