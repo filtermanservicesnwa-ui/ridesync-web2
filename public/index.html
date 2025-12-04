@@ -6822,6 +6822,7 @@
     }
 
     function resetTripPlanner() {
+      hidePickupOverrideField();
       clearDestinationSelection({ resetInput: true });
       if (numRidersEl) {
         numRidersEl.value = "1";
