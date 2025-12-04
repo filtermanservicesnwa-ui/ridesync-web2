@@ -1676,6 +1676,67 @@
     .ride-view-panel.active {
       display: block;
     }
+    .pwa-install-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .pwa-install-overlay.hidden {
+      display: none;
+    }
+    .pwa-install-card {
+      max-width: 420px;
+      width: 90%;
+      background: #0b1930;
+      color: #ffffff;
+      border-radius: 12px;
+      padding: 20px 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .pwa-install-card h2 {
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+    .pwa-install-card p {
+      margin-bottom: 12px;
+    }
+    .pwa-instructions {
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+    }
+    .pwa-instructions ol {
+      padding-left: 18px;
+    }
+    .pwa-install-card .btn-primary {
+      display: inline-block;
+      width: auto;
+      padding: 8px 16px;
+      border-radius: 999px;
+      border: none;
+      background: #34c759;
+      color: #000;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    .pwa-install-card .btn-secondary {
+      display: inline-block;
+      width: auto;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid #ffffff55;
+      background: transparent;
+      color: #ffffff;
+      cursor: pointer;
+    }
+    .pwa-install-card .btn-primary:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
   </style>
 </head>
 <body id="appRoot" class="landing-active">
@@ -2852,6 +2913,37 @@
   </div>
 
   <!-- Membership overlays removed: rider view now provides information only. -->
+
+  <div id="pwaInstallOverlay" class="pwa-install-overlay hidden" aria-hidden="true">
+    <div class="pwa-install-card" role="dialog" aria-labelledby="pwaInstallMessage">
+      <h2>Install RideSync</h2>
+      <p id="pwaInstallMessage">
+        Get faster access by installing RideSync on your home screen.
+      </p>
+
+      <div id="pwaIosInstructions" class="pwa-instructions hidden">
+        <ol>
+          <li>Tap the <strong>Share</strong> button in Safari.</li>
+          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong> to install RideSync.</li>
+        </ol>
+      </div>
+
+      <div id="pwaAndroidInstructions" class="pwa-instructions hidden">
+        <p>
+          Your browser may show an <strong>Install app</strong> prompt.
+          When you see it, tap <strong>Install</strong>.
+        </p>
+        <button id="pwaInstallButton" type="button" class="btn-primary">
+          Install RideSync
+        </button>
+      </div>
+
+      <button id="pwaInstallDismiss" type="button" class="btn-secondary">
+        Maybe later
+      </button>
+    </div>
+  </div>
 
   <footer class="site-footer" aria-label="Copyright notice">
     <p>&copy; 2025 RideSync. All rights reserved.</p>
@@ -11191,6 +11283,179 @@
         setupDestinationAutocomplete();
         extraStopsState.forEach((stop) => setupExtraStopAutocomplete(stop));
       }
+
+    let deferredPwaPrompt = null;
+    let pwaOverlayTimeoutId = null;
+
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      deferredPwaPrompt = event;
+      const btn = document.getElementById("pwaInstallButton");
+      if (btn) {
+        btn.disabled = false;
+      }
+    });
+
+    window.addEventListener("appinstalled", () => {
+      try {
+        localStorage.setItem("ridesync_pwa_installed", "1");
+      } catch (_) {
+        // ignore storage errors
+      }
+      hidePwaOverlay();
+    });
+
+    function isStandalone() {
+      return (
+        window.matchMedia("(display-mode: standalone)").matches ||
+        window.navigator.standalone === true
+      );
+    }
+
+    function shouldShowPwaOverlay() {
+      try {
+        if (localStorage.getItem("ridesync_pwa_installed") === "1") {
+          return false;
+        }
+        if (localStorage.getItem("ridesync_pwa_dismissed") === "1") {
+          return false;
+        }
+      } catch (_) {
+        // localStorage access failed; fall through to overlay heuristics
+      }
+      if (isStandalone()) {
+        return false;
+      }
+      return true;
+    }
+
+    function hidePwaOverlay(options = {}) {
+      if (pwaOverlayTimeoutId) {
+        clearTimeout(pwaOverlayTimeoutId);
+        pwaOverlayTimeoutId = null;
+      }
+      const overlay = document.getElementById("pwaInstallOverlay");
+      if (!overlay) {
+        return;
+      }
+      overlay.classList.add("hidden");
+      overlay.setAttribute("aria-hidden", "true");
+      if (options.rememberDismiss) {
+        try {
+          localStorage.setItem("ridesync_pwa_dismissed", "1");
+        } catch (_) {
+          // ignore storage errors
+        }
+      }
+    }
+
+    function showPwaOverlayForPlatform() {
+      if (!shouldShowPwaOverlay()) {
+        return;
+      }
+      const overlay = document.getElementById("pwaInstallOverlay");
+      if (!overlay) {
+        return;
+      }
+      const iosBox = document.getElementById("pwaIosInstructions");
+      const androidBox = document.getElementById("pwaAndroidInstructions");
+      const message = document.getElementById("pwaInstallMessage");
+      const installButton = document.getElementById("pwaInstallButton");
+
+      overlay.classList.remove("hidden");
+      overlay.setAttribute("aria-hidden", "false");
+
+      const ua = window.navigator.userAgent || "";
+      const isIOS = /iPhone|iPad|iPod/.test(ua) && !window.MSStream;
+
+      if (isIOS) {
+        if (iosBox) iosBox.classList.remove("hidden");
+        if (androidBox) androidBox.classList.add("hidden");
+        if (message) {
+          message.textContent =
+            "On iPhone, install RideSync on your home screen for faster access.";
+        }
+        if (installButton) {
+          installButton.style.display = "none";
+        }
+      } else {
+        if (androidBox) androidBox.classList.remove("hidden");
+        if (iosBox) iosBox.classList.add("hidden");
+        if (message) {
+          message.textContent =
+            "Install RideSync for a faster, full-screen experience.";
+        }
+        if (installButton) {
+          installButton.style.display = "inline-block";
+          installButton.disabled = !deferredPwaPrompt;
+          installButton.onclick = async () => {
+            if (!deferredPwaPrompt) {
+              return;
+            }
+            installButton.disabled = true;
+            try {
+              deferredPwaPrompt.prompt();
+              const choice = await deferredPwaPrompt.userChoice;
+              const outcome = choice?.outcome;
+              deferredPwaPrompt = null;
+              if (outcome === "accepted") {
+                try {
+                  localStorage.setItem("ridesync_pwa_installed", "1");
+                } catch (_) {
+                  // ignore storage errors
+                }
+                hidePwaOverlay();
+                return;
+              }
+              if (outcome === "dismissed") {
+                // Remember the dismissal so we do not trap the user on a dead overlay.
+                hidePwaOverlay({ rememberDismiss: true });
+                return;
+              }
+            } finally {
+              // If the browser refuses to show another prompt, keep the button disabled
+              // until a new beforeinstallprompt event fires.
+              installButton.disabled = !deferredPwaPrompt;
+            }
+          };
+        }
+      }
+
+      if (pwaOverlayTimeoutId) {
+        clearTimeout(pwaOverlayTimeoutId);
+      }
+      pwaOverlayTimeoutId = window.setTimeout(() => {
+        if (!isStandalone()) {
+          hidePwaOverlay({ rememberDismiss: true });
+        }
+      }, 15000);
+    }
+
+    function initPwaOverlay() {
+      const overlay = document.getElementById("pwaInstallOverlay");
+      if (!overlay || !shouldShowPwaOverlay()) {
+        return;
+      }
+      const dismissBtn = document.getElementById("pwaInstallDismiss");
+      if (dismissBtn) {
+        dismissBtn.addEventListener("click", () => {
+          hidePwaOverlay({ rememberDismiss: true });
+        });
+      }
+      setTimeout(showPwaOverlayForPlatform, 1500);
+    }
+
+    function schedulePwaOverlayInit() {
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initPwaOverlay, {
+          once: true,
+        });
+        return;
+      }
+      initPwaOverlay();
+    }
+
+    schedulePwaOverlayInit();
 
     window.addEventListener("beforeunload", () => {
       if (driverAvailabilityUnsub) {
