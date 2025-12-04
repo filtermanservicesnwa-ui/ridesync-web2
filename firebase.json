@@ -25,6 +25,17 @@
         "source": "**",
         "destination": "/index.html"
       }
+    ],
+    "headers": [
+      {
+        "source": "/src/**.ts",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/javascript; charset=UTF-8"
+          }
+        ]
+      }
     ]
   },
   "storage": {
