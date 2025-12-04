@@ -20,7 +20,7 @@
   <script type="importmap">
     {
       "imports": {
-        "@/lib/firebase": "/src/lib/firebase.ts",
+        "@/lib/firebase": "/src/lib/firebase.js",
         "firebase/app": "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js",
         "firebase/auth": "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js",
         "firebase/firestore": "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js"
@@ -4104,6 +4104,13 @@
       "pending",
       "pool_searching",
       "pooled_pending_driver"
+    ]);
+    const PAYMENT_STATUSES_REQUIRING_COLLECTION = new Set([
+      "fare_due",
+      "preauthorized",
+      "preauth_pending",
+      "pending", // basic plan rides start as pending until paid
+      "pending_payment"
     ]);
     const MAX_EXTRA_STOPS = 3;
     let extraStopIdCounter = 0;
@@ -10096,14 +10103,6 @@
         ),
       };
     }
-
-    const PAYMENT_STATUSES_REQUIRING_COLLECTION = new Set([
-      "fare_due",
-      "preauthorized",
-      "preauth_pending",
-      "pending", // basic plan rides start as pending until paid
-      "pending_payment",
-    ]);
 
     function rideRequiresFarePayment(rideData = {}) {
       const status = (rideData.paymentStatus || "").toLowerCase();
