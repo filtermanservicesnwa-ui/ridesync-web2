@@ -3403,6 +3403,68 @@
     const driverComingSoonOverlay = document.getElementById("driverComingSoonOverlay");
     const driverComingSoonClose = document.getElementById("driverComingSoonClose");
     const appBody = document.body;
+    let riderPresenceInterval = null;
+    let riderPresenceUserId = null;
+
+    function writeRiderPresenceOnline(uid) {
+      if (!uid) return Promise.resolve();
+      const userRef = doc(db, "users", uid);
+      return setDoc(
+        userRef,
+        {
+          presenceRole: "rider",
+          isOnline: true,
+          lastActiveAt: serverTimestamp(),
+        },
+        { merge: true }
+      ).catch((err) => {
+        console.warn("rider presence heartbeat failed", err);
+      });
+    }
+
+    function markRiderOffline(uid) {
+      if (!uid) return;
+      const userRef = doc(db, "users", uid);
+      setDoc(
+        userRef,
+        {
+          isOnline: false,
+          lastOfflineAt: serverTimestamp(),
+          presenceRole: "rider",
+        },
+        { merge: true }
+      ).catch((err) => {
+        console.warn("rider presence offline update failed", err);
+      });
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible" && riderPresenceUserId) {
+        writeRiderPresenceOnline(riderPresenceUserId);
+      }
+    }
+
+    function startRiderPresenceHeartbeat(uid) {
+      if (!uid) return;
+      riderPresenceUserId = uid;
+      clearInterval(riderPresenceInterval);
+      writeRiderPresenceOnline(uid);
+      riderPresenceInterval = setInterval(() => {
+        writeRiderPresenceOnline(uid);
+      }, 60_000);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    function stopRiderPresenceHeartbeat(markOffline = false) {
+      clearInterval(riderPresenceInterval);
+      riderPresenceInterval = null;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      const uid = riderPresenceUserId;
+      riderPresenceUserId = null;
+      if (markOffline && uid) {
+        markRiderOffline(uid);
+      }
+    }
 
     function dismissLandingPage() {
       if (mainLandingPage && mainLandingPage.classList.contains("active")) {
@@ -5661,6 +5723,7 @@
     onAuthStateChanged(auth, async (user) => {
       if (!user) {
         stopDriverAvailabilityWatchers();
+        stopRiderPresenceHeartbeat(true);
         currentUserProfile = null;
         showAuthView();
         teardownRideChat(true);
@@ -5680,6 +5743,7 @@
         return;
       }
       await loadUserProfile(user.uid, user.email);
+      startRiderPresenceHeartbeat(user.uid);
       showRideView();
       subscribeToDriverAvailability();
       initMapOnce();

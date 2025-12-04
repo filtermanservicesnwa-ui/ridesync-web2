@@ -12,7 +12,15 @@
     "applyMembershipPlanUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/applyMembershipPlanHttp",
     "createRideCheckoutSessionUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/createRideCheckoutSession",
     "finalizeMembershipCheckoutSessionUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/finalizeMembershipCheckoutSession",
-    "getWeatherThemeUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/getWeatherTheme"
+    "getWeatherThemeUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/getWeatherTheme",
+    "adminLoginUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/adminLogin",
+    "adminStatsUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/getAdminStats",
+    "adminActivityUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/getAdminActivityFeed",
+    "adminPendingMembershipsUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/getPendingUofaMemberships",
+    "adminApproveMembershipUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/approveUofaMembership",
+    "adminRejectMembershipUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/rejectUofaMembership",
+    "adminSearchUserUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/adminSearchUser",
+    "adminSetMembershipPlanUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/adminSetMembershipPlan"
   },
   "maps": {
     "apiKey": "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0",

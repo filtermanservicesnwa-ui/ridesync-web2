@@ -3,6 +3,7 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const Stripe = require("stripe");
+const crypto = require("crypto");
 const { defineSecret } = require("firebase-functions/params");
 
 // === RideSync Stripe debug helper ===
@@ -135,6 +136,97 @@ const runtimeConfig = (() => {
   }
 })();
 
+const ADMIN_DEFAULT_SCREEN_NAME = "Ride Sync";
+const ADMIN_PASSWORD_HASH_FALLBACK =
+  "f39abb8887d77c0222beed1896e568fd303ddf69fa65a48710df4220e48e9baf";
+const ADMIN_TOKEN_TTL_SECONDS_DEFAULT = 60 * 60 * 2; // 2 hours
+const DEFAULT_ADMIN_ALLOWED_ORIGINS = [
+  "https://ride-sync-nwa.web.app",
+  "https://ride-sync-nwa.firebaseapp.com",
+  "https://ride-sync-nwa.web.app/admin",
+  "https://ride-sync-nwa.firebaseapp.com/admin",
+  "https://ridesync.app",
+  "https://www.ridesync.app",
+  "http://localhost:5000",
+  "http://localhost:4173",
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "http://127.0.0.1:5500",
+];
+
+function normalizeAdminOriginList(input) {
+  if (!input) {
+    return [];
+  }
+  if (Array.isArray(input)) {
+    return input
+      .map((origin) => (typeof origin === "string" ? origin.trim() : ""))
+      .filter((origin) => origin.length > 0);
+  }
+  if (typeof input === "string") {
+    return input
+      .split(/[, \n]+/)
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0);
+  }
+  return [];
+}
+
+function sanitizeAdminScreenName(value) {
+  if (typeof value !== "string") {
+    return ADMIN_DEFAULT_SCREEN_NAME;
+  }
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : ADMIN_DEFAULT_SCREEN_NAME;
+}
+
+function coerceAdminNumber(value, fallback) {
+  const num = Number(value);
+  if (Number.isFinite(num) && num > 0) {
+    return num;
+  }
+  return fallback;
+}
+
+const runtimeAdminConfig = runtimeConfig?.admin || {};
+const ADMIN_SCREEN_NAME = sanitizeAdminScreenName(
+  runtimeAdminConfig.screen_name ||
+    runtimeAdminConfig.screenName ||
+    readEnvValue("ADMIN_SCREEN_NAME") ||
+    ADMIN_DEFAULT_SCREEN_NAME
+);
+const ADMIN_PASSWORD_HASH =
+  sanitizeSecretString(
+    runtimeAdminConfig.password_hash ||
+      runtimeAdminConfig.passwordHash ||
+      readEnvValue("ADMIN_PASSWORD_HASH")
+  ) || ADMIN_PASSWORD_HASH_FALLBACK;
+const ADMIN_TOKEN_SECRET =
+  sanitizeSecretString(
+    runtimeAdminConfig.token_secret ||
+      runtimeAdminConfig.tokenSecret ||
+      readEnvValue("ADMIN_TOKEN_SECRET")
+  ) || ADMIN_PASSWORD_HASH;
+const ADMIN_TOKEN_TTL_SECONDS = Math.max(
+  300,
+  coerceAdminNumber(
+    runtimeAdminConfig.token_ttl_seconds ||
+      runtimeAdminConfig.tokenTtlSeconds ||
+      readEnvValue("ADMIN_TOKEN_TTL_SECONDS"),
+    ADMIN_TOKEN_TTL_SECONDS_DEFAULT
+  )
+);
+const ADMIN_ALLOWED_ORIGINS = new Set(
+  normalizeAdminOriginList(
+    runtimeAdminConfig.allowed_origins ||
+      runtimeAdminConfig.allowedOrigins ||
+      readEnvValue("ADMIN_ALLOWED_ORIGINS")
+  )
+);
+if (!ADMIN_ALLOWED_ORIGINS.size) {
+  DEFAULT_ADMIN_ALLOWED_ORIGINS.forEach((origin) => ADMIN_ALLOWED_ORIGINS.add(origin));
+}
+
 // Never log secrets in cold start snapshots—this block intentionally removed.
 
 function sanitizeSecretString(value) {
@@ -151,6 +243,244 @@ function readEnvValue(envKey) {
   }
   const env = process.env || {};
   return sanitizeSecretString(env[envKey]);
+}
+
+function normalizeAdminScreenName(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim().toLowerCase();
+}
+
+function hashAdminPassword(input) {
+  return crypto.createHash("sha256").update(input || "", "utf8").digest("hex");
+}
+
+function timingSafeEqualHex(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") {
+    return false;
+  }
+  const bufferA = Buffer.from(a, "hex");
+  const bufferB = Buffer.from(b, "hex");
+  if (bufferA.length !== bufferB.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(bufferA, bufferB);
+}
+
+function timingSafeEqualBase64(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") {
+    return false;
+  }
+  const bufferA = Buffer.from(a, "base64url");
+  const bufferB = Buffer.from(b, "base64url");
+  if (bufferA.length !== bufferB.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(bufferA, bufferB);
+}
+
+function verifyAdminPasswordInput(password) {
+  if (!ADMIN_PASSWORD_HASH) {
+    return false;
+  }
+  const hashedInput = hashAdminPassword(password || "");
+  return timingSafeEqualHex(hashedInput, ADMIN_PASSWORD_HASH);
+}
+
+function credentialsMatch(screenName, password) {
+  if (!screenName || !password) {
+    return false;
+  }
+  const normalizedExpected = normalizeAdminScreenName(ADMIN_SCREEN_NAME);
+  const normalizedInput = normalizeAdminScreenName(screenName);
+  if (!normalizedExpected || !normalizedInput) {
+    return false;
+  }
+  if (normalizedExpected !== normalizedInput) {
+    return false;
+  }
+  return verifyAdminPasswordInput(password);
+}
+
+function signAdminToken(claims = {}) {
+  const issuedAtSeconds = Math.floor(Date.now() / 1000);
+  const payload = {
+    role: "admin",
+    v: 1,
+    iat: issuedAtSeconds,
+    exp: issuedAtSeconds + ADMIN_TOKEN_TTL_SECONDS,
+    ...claims,
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", ADMIN_TOKEN_SECRET)
+    .update(encodedPayload)
+    .digest("base64url");
+  return {
+    token: `${encodedPayload}.${signature}`,
+    expiresAt: payload.exp * 1000,
+    payload,
+  };
+}
+
+function verifyAdminToken(token = "") {
+  if (typeof token !== "string" || !token.includes(".")) {
+    return null;
+  }
+  const [encoded, signature] = token.split(".");
+  if (!encoded || !signature) {
+    return null;
+  }
+  const expectedSignature = crypto
+    .createHmac("sha256", ADMIN_TOKEN_SECRET)
+    .update(encoded)
+    .digest("base64url");
+  if (!timingSafeEqualBase64(signature, expectedSignature)) {
+    return null;
+  }
+  let payload = null;
+  try {
+    payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+  } catch (err) {
+    return null;
+  }
+  if (!payload || payload.role !== "admin") {
+    return null;
+  }
+  const expMs = Number(payload.exp) * 1000;
+  if (Number.isFinite(expMs) && expMs < Date.now()) {
+    return null;
+  }
+  return payload;
+}
+
+function extractAdminTokenFromRequest(req) {
+  const authHeader = req.headers.authorization || req.headers.Authorization || "";
+  if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+    return authHeader.slice("Bearer ".length).trim();
+  }
+  const headerToken = req.headers["x-admin-token"] || req.headers["x-adminsession"];
+  if (typeof headerToken === "string" && headerToken.trim().length) {
+    return headerToken.trim();
+  }
+  if (req.query?.token && typeof req.query.token === "string") {
+    return req.query.token.trim();
+  }
+  return null;
+}
+
+function resolveAdminResponseOrigin(req) {
+  const originHeader =
+    typeof req.headers.origin === "string" ? req.headers.origin.trim() : "";
+  if (originHeader && ADMIN_ALLOWED_ORIGINS.has(originHeader)) {
+    return originHeader;
+  }
+  if (!originHeader) {
+    return "*";
+  }
+  return "";
+}
+
+function setAdminCorsHeaders(req, res) {
+  const origin = resolveAdminResponseOrigin(req);
+  if (origin) {
+    res.set("Access-Control-Allow-Origin", origin);
+  }
+  res.set("Vary", "Origin");
+  res.set(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Admin-Token"
+  );
+  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.set("Access-Control-Max-Age", "3600");
+}
+
+class AdminHttpError extends Error {
+  constructor(statusCode = 500, message = "Admin request failed", details = {}) {
+    super(message);
+    this.statusCode = statusCode;
+    this.details = details;
+  }
+}
+
+function ensureAdminRequestAuthorized(req) {
+  const token = extractAdminTokenFromRequest(req);
+  if (!token) {
+    throw new AdminHttpError(401, "Missing admin token");
+  }
+  const payload = verifyAdminToken(token);
+  if (!payload) {
+    throw new AdminHttpError(401, "Invalid or expired admin token");
+  }
+  return payload;
+}
+
+function readJsonBody(req) {
+  if (req.body && typeof req.body === "object") {
+    return req.body;
+  }
+  return {};
+}
+
+function sendAdminJson(res, statusCode, payload = {}) {
+  res.status(statusCode).json(payload);
+}
+
+async function runCountQuery(query) {
+  if (typeof query.count === "function") {
+    try {
+      const snapshot = await query.count().get();
+      const data = snapshot?.data();
+      if (data && typeof data.count === "number") {
+        return data.count;
+      }
+    } catch (err) {
+      console.warn("[RideSync][admin] count aggregation fallback", err?.message || err);
+    }
+  }
+  const snap = await query.get();
+  return snap.size;
+}
+
+function toMillis(timestamp) {
+  if (!timestamp) {
+    return null;
+  }
+  if (typeof timestamp.toMillis === "function") {
+    return timestamp.toMillis();
+  }
+  if (typeof timestamp.toDate === "function") {
+    return timestamp.toDate().getTime();
+  }
+  if (typeof timestamp === "number") {
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+  if (typeof timestamp.seconds === "number") {
+    return timestamp.seconds * 1000;
+  }
+  return null;
+}
+
+function handleAdminRequestError(res, err, context = "admin") {
+  if (err instanceof AdminHttpError) {
+    const payload = {
+      ok: false,
+      error: err.message || "Admin request failed",
+    };
+    if (err.details) {
+      payload.details = err.details;
+    }
+    sendAdminJson(res, err.statusCode || 500, payload);
+    return;
+  }
+  console.error(`[RideSync][${context}] unexpected error`, {
+    message: err?.message || err,
+  });
+  sendAdminJson(res, 500, {
+    ok: false,
+    error: "internal_error",
+  });
 }
 
 function pickRuntimeStripeValue(stripeConfig, ...keys) {
@@ -309,6 +639,11 @@ admin.initializeApp();
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
+const ADMIN_RIDER_PRESENCE_WINDOW_MINUTES = 5;
+const ADMIN_ACTIVITY_LOOKBACK_HOURS = 48;
+const ADMIN_ACTIVITY_FEED_LIMIT = 40;
+const ADMIN_ACTIVITY_MEMBERSHIP_LOOKBACK_HOURS = 72;
+const MEMBERSHIP_REQUEST_COLLECTION = "membershipRequests";
 const PIN_CHARSET = "0123456789";
 
 const MAX_POOL_DISTANCE_KM = 3;
@@ -1482,6 +1817,110 @@ function removeUndefinedFields(target) {
   return target;
 }
 
+function resolveProfileEmail(profile = {}) {
+  const candidates = [
+    profile.email,
+    profile.userEmail,
+    profile.contactEmail,
+    profile.primaryEmail,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return null;
+}
+
+function resolveProfileName(profile = {}) {
+  const candidates = [
+    profile.fullName,
+    profile.displayName,
+    profile.name,
+    profile.studentName,
+    profile.contactName,
+    profile.email ? profile.email.split("@")[0] : null,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return "RideSync Member";
+}
+
+function extractStudentIdImageUrl(profile = {}) {
+  const candidates = [
+    profile.studentIdPicUrl,
+    profile.studentIdImageUrl,
+    profile.studentIdPhotoUrl,
+    profile.studentIdUrl,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return null;
+}
+
+async function upsertMembershipApprovalRequest({
+  userId,
+  planKey,
+  profile = {},
+  requestSource = "unknown",
+}) {
+  if (!userId || planKey !== "uofa_unlimited") {
+    return null;
+  }
+  const requestRef = db.collection(MEMBERSHIP_REQUEST_COLLECTION).doc(userId);
+  const payload = removeUndefinedFields({
+    userId,
+    planKey,
+    status: "pending",
+    email: resolveProfileEmail(profile),
+    name: resolveProfileName(profile),
+    studentIdImageUrl: extractStudentIdImageUrl(profile),
+    requestedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+    requestSource,
+  });
+  payload.resolvedAt = FieldValue.delete();
+  payload.resolvedBy = FieldValue.delete();
+  payload.resolutionNotes = FieldValue.delete();
+  await requestRef.set(payload, { merge: true });
+  return requestRef.id;
+}
+
+async function resolveMembershipApprovalRequest(userId, status, options = {}) {
+  if (!userId) {
+    return null;
+  }
+  const requestRef = db.collection(MEMBERSHIP_REQUEST_COLLECTION).doc(userId);
+  const payload = {
+    status,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (status === "pending") {
+    payload.requestedAt = FieldValue.serverTimestamp();
+    payload.resolvedAt = FieldValue.delete();
+    payload.resolvedBy = FieldValue.delete();
+    payload.resolutionNotes = FieldValue.delete();
+  } else {
+    payload.resolvedAt = FieldValue.serverTimestamp();
+    if (options.actor) {
+      payload.resolvedBy = options.actor;
+    }
+    if (options.reason) {
+      payload.resolutionNotes = options.reason;
+    } else {
+      payload.resolutionNotes = FieldValue.delete();
+    }
+  }
+  await requestRef.set(removeUndefinedFields(payload), { merge: true });
+  return requestRef.id;
+}
+
 function extractRideInput(data) {
   if (!data) return null;
   if (data.ride && typeof data.ride === "object") {
@@ -2494,6 +2933,16 @@ async function applyMembershipPlanHandler(data = {}, uid) {
       },
       { merge: true }
     );
+    if (needsApproval) {
+      await upsertMembershipApprovalRequest({
+        userId: uid,
+        planKey,
+        profile: profileData,
+        requestSource: "apply_membership_plan_free",
+      });
+    } else {
+      await resolveMembershipApprovalRequest(uid, "approved");
+    }
     return { status: "updated" };
   }
 
@@ -2551,6 +3000,16 @@ async function applyMembershipPlanHandler(data = {}, uid) {
     },
     { merge: true }
   );
+  if (needsApproval) {
+    await upsertMembershipApprovalRequest({
+      userId: uid,
+      planKey,
+      profile: profileData,
+      requestSource: "apply_membership_plan_payment",
+    });
+  } else {
+    await resolveMembershipApprovalRequest(uid, "approved");
+  }
 
   await pendingRef.delete();
 
@@ -3280,6 +3739,17 @@ async function finalizeMembershipSubscriptionInternal({
       { merge: true }
     ),
   ]);
+
+  if (requiresVerification) {
+    await upsertMembershipApprovalRequest({
+      userId: uid,
+      planKey: subscriptionPlan,
+      profile: userProfile,
+      requestSource: "subscription_finalized",
+    });
+  } else {
+    await resolveMembershipApprovalRequest(uid, "approved");
+  }
 
   return {
     status: resolvedMembershipStatus,
@@ -4686,6 +5156,12 @@ exports.saveUserProfile = functions.https.onCall(async (data, context) => {
     ...membershipFields,
     email: userEmail,
   };
+  if (userEmail) {
+    docPayload.emailLower = userEmail.toLowerCase();
+  }
+  if (docPayload.fullName) {
+    docPayload.fullNameLower = docPayload.fullName.toLowerCase();
+  }
 
   if (!snap.exists) {
     docPayload.createdAt = FieldValue.serverTimestamp();
@@ -5598,6 +6074,580 @@ exports.getWeatherTheme = functions
       });
     }
   });
+
+// === ADMIN DASHBOARD HELPERS ===
+
+function getStartOfDayTimestamp() {
+  const now = new Date();
+  return Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+}
+
+function getPresenceThresholdTimestamp() {
+  const windowMs = ADMIN_RIDER_PRESENCE_WINDOW_MINUTES * 60 * 1000;
+  return Timestamp.fromMillis(Date.now() - windowMs);
+}
+
+async function fetchAdminStatsSnapshot() {
+  const startOfDay = getStartOfDayTimestamp();
+  const riderPresenceThreshold = getPresenceThresholdTimestamp();
+
+  let ridersOnlineCount = 0;
+  try {
+    const ridersQuery = db
+      .collection("users")
+      .where("presenceRole", "==", "rider")
+      .where("lastActiveAt", ">=", riderPresenceThreshold);
+    ridersOnlineCount = await runCountQuery(ridersQuery);
+  } catch (err) {
+    console.warn("[RideSync][admin] ridersOnlineCount fallback", err?.message || err);
+  }
+
+  let driversOnlineCount = 0;
+  try {
+    const driversQuery = db.collection("drivers").where("isOnline", "==", true);
+    driversOnlineCount = await runCountQuery(driversQuery);
+  } catch (err) {
+    console.warn("[RideSync][admin] driversOnlineCount fallback", err?.message || err);
+  }
+
+  let ridesTodayCount = 0;
+  try {
+    const ridesSnap = await db
+      .collection("rideRequests")
+      .where("createdAt", ">=", startOfDay)
+      .select("createdAt")
+      .get();
+    ridesTodayCount = ridesSnap.size;
+  } catch (err) {
+    console.warn("[RideSync][admin] ridesTodayCount fallback", err?.message || err);
+  }
+
+  let revenueTodayCents = 0;
+  try {
+    const rideRecordsSnap = await db
+      .collection("rideRecords")
+      .where("updatedAt", ">=", startOfDay)
+      .select("totalChargedCents", "finalFareAmountCents", "tipAmountCents")
+      .get();
+    rideRecordsSnap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const totalCents = Number(data.totalChargedCents);
+      const fallbackFare = Number(data.finalFareAmountCents);
+      const tipCents = Number(data.tipAmountCents);
+      if (Number.isFinite(totalCents)) {
+        revenueTodayCents += Math.max(0, Math.round(totalCents));
+      } else if (Number.isFinite(fallbackFare)) {
+        revenueTodayCents += Math.max(0, Math.round(fallbackFare));
+      }
+      if (Number.isFinite(tipCents)) {
+        revenueTodayCents += Math.max(0, Math.round(tipCents));
+      }
+    });
+  } catch (err) {
+    console.warn("[RideSync][admin] revenueToday fallback", err?.message || err);
+  }
+
+  return {
+    ridersOnlineCount,
+    driversOnlineCount,
+    ridesTodayCount,
+    revenueTodayCents,
+    generatedAt: Date.now(),
+  };
+}
+
+function buildActivityEvent(type, time, payload = {}) {
+  return {
+    type,
+    time,
+    ...payload,
+  };
+}
+
+async function fetchAdminActivityFeed(limit = ADMIN_ACTIVITY_FEED_LIMIT) {
+  const events = [];
+  const now = Date.now();
+  const userLookbackTimestamp = Timestamp.fromMillis(
+    now - ADMIN_ACTIVITY_LOOKBACK_HOURS * 60 * 60 * 1000
+  );
+  const membershipLookbackTimestamp = Timestamp.fromMillis(
+    now - ADMIN_ACTIVITY_MEMBERSHIP_LOOKBACK_HOURS * 60 * 60 * 1000
+  );
+
+  try {
+    const recentUsersSnap = await db
+      .collection("users")
+      .where("createdAt", ">=", userLookbackTimestamp)
+      .orderBy("createdAt", "desc")
+      .limit(limit)
+      .get();
+    recentUsersSnap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const createdAtMs = toMillis(data.createdAt);
+      if (!createdAtMs) {
+        return;
+      }
+      events.push(
+        buildActivityEvent("user_signup", createdAtMs, {
+          userId: docSnap.id,
+          name: data.fullName || data.displayName || null,
+          email: data.email || null,
+        })
+      );
+    });
+  } catch (err) {
+    console.warn("[RideSync][admin] activity feed user query failed", err?.message || err);
+  }
+
+  try {
+    const membershipSnap = await db
+      .collection("users")
+      .where("membershipRenewedAt", ">=", membershipLookbackTimestamp)
+      .orderBy("membershipRenewedAt", "desc")
+      .limit(limit)
+      .get();
+    membershipSnap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const renewedAtMs = toMillis(data.membershipRenewedAt);
+      if (!renewedAtMs) {
+        return;
+      }
+      if (!data.membershipType || data.membershipType === "basic") {
+        return;
+      }
+      events.push(
+        buildActivityEvent("membership_signup", renewedAtMs, {
+          userId: docSnap.id,
+          plan: data.membershipType,
+          name: data.fullName || null,
+          email: data.email || null,
+        })
+      );
+    });
+  } catch (err) {
+    console.warn(
+      "[RideSync][admin] activity feed membership query failed",
+      err?.message || err
+    );
+  }
+
+  try {
+    const membershipRequestSnap = await db
+      .collection(MEMBERSHIP_REQUEST_COLLECTION)
+      .orderBy("updatedAt", "desc")
+      .limit(limit)
+      .get();
+    membershipRequestSnap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const updatedAtMs = toMillis(data.updatedAt) || toMillis(data.requestedAt);
+      if (!updatedAtMs) {
+        return;
+      }
+      events.push(
+        buildActivityEvent("membership_request", updatedAtMs, {
+          userId: data.userId || docSnap.id,
+          plan: data.planKey || data.plan || "uofa_unlimited",
+          status: data.status || "pending",
+          name: data.name || null,
+          email: data.email || null,
+        })
+      );
+    });
+  } catch (err) {
+    console.warn(
+      "[RideSync][admin] activity feed request query failed",
+      err?.message || err
+    );
+  }
+
+  events.sort((a, b) => (b.time || 0) - (a.time || 0));
+  return events.slice(0, limit);
+}
+
+function serializeMembershipRequest(docSnap) {
+  const data = docSnap.data() || {};
+  return {
+    id: docSnap.id,
+    userId: data.userId || docSnap.id,
+    name: data.name || null,
+    email: data.email || null,
+    plan: data.planKey || data.plan || "uofa_unlimited",
+    status: data.status || "pending",
+    requestedAt: toMillis(data.requestedAt),
+    updatedAt: toMillis(data.updatedAt),
+    studentIdImageUrl: data.studentIdImageUrl || null,
+  };
+}
+
+async function fetchPendingMembershipApprovals(limit = 25) {
+  const snapshot = await db
+    .collection(MEMBERSHIP_REQUEST_COLLECTION)
+    .where("status", "==", "pending")
+    .orderBy("requestedAt", "asc")
+    .limit(limit)
+    .get();
+  const pending = [];
+  snapshot.forEach((docSnap) => pending.push(serializeMembershipRequest(docSnap)));
+  return pending;
+}
+
+function serializeUserForAdmin(docSnap) {
+  const data = docSnap.data() || {};
+  return {
+    userId: docSnap.id,
+    name: data.fullName || data.displayName || null,
+    email: data.email || null,
+    membershipType: data.membershipType || data.membership || "basic",
+    membershipStatus: data.membershipStatus || "none",
+    membershipTier: data.membershipTier || data.membership_tier || null,
+    membershipRenewedAt: toMillis(data.membershipRenewedAt),
+    membershipExpiresAt: toMillis(data.membershipExpiresAt),
+    membershipApprovalRequired: !!data.membershipApprovalRequired,
+    studentIdImageUrl: extractStudentIdImageUrl(data),
+    uofaVerified: !!data.uofaVerified,
+  };
+}
+
+async function searchUsersByQueryString(query) {
+  const trimmed = typeof query === "string" ? query.trim() : "";
+  if (!trimmed) {
+    return [];
+  }
+  const usersRef = db.collection("users");
+  const results = [];
+
+  if (trimmed.includes("@")) {
+    const emailLower = trimmed.toLowerCase();
+    let emailSnap = await usersRef.where("emailLower", "==", emailLower).limit(5).get();
+    if (emailSnap.empty) {
+      emailSnap = await usersRef.where("email", "==", trimmed).limit(5).get();
+    }
+    emailSnap.forEach((docSnap) => results.push(serializeUserForAdmin(docSnap)));
+    return results;
+  }
+
+  const prefix = trimmed.toLowerCase();
+  const upperBound = `${prefix}\uf8ff`;
+  const nameSnap = await usersRef
+    .orderBy("fullNameLower")
+    .startAt(prefix)
+    .endAt(upperBound)
+    .limit(10)
+    .get();
+  nameSnap.forEach((docSnap) => results.push(serializeUserForAdmin(docSnap)));
+  return results;
+}
+
+async function setUserMembershipPlanAdmin({
+  userId,
+  planKey,
+  actor = "admin",
+}) {
+  if (!userId) {
+    throw new AdminHttpError(400, "User ID is required");
+  }
+  const normalizedPlan = normalizeMembershipPlan(planKey || "basic");
+  const planConfig = resolveMembershipPlan(normalizedPlan);
+  if (!planConfig) {
+    throw new AdminHttpError(400, "Unknown membership plan");
+  }
+  const membershipStatus = normalizedPlan === "basic" ? "none" : "active";
+  const durationDays =
+    Number(planConfig.durationDays) > 0 ? Number(planConfig.durationDays) : MEMBERSHIP_DEFAULT_DURATION_DAYS;
+  const expiresAt =
+    normalizedPlan === "basic"
+      ? null
+      : computeMembershipExpirationTimestamp(durationDays);
+  const payload = removeUndefinedFields({
+    ...buildMembershipFieldPayload(normalizedPlan, membershipStatus),
+    membershipRenewedAt: FieldValue.serverTimestamp(),
+    membershipExpiresAt: normalizedPlan === "basic" ? FieldValue.delete() : expiresAt || FieldValue.delete(),
+    membershipApprovalRequired: FieldValue.delete(),
+    membershipManualOverrideAt: FieldValue.serverTimestamp(),
+    membershipManualOverrideBy: actor,
+  });
+  if (normalizedPlan === "uofa_unlimited") {
+    payload.uofaVerified = true;
+  } else {
+    payload.uofaVerified = FieldValue.delete();
+  }
+
+  await db.collection("users").doc(userId).set(payload, { merge: true });
+
+  if (normalizedPlan === "uofa_unlimited") {
+    await resolveMembershipApprovalRequest(userId, "approved", { actor });
+  } else {
+    await resolveMembershipApprovalRequest(userId, "closed", { actor });
+  }
+
+  return payload;
+}
+
+// === ADMIN DASHBOARD ENDPOINTS ===
+
+exports.adminLogin = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const body = readJsonBody(req);
+    const screenName =
+      typeof body.screenName === "string" ? body.screenName.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!credentialsMatch(screenName, password)) {
+      throw new AdminHttpError(401, "Invalid admin credentials");
+    }
+    const tokenResult = signAdminToken({
+      actor: screenName || ADMIN_SCREEN_NAME,
+    });
+    sendAdminJson(res, 200, {
+      ok: true,
+      token: tokenResult.token,
+      expiresAt: tokenResult.expiresAt,
+    });
+  } catch (err) {
+    handleAdminRequestError(res, err, "adminLogin");
+  }
+});
+
+exports.getAdminStats = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "GET" && req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    ensureAdminRequestAuthorized(req);
+    const stats = await fetchAdminStatsSnapshot();
+    sendAdminJson(res, 200, { ok: true, stats });
+  } catch (err) {
+    handleAdminRequestError(res, err, "getAdminStats");
+  }
+});
+
+exports.getAdminActivityFeed = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "GET" && req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    ensureAdminRequestAuthorized(req);
+    const feed = await fetchAdminActivityFeed();
+    sendAdminJson(res, 200, { ok: true, feed });
+  } catch (err) {
+    handleAdminRequestError(res, err, "getAdminActivityFeed");
+  }
+});
+
+exports.getPendingUofaMemberships = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "GET" && req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    ensureAdminRequestAuthorized(req);
+    const pending = await fetchPendingMembershipApprovals();
+    sendAdminJson(res, 200, { ok: true, pending });
+  } catch (err) {
+    handleAdminRequestError(res, err, "getPendingUofaMemberships");
+  }
+});
+
+exports.approveUofaMembership = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const adminPayload = ensureAdminRequestAuthorized(req);
+    const body = readJsonBody(req);
+    const requestId = typeof body.requestId === "string" ? body.requestId.trim() : "";
+    if (!requestId) {
+      throw new AdminHttpError(400, "requestId is required");
+    }
+    const requestRef = db.collection(MEMBERSHIP_REQUEST_COLLECTION).doc(requestId);
+    const requestSnap = await requestRef.get();
+    if (!requestSnap.exists) {
+      throw new AdminHttpError(404, "Membership request not found");
+    }
+    const requestData = requestSnap.data() || {};
+    if (requestData.status && requestData.status !== "pending") {
+      throw new AdminHttpError(400, "Membership request already resolved");
+    }
+    const userId = requestData.userId || requestId;
+    const userRef = db.collection("users").doc(userId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      throw new AdminHttpError(404, "User not found for membership approval");
+    }
+    const userProfile = userSnap.data() || {};
+    const planKey = normalizeMembershipPlan(requestData.planKey || requestData.plan || "uofa_unlimited");
+    const planConfig = resolveMembershipPlan(planKey) || MEMBERSHIP_PLAN_DEFAULTS.uofa_unlimited;
+    const durationDays =
+      Number(planConfig?.durationDays) > 0 ? Number(planConfig.durationDays) : MEMBERSHIP_DEFAULT_DURATION_DAYS;
+    const expiresAt = computeMembershipExpirationTimestamp(durationDays);
+    const updates = removeUndefinedFields({
+      ...buildMembershipFieldPayload(planKey, "active"),
+      membershipApprovalRequired: FieldValue.delete(),
+      membershipApprovedAt: FieldValue.serverTimestamp(),
+      membershipRenewedAt: FieldValue.serverTimestamp(),
+      membershipApprovedBy: adminPayload.actor || "admin",
+      membershipExpiresAt: expiresAt || FieldValue.delete(),
+      uofaVerified: true,
+    });
+    await userRef.set(updates, { merge: true });
+    await resolveMembershipApprovalRequest(userId, "approved", {
+      actor: adminPayload.actor || "admin",
+    });
+    sendAdminJson(res, 200, {
+      ok: true,
+      user: serializeUserForAdmin(await userRef.get()),
+    });
+  } catch (err) {
+    handleAdminRequestError(res, err, "approveUofaMembership");
+  }
+});
+
+exports.rejectUofaMembership = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const adminPayload = ensureAdminRequestAuthorized(req);
+    const body = readJsonBody(req);
+    const requestId = typeof body.requestId === "string" ? body.requestId.trim() : "";
+    const reason =
+      typeof body.reason === "string" && body.reason.trim().length
+        ? body.reason.trim()
+        : "Membership request rejected";
+    if (!requestId) {
+      throw new AdminHttpError(400, "requestId is required");
+    }
+    const requestRef = db.collection(MEMBERSHIP_REQUEST_COLLECTION).doc(requestId);
+    const requestSnap = await requestRef.get();
+    if (!requestSnap.exists) {
+      throw new AdminHttpError(404, "Membership request not found");
+    }
+    const requestData = requestSnap.data() || {};
+    if (requestData.status && requestData.status !== "pending") {
+      throw new AdminHttpError(400, "Membership request already resolved");
+    }
+    const userId = requestData.userId || requestId;
+    const userRef = db.collection("users").doc(userId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      throw new AdminHttpError(404, "User not found for membership rejection");
+    }
+    const updates = removeUndefinedFields({
+      ...buildMembershipFieldPayload("basic", "none"),
+      membershipRenewedAt: FieldValue.serverTimestamp(),
+      membershipRejectedAt: FieldValue.serverTimestamp(),
+      membershipRejectionReason: reason,
+      membershipApprovalRequired: FieldValue.delete(),
+      membershipExpiresAt: FieldValue.delete(),
+      uofaVerified: false,
+    });
+    await userRef.set(updates, { merge: true });
+    await resolveMembershipApprovalRequest(userId, "rejected", {
+      actor: adminPayload.actor || "admin",
+      reason,
+    });
+    sendAdminJson(res, 200, {
+      ok: true,
+      user: serializeUserForAdmin(await userRef.get()),
+    });
+  } catch (err) {
+    handleAdminRequestError(res, err, "rejectUofaMembership");
+  }
+});
+
+exports.adminSearchUser = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    ensureAdminRequestAuthorized(req);
+    const body = readJsonBody(req);
+    const query = typeof body.query === "string" ? body.query : "";
+    const results = await searchUsersByQueryString(query);
+    sendAdminJson(res, 200, { ok: true, results });
+  } catch (err) {
+    handleAdminRequestError(res, err, "adminSearchUser");
+  }
+});
+
+exports.adminSetMembershipPlan = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const adminPayload = ensureAdminRequestAuthorized(req);
+    const body = readJsonBody(req);
+    const userId = typeof body.userId === "string" ? body.userId.trim() : "";
+    const plan = typeof body.plan === "string" ? body.plan.trim() : "";
+    if (!userId) {
+      throw new AdminHttpError(400, "userId is required");
+    }
+    if (!plan) {
+      throw new AdminHttpError(400, "plan is required");
+    }
+    await setUserMembershipPlanAdmin({
+      userId,
+      planKey: plan,
+      actor: adminPayload.actor || "admin",
+    });
+    const userSnap = await db.collection("users").doc(userId).get();
+    sendAdminJson(res, 200, {
+      ok: true,
+      user: userSnap.exists ? serializeUserForAdmin(userSnap) : null,
+    });
+  } catch (err) {
+    handleAdminRequestError(res, err, "adminSetMembershipPlan");
+  }
+});
 
 exports.__testables = {
   computeFareForMembership,
