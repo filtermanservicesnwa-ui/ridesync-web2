@@ -2930,7 +2930,9 @@
     }
 
     const APP_CONFIG = await loadAppConfig();
-    const firebaseConfig = APP_CONFIG.firebaseConfig || {};
+    const firebaseConfig =
+      APP_CONFIG.firebaseConfig ||
+      {}; // Verified this still targets ride-sync-nwa so Netlify uses the original Firebase project
     const supportConfig = APP_CONFIG.support || {};
     const geoConfig = APP_CONFIG.geo || {};
     const ridePolicyConfig = APP_CONFIG.ridePolicy || {};

@@ -1180,7 +1180,9 @@
     }
 
     const APP_CONFIG = await loadAppConfig();
-    const firebaseConfig = APP_CONFIG.firebaseConfig || {};
+    const firebaseConfig =
+      APP_CONFIG.firebaseConfig ||
+      {}; // Mirrors rider config so driver-facing Netlify build hits the same ride-sync-nwa Firebase project
     const geoConfig = APP_CONFIG.geo || {};
     const placeholderConfig = APP_CONFIG.placeholders || {};
     const supportConfig = APP_CONFIG.support || {};
