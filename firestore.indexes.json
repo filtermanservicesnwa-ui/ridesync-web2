@@ -24,6 +24,22 @@
         { "fieldPath": "isOnline", "order": "ASCENDING" },
         { "fieldPath": "fcmToken", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "presenceRole", "order": "ASCENDING" },
+        { "fieldPath": "lastActiveAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "membershipRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "requestedAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
