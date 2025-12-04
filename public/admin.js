@@ -2,6 +2,8 @@ const APP_CONFIG_URL = "/app-config.json";
 const LOCAL_STORAGE_TOKEN_KEY = "ridesyncAdminToken";
 const REFRESH_INTERVAL_MS = 60_000;
 const FIREBASE_PROJECT_ID = "ride-sync-nwa";
+const ADMIN_PAGE_PASSWORD = "Aurora-Verdant-4729";
+const ADMIN_PAGE_ACCESS_KEY = "ridesyncAdminPageAccess";
 
 const adminState = {
   token: null,
@@ -15,6 +17,10 @@ const adminState = {
 const adminRoot = document.getElementById("adminRoot");
 const adminLoginPanel = document.getElementById("adminLoginPanel");
 const adminDashboard = document.getElementById("adminDashboard");
+const adminAccessGate = document.getElementById("adminAccessGate");
+const adminAccessPasswordInput = document.getElementById("adminAccessPasswordInput");
+const adminAccessButton = document.getElementById("adminAccessButton");
+const adminAccessError = document.getElementById("adminAccessError");
 const loginButton = document.getElementById("adminLoginButton");
 const loginError = document.getElementById("adminLoginError");
 const screenNameInput = document.getElementById("adminScreenNameInput");
@@ -28,6 +34,82 @@ const pendingBodyEl = document.getElementById("adminUofaPendingBody");
 const userSearchInput = document.getElementById("adminUserSearchInput");
 const userSearchButton = document.getElementById("adminUserSearchButton");
 const userDetailsEl = document.getElementById("adminUserDetails");
+let adminAppReady = false;
+let adminAppInitializing = false;
+
+function ensureAdminRootVisible() {
+  if (adminRoot && adminRoot.style.display === "none") {
+    adminRoot.style.display = "flex";
+  }
+}
+
+function hasPageAccess() {
+  try {
+    return sessionStorage.getItem(ADMIN_PAGE_ACCESS_KEY) === "granted";
+  } catch (err) {
+    return false;
+  }
+}
+
+function grantPageAccess() {
+  try {
+    sessionStorage.setItem(ADMIN_PAGE_ACCESS_KEY, "granted");
+  } catch (err) {
+    // Ignore storage issues and fall back to requiring password again later.
+  }
+}
+
+function showAccessGate() {
+  ensureAdminRootVisible();
+  if (adminAccessGate) {
+    adminAccessGate.style.display = "block";
+  }
+  if (adminLoginPanel) {
+    adminLoginPanel.style.display = "none";
+  }
+  if (adminDashboard) {
+    adminDashboard.style.display = "none";
+  }
+}
+
+function hideAccessGate() {
+  if (adminAccessGate) {
+    adminAccessGate.style.display = "none";
+  }
+}
+
+function handleAccessUnlock(event) {
+  event?.preventDefault();
+  if (!adminAccessPasswordInput) {
+    initializeAdminApp();
+    return;
+  }
+  const providedPassword = adminAccessPasswordInput.value?.trim() || "";
+  if (providedPassword !== ADMIN_PAGE_PASSWORD) {
+    if (adminAccessError) {
+      adminAccessError.textContent = "Incorrect page password.";
+    }
+    return;
+  }
+  if (adminAccessError) {
+    adminAccessError.textContent = "";
+  }
+  adminAccessPasswordInput.value = "";
+  grantPageAccess();
+  hideAccessGate();
+  initializeAdminApp();
+}
+
+function attachAccessGateListeners() {
+  adminAccessButton?.addEventListener("click", (event) => {
+    handleAccessUnlock(event);
+  });
+  adminAccessPasswordInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      handleAccessUnlock(event);
+    }
+  });
+}
 
 function formatCurrency(cents = 0) {
   const dollars = Math.max(0, Number(cents) || 0) / 100;
@@ -473,13 +555,15 @@ function attachEventListeners() {
   });
 }
 
-(async function init() {
+async function initializeAdminApp() {
+  if (adminAppReady || adminAppInitializing) {
+    return;
+  }
+  adminAppInitializing = true;
   try {
     const config = await loadConfig();
     adminState.endpoints = buildAdminEndpoints(config);
-    if (adminRoot) {
-      adminRoot.style.display = "flex";
-    }
+    ensureAdminRootVisible();
     attachEventListeners();
     const storedToken = localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY);
     if (storedToken) {
@@ -490,10 +574,25 @@ function attachEventListeners() {
     } else {
       showLoginPanel();
     }
+    adminAppReady = true;
   } catch (err) {
     console.error("Failed to initialize admin dashboard", err);
     if (loginError) {
       loginError.textContent = "Unable to load admin configuration.";
     }
+  } finally {
+    adminAppInitializing = false;
   }
-})();
+}
+
+function bootstrapAdminPage() {
+  attachAccessGateListeners();
+  if (hasPageAccess()) {
+    hideAccessGate();
+    initializeAdminApp();
+  } else {
+    showAccessGate();
+  }
+}
+
+bootstrapAdminPage();
