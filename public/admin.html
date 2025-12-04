@@ -166,6 +166,11 @@
       flex-direction: column;
       gap: 8px;
     }
+    .admin-note {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin: -4px 0 16px;
+    }
     .admin-user-card strong {
       color: var(--muted);
       font-size: 0.85rem;
@@ -187,6 +192,24 @@
 </head>
 <body>
   <div id="adminRoot" class="admin-root" style="display:none;">
+    <div id="adminAccessGate" class="admin-login-panel" style="display:none;">
+      <h2>Restricted Access</h2>
+      <p class="admin-note">
+        Enter the admin page password to continue to the secure dashboard.
+      </p>
+      <label>
+        Page Password
+        <input
+          type="password"
+          id="adminAccessPasswordInput"
+          placeholder="Enter page password"
+          autocomplete="current-password"
+        />
+      </label>
+      <button id="adminAccessButton" class="btn-primary">Unlock Admin Page</button>
+      <p id="adminAccessError" class="error"></p>
+    </div>
+
     <div id="adminLoginPanel" class="admin-login-panel">
       <h2>RideSync Admin</h2>
       <label>
