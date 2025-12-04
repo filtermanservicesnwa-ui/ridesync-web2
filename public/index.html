@@ -3669,8 +3669,15 @@
 
     function dismissLandingPage() {
       if (mainLandingPage && mainLandingPage.classList.contains("active")) {
+        const focusWasInside = mainLandingPage.contains(document.activeElement);
         mainLandingPage.classList.remove("active");
         mainLandingPage.setAttribute("aria-hidden", "true");
+        if (focusWasInside) {
+          landingSyncRiderButton?.blur();
+          landingSyncDriverButton?.blur();
+          emailEl?.focus?.();
+        }
+        mainLandingPage.setAttribute("inert", "");
       }
       if (appBody && appBody.classList.contains("landing-active")) {
         appBody.classList.remove("landing-active");
@@ -8417,6 +8424,16 @@
       const hours = `${date.getHours()}`.padStart(2, "0");
       const minutes = `${date.getMinutes()}`.padStart(2, "0");
       return `${hours}:${minutes}`;
+    }
+
+    function populateReserveTimeSelect() {
+      if (!reserveTimeInput) return;
+      if (!reserveTimeInput.step) {
+        reserveTimeInput.step = "900"; // default to 15-minute increments
+      }
+      if (!reserveTimeInput.value) {
+        reserveTimeInput.value = formatTimeInputValue(computeDefaultReserveDate());
+      }
     }
 
     function formatLocalPickupTimeLabel(date) {
