@@ -45,38 +45,6 @@
       overflow-x: hidden;
       transition: background 0.5s ease;
     }
-    body.weather-clear {
-      --weather-bg: radial-gradient(circle at top, #4da3ff 0%, #001020 85%);
-      --weather-panel-bg: rgba(2,6,23,0.92);
-      --weather-panel-border: rgba(148,163,184,0.45);
-      --weather-overlay-bg: rgba(2,8,23,0.9);
-      --weather-overlay-border: rgba(148,163,184,0.45);
-      --weather-ambient-glow: rgba(59,130,246,0.4);
-    }
-    body.weather-cold {
-      --weather-bg: linear-gradient(to bottom, #8fb6da 0%, #1a2b3f 85%);
-      --weather-panel-bg: rgba(8,16,30,0.94);
-      --weather-panel-border: rgba(204,231,255,0.45);
-      --weather-overlay-bg: rgba(4,12,24,0.9);
-      --weather-overlay-border: rgba(204,231,255,0.35);
-      --weather-ambient-glow: rgba(173,216,255,0.65);
-    }
-    body.weather-rain {
-      --weather-bg: linear-gradient(to bottom, #243447 0%, #0b1118 100%);
-      --weather-panel-bg: rgba(6,11,20,0.92);
-      --weather-panel-border: rgba(59,130,246,0.35);
-      --weather-overlay-bg: rgba(5,10,18,0.88);
-      --weather-overlay-border: rgba(59,130,246,0.35);
-      --weather-ambient-glow: rgba(59,130,246,0.5);
-    }
-    body.weather-snow {
-      --weather-bg: linear-gradient(to bottom, #f3f7fd 0%, #b0c7df 50%, #1a2433 100%);
-      --weather-panel-bg: rgba(18,30,44,0.92);
-      --weather-panel-border: rgba(226,232,240,0.55);
-      --weather-overlay-bg: rgba(10,18,30,0.88);
-      --weather-overlay-border: rgba(226,232,240,0.4);
-      --weather-ambient-glow: rgba(226,232,240,0.7);
-    }
     body.landing-active {
       overflow: hidden;
     }
@@ -107,14 +75,6 @@
     }
     .main-landing.home-screen {
       backdrop-filter: blur(12px);
-    }
-    .home-weather-label {
-      min-height: 1.2em;
-      font-size: 0.85rem;
-      color: #e2e8f0;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      opacity: 0.85;
     }
     .main-landing-wordmark {
       display: flex;
@@ -191,263 +151,6 @@
         0 22px 55px rgba(2,6,23,0.75),
         0 0 28px var(--weather-ambient-glow),
         inset 0 0 14px rgba(15,23,42,0.8);
-    }
-    .weather-cold :is(
-      .card,
-      .fare-box,
-      .trip-builder-card,
-      .membership-card,
-      .membership-plan,
-      .rider-info-card,
-      .ride-chat-card,
-      .payment-panel,
-      .payment-result-card,
-      .cooldown-panel,
-      .rider-overlay-shell,
-      .payment-overlay .payment-panel,
-      .overlay .payment-result-card,
-      .support-panel,
-      .driver-identity-card,
-      .driver-vehicle-card,
-      .driver-license-card,
-      .waitlist-panel,
-      .tip-adjust-card,
-      .landing-button
-    ),
-    .weather-snow :is(
-      .card,
-      .fare-box,
-      .trip-builder-card,
-      .membership-card,
-      .membership-plan,
-      .rider-info-card,
-      .ride-chat-card,
-      .payment-panel,
-      .payment-result-card,
-      .cooldown-panel,
-      .rider-overlay-shell,
-      .payment-overlay .payment-panel,
-      .overlay .payment-result-card,
-      .support-panel,
-      .driver-identity-card,
-      .driver-vehicle-card,
-      .driver-license-card,
-      .waitlist-panel,
-      .tip-adjust-card,
-      .landing-button
-    ) {
-      border: 2px solid rgba(180,220,255,0.85);
-      box-shadow:
-        0 0 18px rgba(150,210,255,0.55),
-        0 0 36px rgba(150,210,255,0.25);
-      position: relative;
-      isolation: isolate;
-      z-index: 0;
-    }
-    .weather-snow :is(
-      .card,
-      .fare-box,
-      .trip-builder-card,
-      .membership-card,
-      .membership-plan,
-      .rider-info-card,
-      .ride-chat-card,
-      .payment-panel,
-      .payment-result-card,
-      .cooldown-panel,
-      .rider-overlay-shell,
-      .payment-overlay .payment-panel,
-      .overlay .payment-result-card,
-      .support-panel,
-      .driver-identity-card,
-      .driver-vehicle-card,
-      .driver-license-card,
-      .waitlist-panel,
-      .tip-adjust-card,
-      .landing-button
-    ) {
-      border-color: rgba(220,240,255,0.95);
-      box-shadow:
-        0 0 22px rgba(200,240,255,0.85),
-        0 0 44px rgba(200,240,255,0.35);
-    }
-    .weather-cold :is(
-      .card,
-      .fare-box,
-      .trip-builder-card,
-      .membership-card,
-      .membership-plan,
-      .rider-info-card,
-      .ride-chat-card,
-      .payment-panel,
-      .payment-result-card,
-      .cooldown-panel,
-      .rider-overlay-shell,
-      .payment-overlay .payment-panel,
-      .overlay .payment-result-card,
-      .support-panel,
-      .driver-identity-card,
-      .driver-vehicle-card,
-      .driver-license-card,
-      .waitlist-panel,
-      .tip-adjust-card,
-      .landing-button
-    )::after,
-    .weather-snow :is(
-      .card,
-      .fare-box,
-      .trip-builder-card,
-      .membership-card,
-      .membership-plan,
-      .rider-info-card,
-      .ride-chat-card,
-      .payment-panel,
-      .payment-result-card,
-      .cooldown-panel,
-      .rider-overlay-shell,
-      .payment-overlay .payment-panel,
-      .overlay .payment-result-card,
-      .support-panel,
-      .driver-identity-card,
-      .driver-vehicle-card,
-      .driver-license-card,
-      .waitlist-panel,
-      .tip-adjust-card,
-      .landing-button
-    )::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(
-        135deg,
-        rgba(255,255,255,0.16),
-        rgba(173,216,255,0.05)
-      );
-      opacity: 0.55;
-      pointer-events: none;
-      mix-blend-mode: screen;
-      z-index: 0;
-    }
-    .weather-snow :is(
-      .card,
-      .fare-box,
-      .trip-builder-card,
-      .membership-card,
-      .membership-plan,
-      .rider-info-card,
-      .ride-chat-card,
-      .payment-panel,
-      .payment-result-card,
-      .cooldown-panel,
-      .rider-overlay-shell,
-      .payment-overlay .payment-panel,
-      .overlay .payment-result-card,
-      .support-panel,
-      .driver-identity-card,
-      .driver-vehicle-card,
-      .driver-license-card,
-      .waitlist-panel,
-      .tip-adjust-card,
-      .landing-button
-    )::after {
-      opacity: 0.7;
-    }
-    .weather-cold :is(
-      .card,
-      .fare-box,
-      .trip-builder-card,
-      .membership-card,
-      .membership-plan,
-      .rider-info-card,
-      .ride-chat-card,
-      .payment-panel,
-      .payment-result-card,
-      .cooldown-panel,
-      .rider-overlay-shell,
-      .payment-overlay .payment-panel,
-      .overlay .payment-result-card,
-      .support-panel,
-      .driver-identity-card,
-      .driver-vehicle-card,
-      .driver-license-card,
-      .waitlist-panel,
-      .tip-adjust-card,
-      .landing-button
-    )::before,
-    .weather-snow :is(
-      .card,
-      .fare-box,
-      .trip-builder-card,
-      .membership-card,
-      .membership-plan,
-      .rider-info-card,
-      .ride-chat-card,
-      .payment-panel,
-      .payment-result-card,
-      .cooldown-panel,
-      .rider-overlay-shell,
-      .payment-overlay .payment-panel,
-      .overlay .payment-result-card,
-      .support-panel,
-      .driver-identity-card,
-      .driver-vehicle-card,
-      .driver-license-card,
-      .waitlist-panel,
-      .tip-adjust-card,
-      .landing-button
-    )::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 0;
-      height: 18px;
-      background-image:
-        repeating-linear-gradient(
-          to right,
-          rgba(255,255,255,0.95) 0px,
-          rgba(255,255,255,0.95) 8px,
-          rgba(255,255,255,0) 12px,
-          rgba(255,255,255,0) 18px
-        ),
-        linear-gradient(to bottom, rgba(180,220,255,0.85), rgba(180,220,255,0));
-      background-repeat: repeat-x;
-      background-size: 18px 18px, 100% 100%;
-      opacity: 0.8;
-      pointer-events: none;
-      z-index: 1;
-    }
-    .weather-snow :is(
-      .card,
-      .fare-box,
-      .trip-builder-card,
-      .membership-card,
-      .membership-plan,
-      .rider-info-card,
-      .ride-chat-card,
-      .payment-panel,
-      .payment-result-card,
-      .cooldown-panel,
-      .rider-overlay-shell,
-      .payment-overlay .payment-panel,
-      .overlay .payment-result-card,
-      .support-panel,
-      .driver-identity-card,
-      .driver-vehicle-card,
-      .driver-license-card,
-      .waitlist-panel,
-      .tip-adjust-card,
-      .landing-button
-    )::before {
-      filter: drop-shadow(0 6px 6px rgba(200,240,255,0.7));
-    }
-    .driver-coming-soon-shell {
-      text-align: center;
-    }
-    .driver-coming-soon-copy {
-      font-size: 1.05rem;
-      color: #cbd5f5;
-      margin: 0;
     }
     .site-footer {
       width: 100%;
@@ -1353,6 +1056,14 @@
       gap: 16px;
       box-shadow: 0 30px 80px rgba(0,0,0,0.65);
     }
+    .driver-coming-soon-shell {
+      text-align: center;
+    }
+    .driver-coming-soon-copy {
+      font-size: 1.05rem;
+      color: #cbd5f5;
+      margin: 0;
+    }
     .overlay-header {
       display:flex;
       justify-content:space-between;
@@ -1923,7 +1634,7 @@
     }
   </style>
 </head>
-<body id="appRoot" class="landing-active weather-clear">
+<body id="appRoot" class="landing-active">
   <div
     id="mainLandingPage"
     class="main-landing home-screen active"
@@ -1938,7 +1649,6 @@
       <span class="brand-accent">Ride</span>
       <span>Sync</span>
     </div>
-    <div id="homeWeatherLabel" class="home-weather-label" aria-live="polite"></div>
     <button id="landingSyncDriver" type="button" class="landing-button landing-button-secondary">
       Sync Driver (Coming Soon)
     </button>
@@ -3235,109 +2945,6 @@
     const storage = getStorage(app);
     const FUNCTIONS_REGION = "us-central1";
     const functionsClient = getFunctions(app, FUNCTIONS_REGION);
-    const WEATHER_THEME_VARIANTS = ["clear", "cold", "rain", "snow"];
-    const WEATHER_THEME_CLASSES = WEATHER_THEME_VARIANTS.map((key) => `weather-${key}`);
-    const WEATHER_RAIN_CONDITIONS = new Set(["rain", "drizzle", "thunderstorm"]);
-    const WEATHER_THEME_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
-    const weatherRootElement = document.getElementById("appRoot") || document.body;
-    let weatherThemeIntervalId = null;
-
-    function normalizeWeatherCondition(value) {
-      if (typeof value !== "string") {
-        return "";
-      }
-      return value.trim().toLowerCase();
-    }
-
-    function deriveVisualWeatherTheme(tempF, condition) {
-      const numericTemp = Number(tempF);
-      const hasTemp = Number.isFinite(numericTemp);
-      const normalizedCondition = normalizeWeatherCondition(condition);
-      const isSnowCondition = normalizedCondition === "snow";
-      const isRainCondition = WEATHER_RAIN_CONDITIONS.has(normalizedCondition);
-      let theme = "clear";
-
-      if ((hasTemp && numericTemp <= 32) || isSnowCondition) {
-        theme = "snow";
-      } else if (isRainCondition) {
-        theme = "rain";
-      } else if (hasTemp && numericTemp <= 49) {
-        theme = "cold";
-      }
-
-      if (theme === "cold" && hasTemp && numericTemp <= 49) {
-        const now = new Date();
-        if (now.getMonth() === 11) {
-          theme = "snow";
-        }
-      }
-
-      return theme;
-    }
-
-    function applyWeatherTheme(theme) {
-      const root = weatherRootElement || document.body;
-      if (!root) {
-        return;
-      }
-      const candidateClass = `weather-${theme}`;
-      root.classList.remove(...WEATHER_THEME_CLASSES);
-      const safeTheme = WEATHER_THEME_CLASSES.includes(candidateClass) ? theme : "clear";
-      root.classList.add(`weather-${safeTheme}`);
-    }
-
-    function resolveWeatherThemeUrl() {
-      const endpoint = functionsConfig.getWeatherThemeUrl || "/getWeatherTheme";
-      if (/^https?:\/\//i.test(endpoint)) {
-        return endpoint;
-      }
-      if (endpoint.startsWith("/")) {
-        return endpoint;
-      }
-      return `/${endpoint}`;
-    }
-
-    async function requestWeatherTheme() {
-      const endpoint = resolveWeatherThemeUrl();
-      const response = await fetch(endpoint, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`Weather theme endpoint failed with status ${response.status}`);
-      }
-      return response.json();
-    }
-
-    async function refreshWeatherTheme(options = {}) {
-      const { silent = false } = options;
-      try {
-        const payload = await requestWeatherTheme();
-        const condition =
-          payload?.mainCondition ||
-          payload?.condition ||
-          payload?.conditionLabel ||
-          payload?.weather?.main ||
-          "";
-        const theme = deriveVisualWeatherTheme(payload?.tempF, condition);
-        applyWeatherTheme(theme);
-      } catch (err) {
-        if (!silent) {
-          console.warn("[RideSync] Weather theming unavailable", err);
-        }
-        applyWeatherTheme("clear");
-      }
-    }
-
-    function startWeatherThemePolling() {
-      refreshWeatherTheme();
-      if (weatherThemeIntervalId) {
-        clearInterval(weatherThemeIntervalId);
-      }
-      weatherThemeIntervalId = window.setInterval(() => {
-        refreshWeatherTheme({ silent: true });
-      }, WEATHER_THEME_REFRESH_INTERVAL_MS);
-    }
-
-    startWeatherThemePolling();
-
     const stripeConfig = APP_CONFIG.stripe || {};
     const fareConfig = APP_CONFIG.fares || {};
     const paymentConfig = APP_CONFIG.payments || {};
