@@ -6800,7 +6800,11 @@
         clearWaitlistEta();
         return;
       }
-      if (waitlistState.etaSource === "ride" && waitlistState.etaTargetTimestamp) {
+      if (
+        waitlistState.etaSource === "ride" &&
+        waitlistState.etaTargetTimestamp &&
+        waitlistState.etaTargetTimestamp > Date.now()
+      ) {
         return;
       }
       const fallbackTarget = Date.now() + fallbackSeconds * 1000;
