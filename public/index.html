@@ -1931,6 +1931,19 @@
               Need multiple stops? Tap + to add them before syncing your destination.
             </div>
             <div id="extraStopsContainer" class="extra-stops"></div>
+            <div id="pickupOverrideField" class="trip-field" style="display:none;">
+              <label for="pickupOverrideInput">Pickup location</label>
+              <input
+                id="pickupOverrideInput"
+                type="text"
+                placeholder="Enter pickup address if location access is off"
+                autocomplete="street-address"
+              />
+              <div id="pickupOverrideHint" class="small">
+                Turn on location services or type where to meet your driver.
+              </div>
+              <div id="pickupOverrideError" class="error"></div>
+            </div>
           </div>
           <div id="ridersSection" class="trip-field">
             <label for="numRiders">Number of riders</label>
@@ -3800,6 +3813,10 @@
     const destinationEl = document.getElementById("destination");
     const addStopButton = document.getElementById("addStopButton");
     const extraStopsContainer = document.getElementById("extraStopsContainer");
+    const pickupOverrideField = document.getElementById("pickupOverrideField");
+    const pickupOverrideInput = document.getElementById("pickupOverrideInput");
+    const pickupOverrideHint = document.getElementById("pickupOverrideHint");
+    const pickupOverrideError = document.getElementById("pickupOverrideError");
     const numRidersEl = document.getElementById("numRiders");
     const ridersSection = document.getElementById("ridersSection");
     const tripMapPreviewEl = document.getElementById("tripMapPreview");
@@ -4052,6 +4069,10 @@
     let pickupMarker;
     let destMarker;
     let destinationGeocoder = null;
+    const pickupOverrideState = {
+      label: "",
+      location: null
+    };
     let destinationPreviewMap;
     let destinationPreviewPickupMarker;
     let destinationPreviewDestMarker;
@@ -5770,6 +5791,14 @@
       });
     }
 
+    if (pickupOverrideInput) {
+      pickupOverrideInput.addEventListener("input", () => {
+        pickupOverrideState.label = pickupOverrideInput.value.trim();
+        pickupOverrideState.location = null;
+        setPickupOverrideError("");
+      });
+    }
+
     async function uploadFileIfAny(fileInput, path) {
       const file = fileInput.files[0];
       if (!file) return null;
@@ -6106,21 +6135,22 @@
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
-            currentLocation = {
+            const literal = {
               lat: pos.coords.latitude,
               lng: pos.coords.longitude
             };
-            pickupMarker.setPosition(currentLocation);
-            map.setCenter(currentLocation);
-            if (destinationLatLng) {
-              updateTripPreviewMap();
-              updateRouteAndFare();
-            }
+            hidePickupOverrideField();
+            pickupOverrideState.label = "";
+            pickupOverrideState.location = null;
+            setPickupOverrideError("");
+            applyPickupLocation(literal, { recenterMap: true });
           },
           (err) => {
-            console.warn("Geolocation error", err);
+            handleGeolocationError(err);
           }
         );
+      } else {
+        handleGeolocationError(null);
       }
 
       setupDestinationAutocomplete();
@@ -6150,6 +6180,119 @@
           updateTripPreviewMap();
           updateRouteAndFare();
         });
+      }
+    }
+
+    function setPickupOverrideError(message) {
+      if (pickupOverrideError) {
+        pickupOverrideError.textContent = message || "";
+      }
+    }
+
+    function showPickupOverrideField(message) {
+      if (!pickupOverrideField) return;
+      pickupOverrideField.style.display = "block";
+      if (pickupOverrideHint) {
+        pickupOverrideHint.textContent =
+          message ||
+          "Location access is off. Enter your pickup address to continue.";
+      }
+    }
+
+    function hidePickupOverrideField() {
+      if (pickupOverrideField) {
+        pickupOverrideField.style.display = "none";
+      }
+      if (pickupOverrideInput) {
+        pickupOverrideInput.value = "";
+      }
+      pickupOverrideState.label = "";
+      pickupOverrideState.location = null;
+      setPickupOverrideError("");
+    }
+
+    function applyPickupLocation(literal, options = {}) {
+      if (!isLatLngLiteral(literal)) {
+        return;
+      }
+      currentLocation = { lat: literal.lat, lng: literal.lng };
+      if (pickupMarker) {
+        pickupMarker.setPosition(currentLocation);
+        pickupMarker.setVisible(true);
+      }
+      if (options.recenterMap && map) {
+        map.setCenter(currentLocation);
+      }
+      if (destinationLatLng) {
+        updateTripPreviewMap();
+        updateRouteAndFare();
+      } else {
+        updateTripPreviewMap();
+      }
+    }
+
+    function handleGeolocationError(err) {
+      console.warn("Geolocation error", err);
+      const denied = err?.code === 1;
+      const message = denied
+        ? "Location access is blocked. Enter your pickup address below or enable location services."
+        : "We couldn't detect your location. Enter a pickup address or try again.";
+      showPickupOverrideField(message);
+      if (profileError) {
+        profileError.textContent = message;
+      }
+      pickupOverrideInput?.focus();
+    }
+
+    async function ensurePickupLocationReady() {
+      if (currentLocation && isLatLngLiteral(currentLocation)) {
+        return true;
+      }
+      if (!pickupOverrideInput) {
+        if (profileError) {
+          profileError.textContent = "Turn on location services to sync your ride.";
+        }
+        return false;
+      }
+      showPickupOverrideField();
+      const manualValue = pickupOverrideInput.value.trim();
+      if (!manualValue) {
+        setPickupOverrideError("Enter your pickup address to continue.");
+        pickupOverrideInput.focus();
+        return false;
+      }
+      if (
+        pickupOverrideState.location &&
+        pickupOverrideState.label.toLowerCase() === manualValue.toLowerCase()
+      ) {
+        applyPickupLocation(pickupOverrideState.location, { recenterMap: false });
+        setPickupOverrideError("");
+        return true;
+      }
+      try {
+        const place = await geocodeDestinationInput(manualValue, {
+          emptyMessage: "Enter a pickup address to continue.",
+          notFoundMessage: "We couldn't find that pickup location. Try a different address.",
+          rateLimitMessage: "We're seeing a lot of lookups. Please try again shortly.",
+          genericErrorMessage: "Maps couldn't look up that pickup location. Please try again."
+        });
+        const literal = latLngToLiteral(place?.geometry?.location);
+        if (!isLatLngLiteral(literal)) {
+          throw new Error("We couldn't find that pickup location. Try a different address.");
+        }
+        pickupOverrideState.location = literal;
+        pickupOverrideState.label = place?.formatted_address || manualValue;
+        pickupOverrideInput.value = pickupOverrideState.label;
+        setPickupOverrideError("");
+        applyPickupLocation(literal, { recenterMap: true });
+        return true;
+      } catch (err) {
+        console.error("Pickup override geocode failed", err);
+        setPickupOverrideError(
+          err?.message || "We couldn't find that pickup location. Try again."
+        );
+        pickupOverrideInput.focus();
+        return false;
       }
     }
 
@@ -6550,10 +6693,16 @@
       return destinationGeocoder;
     }
 
-    async function geocodeDestinationInput(address) {
+    async function geocodeDestinationInput(address, options = {}) {
+      const {
+        emptyMessage = "Enter a destination before syncing.",
+        notFoundMessage = "We couldn't find that destination. Try a more complete address.",
+        rateLimitMessage = "We're seeing a lot of lookups. Please try again shortly.",
+        genericErrorMessage = "Maps couldn't look up that destination. Please try again."
+      } = options;
       const trimmed = address?.trim();
       if (!trimmed) {
-        throw new Error("Enter a destination before syncing.");
+        throw new Error(emptyMessage);
       }
       if (googleMapsLoadFailed) {
         throw new Error("Maps aren't available right now. Please refresh and try again.");
@@ -6574,22 +6723,14 @@
               return;
             }
             if (status === "ZERO_RESULTS") {
-              reject(
-                new Error(
-                  "We couldn't find that destination. Try a more complete address."
-                )
-              );
+              reject(new Error(notFoundMessage));
               return;
             }
             if (status === "OVER_QUERY_LIMIT") {
-              reject(
-                new Error("We're seeing a lot of lookups. Please try again shortly.")
-              );
+              reject(new Error(rateLimitMessage));
               return;
             }
-            reject(
-              new Error("Maps couldn't look up that destination. Please try again.")
-            );
+            reject(new Error(genericErrorMessage));
           }
         );
       });
@@ -6633,6 +6774,11 @@
 
       initMapOnce();
       ensureBackgroundMapReady();
+
+      const pickupReady = await ensurePickupLocationReady();
+      if (!pickupReady) {
+        return false;
+      }
 
       if (!lastRideMetrics) {
         const routeReady = await updateRouteAndFare();
