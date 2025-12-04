@@ -245,6 +245,42 @@
       border: 1px solid #4b5563;
       margin-top: 8px;
     }
+    .reserve-mode-options {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 8px 0 10px;
+    }
+    .reserve-mode-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(15,23,42,0.6);
+      font-size: 0.9rem;
+    }
+    .reserve-mode-option input {
+      width: auto;
+      margin: 0;
+    }
+    .reserve-datetime-row {
+      display: none;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .reserve-datetime-field {
+      flex: 1 1 160px;
+      display: flex;
+      flex-direction: column;
+    }
+    .reserve-datetime-field label {
+      margin: 0 0 4px;
+      font-size: 0.75rem;
+      color: #cbd5f5;
+    }
     .btn-small {
       width: auto;
       padding: 6px 10px;
@@ -2374,12 +2410,38 @@
       </div>
 
       <div id="reserveTimeSection" class="fare-section">
-        <label for="reserveTimeSelect" class="field-label">
-          Reserve pickup time (optional)
-        </label>
-        <select id="reserveTimeSelect" class="select-input">
-          <option value="asap">ASAP (no reservation)</option>
-        </select>
+        <label class="field-label">Reserve pickup time</label>
+        <div class="reserve-mode-options">
+          <label class="reserve-mode-option">
+            <input
+              type="radio"
+              name="reserveMode"
+              value="asap"
+              id="reserveModeAsap"
+              checked
+            />
+            <span>ASAP (no reservation)</span>
+          </label>
+          <label class="reserve-mode-option">
+            <input
+              type="radio"
+              name="reserveMode"
+              value="schedule"
+              id="reserveModeSchedule"
+            />
+            <span>Schedule pickup (+$5)</span>
+          </label>
+        </div>
+        <div id="reserveDateTimeRow" class="reserve-datetime-row">
+          <div class="reserve-datetime-field">
+            <label for="reserveDateInput">Date</label>
+            <input id="reserveDateInput" type="date" />
+          </div>
+          <div class="reserve-datetime-field">
+            <label for="reserveTimeInput">Pickup time</label>
+            <input id="reserveTimeInput" type="time" step="900" />
+          </div>
+        </div>
         <p id="reserveTimeHint" class="small">
           Scheduling a pickup adds a $5 reserve fee.
         </p>
@@ -2967,12 +3029,8 @@
       Math.round(paymentConfig.maxTipHoldCents || 1200)
     );
     const RESERVE_FEE_CENTS = 500;
-    const RESERVE_TIME_OPTIONS = [
-      { value: "asap", label: "ASAP (no reservation)", minutes: null },
-      { value: "15m", label: "In 15 minutes (+$5)", minutes: 15 },
-      { value: "30m", label: "In 30 minutes (+$5)", minutes: 30 },
-      { value: "60m", label: "In 1 hour (+$5)", minutes: 60 },
-    ];
+    const RESERVATION_MIN_LEAD_MINUTES = 40;
+    const RESERVATION_MAX_LEAD_MINUTES = 24 * 60;
 
     function normalizeStripeKeyForMode(key, mode) {
       const trimmed = typeof key === "string" ? key.trim() : "";
@@ -3564,7 +3622,10 @@
     const syncTipCustomInput = document.getElementById("syncTipCustomInput");
     const syncTipMessage = document.getElementById("syncTipMessage");
     const reserveTimeSection = document.getElementById("reserveTimeSection");
-    const reserveTimeSelect = document.getElementById("reserveTimeSelect");
+    const reserveModeRadios = document.querySelectorAll('input[name="reserveMode"]');
+    const reserveDateInput = document.getElementById("reserveDateInput");
+    const reserveTimeInput = document.getElementById("reserveTimeInput");
+    const reserveDateTimeRow = document.getElementById("reserveDateTimeRow");
     const reserveTimeHint = document.getElementById("reserveTimeHint");
     const referralCodeSection = document.getElementById("referralCodeSection");
     const referralCodeInput = document.getElementById("referralCodeInput");
@@ -3830,7 +3891,7 @@
     const syncConfirmState = {
       reserveFeeCents: 0,
       reserveTimeIso: null,
-      reserveOption: "asap",
+      reserveMode: "asap",
       referral: {
         code: null,
         discountCents: 0,
@@ -7616,7 +7677,7 @@
     function resetSyncConfirmState() {
       syncConfirmState.reserveFeeCents = 0;
       syncConfirmState.reserveTimeIso = null;
-      syncConfirmState.reserveOption = "asap";
+      syncConfirmState.reserveMode = "asap";
       syncConfirmState.referral = {
         code: null,
         discountCents: 0,
@@ -7654,59 +7715,196 @@
         : "—";
     }
 
-    function populateReserveTimeSelect() {
-      if (!reserveTimeSelect) return;
-      reserveTimeSelect.innerHTML = "";
-      RESERVE_TIME_OPTIONS.forEach((option) => {
-        const opt = document.createElement("option");
-        opt.value = option.value;
-        opt.textContent = option.label;
-        reserveTimeSelect.add(opt);
-      });
-      reserveTimeSelect.value = syncConfirmState.reserveOption || "asap";
+    function computeDefaultReserveDate() {
+      const target = new Date();
+      target.setMinutes(target.getMinutes() + RESERVATION_MIN_LEAD_MINUTES);
+      return target;
+    }
+
+    function formatDateInputValue(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return "";
+      }
+      const year = date.getFullYear();
+      const month = `${date.getMonth() + 1}`.padStart(2, "0");
+      const day = `${date.getDate()}`.padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function formatTimeInputValue(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return "";
+      }
+      const hours = `${date.getHours()}`.padStart(2, "0");
+      const minutes = `${date.getMinutes()}`.padStart(2, "0");
+      return `${hours}:${minutes}`;
     }
 
     function formatLocalPickupTimeLabel(date) {
       if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
         return "";
       }
-      return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      return date.toLocaleString([], {
+        weekday: "short",
+        hour: "numeric",
+        minute: "2-digit",
+      });
     }
 
-    function updateReserveTimeHint() {
-      if (!reserveTimeHint) return;
-      if (syncConfirmState.reserveTimeIso) {
-        const date = new Date(syncConfirmState.reserveTimeIso);
-        const label = formatLocalPickupTimeLabel(date);
-        if (label) {
-          reserveTimeHint.textContent = `Scheduled pickup at ${label}. A $5 reserve fee applies.`;
-          return;
-        }
+    function updateReserveDateBounds() {
+      if (!reserveDateInput) return;
+      const now = new Date();
+      const maxDate = new Date(now.getTime() + RESERVATION_MAX_LEAD_MINUTES * 60000);
+      reserveDateInput.min = formatDateInputValue(now);
+      reserveDateInput.max = formatDateInputValue(maxDate);
+    }
+
+    function setReserveInputsFromDate(date) {
+      if (!reserveDateInput || !reserveTimeInput) return;
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        const fallback = computeDefaultReserveDate();
+        setReserveInputsFromDate(fallback);
+        return;
       }
-      reserveTimeHint.textContent = "Scheduling a pickup adds a $5 reserve fee.";
+      reserveDateInput.value = formatDateInputValue(date);
+      reserveTimeInput.value = formatTimeInputValue(date);
     }
 
-    function applyReserveTimeSelection(value) {
-      const normalized = value || "asap";
-      syncConfirmState.reserveOption = normalized;
-      if (normalized === "asap") {
+    function resolveReserveInputDate() {
+      if (!reserveDateInput || !reserveTimeInput) return null;
+      const dateValue = reserveDateInput.value;
+      const timeValue = reserveTimeInput.value;
+      if (!dateValue || !timeValue) return null;
+      const [year, month, day] = dateValue.split("-").map((part) => Number(part));
+      const [hours, minutes] = timeValue.split(":").map((part) => Number(part));
+      if (
+        !Number.isFinite(year) ||
+        !Number.isFinite(month) ||
+        !Number.isFinite(day) ||
+        !Number.isFinite(hours) ||
+        !Number.isFinite(minutes)
+      ) {
+        return null;
+      }
+      const scheduled = new Date(year, month - 1, day, hours, minutes);
+      if (Number.isNaN(scheduled.getTime())) {
+        return null;
+      }
+      return scheduled;
+    }
+
+    function updateReserveModeUi() {
+      const isScheduled = syncConfirmState.reserveMode === "schedule";
+      if (reserveDateTimeRow) {
+        reserveDateTimeRow.style.display = isScheduled ? "flex" : "none";
+      }
+      reserveModeRadios?.forEach?.((radio) => {
+        radio.checked = radio.value === syncConfirmState.reserveMode;
+      });
+    }
+
+    function updateReserveTimeHint(dateOverride = null, messageOverride = "") {
+      if (!reserveTimeHint) return;
+      if (messageOverride) {
+        reserveTimeHint.textContent = messageOverride;
+        return;
+      }
+      if (
+        syncConfirmState.reserveMode !== "schedule" ||
+        !syncConfirmState.reserveTimeIso
+      ) {
+        reserveTimeHint.textContent = "Scheduling a pickup adds a $5 reserve fee.";
+        return;
+      }
+      const date =
+        dateOverride instanceof Date
+          ? dateOverride
+          : new Date(syncConfirmState.reserveTimeIso);
+      const label = formatLocalPickupTimeLabel(date);
+      reserveTimeHint.textContent = label
+        ? `Scheduled pickup at ${label}. A $5 reserve fee applies.`
+        : "Scheduling a pickup adds a $5 reserve fee.";
+    }
+
+    function updateScheduledReserveState({ showErrors = true } = {}) {
+      if (syncConfirmState.reserveMode !== "schedule") {
         syncConfirmState.reserveFeeCents = 0;
         syncConfirmState.reserveTimeIso = null;
-      } else {
-        const option = RESERVE_TIME_OPTIONS.find((opt) => opt.value === normalized);
-        const minutes = option?.minutes ?? 0;
-        const now = new Date();
-        syncConfirmState.reserveFeeCents = minutes > 0 ? RESERVE_FEE_CENTS : 0;
-        syncConfirmState.reserveTimeIso =
-          minutes > 0 ? new Date(now.getTime() + minutes * 60000).toISOString() : null;
+        updateReserveTimeHint();
+        updateSyncConfirmTotalDisplay();
+        return { valid: true };
       }
-      updateReserveTimeHint();
+      const targetDate = resolveReserveInputDate();
+      if (!targetDate) {
+        const message = "Choose both a date and time for your pickup.";
+        if (showErrors) {
+          updateReserveTimeHint(null, message);
+        }
+        syncConfirmState.reserveFeeCents = 0;
+        syncConfirmState.reserveTimeIso = null;
+        updateSyncConfirmTotalDisplay();
+        return { valid: false, message };
+      }
+      const diffMinutes = (targetDate.getTime() - Date.now()) / 60000;
+      if (diffMinutes < RESERVATION_MIN_LEAD_MINUTES) {
+        const message = `Pick a time at least ${RESERVATION_MIN_LEAD_MINUTES} minutes from now.`;
+        if (showErrors) {
+          updateReserveTimeHint(null, message);
+        }
+        syncConfirmState.reserveFeeCents = 0;
+        syncConfirmState.reserveTimeIso = null;
+        updateSyncConfirmTotalDisplay();
+        return { valid: false, message };
+      }
+      if (diffMinutes > RESERVATION_MAX_LEAD_MINUTES) {
+        const message = "Pick a time within the next 24 hours.";
+        if (showErrors) {
+          updateReserveTimeHint(null, message);
+        }
+        syncConfirmState.reserveFeeCents = 0;
+        syncConfirmState.reserveTimeIso = null;
+        updateSyncConfirmTotalDisplay();
+        return { valid: false, message };
+      }
+      syncConfirmState.reserveFeeCents = RESERVE_FEE_CENTS;
+      syncConfirmState.reserveTimeIso = targetDate.toISOString();
+      updateReserveTimeHint(targetDate);
       updateSyncConfirmTotalDisplay();
+      return { valid: true };
     }
 
-    function handleReserveTimeSelectChange() {
-      if (!reserveTimeSelect) return;
-      applyReserveTimeSelection(reserveTimeSelect.value);
+    function ensureValidReserveSelection({ showErrors = true } = {}) {
+      if (syncConfirmState.reserveMode !== "schedule") {
+        return { valid: true };
+      }
+      return updateScheduledReserveState({ showErrors });
+    }
+
+    function handleReserveModeChange(value) {
+      const normalized = value === "schedule" ? "schedule" : "asap";
+      if (syncConfirmState.reserveMode === normalized) return;
+      syncConfirmState.reserveMode = normalized;
+      if (normalized === "schedule" && !syncConfirmState.reserveTimeIso) {
+        setReserveInputsFromDate(computeDefaultReserveDate());
+      } else if (normalized === "asap") {
+        syncConfirmState.reserveFeeCents = 0;
+        syncConfirmState.reserveTimeIso = null;
+      }
+      updateReserveModeUi();
+      updateScheduledReserveState({ showErrors: normalized === "schedule" });
+    }
+
+    function initializeReserveInputs({ preserveSelection = false } = {}) {
+      updateReserveDateBounds();
+      if (syncConfirmState.reserveMode === "schedule" && syncConfirmState.reserveTimeIso) {
+        const existingDate = new Date(syncConfirmState.reserveTimeIso);
+        setReserveInputsFromDate(existingDate);
+      } else if (!preserveSelection) {
+        setReserveInputsFromDate(computeDefaultReserveDate());
+      }
+      updateReserveModeUi();
+      updateReserveTimeHint();
+      updateScheduledReserveState({ showErrors: false });
     }
 
     function updateReferralMessage(message) {
@@ -8099,11 +8297,7 @@
       } else if (referralCodeInput) {
         referralCodeInput.value = "";
       }
-      populateReserveTimeSelect();
-      if (reserveTimeSelect) {
-        reserveTimeSelect.value = syncConfirmState.reserveOption || "asap";
-      }
-      updateReserveTimeHint();
+      initializeReserveInputs({ preserveSelection: preserveFareExtras });
       updateSyncConfirmTotalDisplay();
       initializeSyncMembershipSelection({ preserveSelection });
       const presetMatch = isPresetTipValue(
@@ -8153,6 +8347,17 @@
         }
         return;
       }
+      const reserveValidation = ensureValidReserveSelection({ showErrors: true });
+      if (!reserveValidation.valid) {
+        if (syncConfirmError) {
+          syncConfirmError.textContent =
+            reserveValidation.message || "Choose a valid pickup time.";
+        }
+        return;
+      }
+      if (syncConfirmError) {
+        syncConfirmError.textContent = "";
+      }
       const upgradePlan = syncMembershipUpgradeMode
         ? syncSelectedMembershipPlan
         : null;
@@ -8193,9 +8398,16 @@
       syncTipCustomInput.addEventListener("input", handleSyncTipCustomInput);
     }
 
-    if (reserveTimeSelect) {
-      reserveTimeSelect.addEventListener("change", handleReserveTimeSelectChange);
-    }
+    reserveModeRadios?.forEach?.((radio) => {
+      radio.addEventListener("change", () => handleReserveModeChange(radio.value));
+    });
+    [reserveDateInput, reserveTimeInput].forEach((input) => {
+      if (!input) return;
+      input.addEventListener("change", () => {
+        if (syncConfirmState.reserveMode !== "schedule") return;
+        updateScheduledReserveState({ showErrors: true });
+      });
+    });
 
     if (applyReferralCodeButton) {
       applyReferralCodeButton.addEventListener("click", handleReferralCodeApply);

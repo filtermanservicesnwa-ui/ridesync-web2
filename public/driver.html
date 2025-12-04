@@ -974,6 +974,9 @@
             <div><strong>Pickup:</strong> <span id="driverOfferPickupText"></span></div>
             <div><strong>Dropoff:</strong> <span id="driverOfferDropoffText"></span></div>
             <div><strong>Riders:</strong> <span id="driverOfferRiderCount"></span></div>
+            <div id="driverOfferReserveRow" style="display:none;">
+              <strong>Pickup time:</strong> <span id="driverOfferPickupTime"></span>
+            </div>
           </div>
           <div class="button-row">
             <button id="driverOfferRejectButton" class="btn-secondary" type="button">Decline</button>
@@ -1306,6 +1309,8 @@
     const driverOfferPickupText = document.getElementById("driverOfferPickupText");
     const driverOfferDropoffText = document.getElementById("driverOfferDropoffText");
     const driverOfferRiderCount = document.getElementById("driverOfferRiderCount");
+    const driverOfferReserveRow = document.getElementById("driverOfferReserveRow");
+    const driverOfferPickupTime = document.getElementById("driverOfferPickupTime");
     const driverOfferAcceptButton = document.getElementById("driverOfferAcceptButton");
     const driverOfferRejectButton = document.getElementById("driverOfferRejectButton");
     const driverNavPickupAddress = document.getElementById("driverNavPickupAddress");
@@ -1467,9 +1472,12 @@
       oscillator.stop(now + 1.2);
     }
     const EARLY_ASSIGNMENT_MINUTES = 6;
+    const RESERVED_DRIVER_RELEASE_MINUTES = 40;
+    const RESERVED_VISIBILITY_REFRESH_MS = 30000;
     let queuedRideGroups = [];
     let latestVisiblePendingRides = [];
     let latestRideSnapshot = [];
+    let hasScheduledPendingRides = false;
     let latestDropoffEtaMinutes = null;
     let rideAutoReservePromise = null;
     let earlyAssignmentRideId = null;
@@ -1992,6 +2000,9 @@
     function refreshDriverRideVisibility() {
       renderRides(latestRideSnapshot);
     }
+    setInterval(() => {
+      refreshDriverRideVisibility();
+    }, RESERVED_VISIBILITY_REFRESH_MS);
 
     toggleOnlineButton.addEventListener("click", async () => {
       setOnline(!isOnline);
@@ -2072,6 +2083,68 @@
       return rider?.toDestination || rider?.toAddress || rider?.destAddress || "";
     }
 
+    function resolveTimestampMillis(value) {
+      if (!value && value !== 0) return null;
+      if (typeof value.toMillis === "function") {
+        const ms = value.toMillis();
+        return Number.isFinite(ms) ? ms : null;
+      }
+      if (typeof value.toDate === "function") {
+        const date = value.toDate();
+        const ms = date?.getTime?.();
+        return Number.isFinite(ms) ? ms : null;
+      }
+      if (typeof value === "number") {
+        return Number.isFinite(value) ? value : null;
+      }
+      if (typeof value === "string") {
+        const parsed = Date.parse(value);
+        return Number.isNaN(parsed) ? null : parsed;
+      }
+      if (typeof value.seconds === "number") {
+        const nanos =
+          typeof value.nanoseconds === "number"
+            ? value.nanoseconds
+            : typeof value.nanosecond === "number"
+            ? value.nanosecond
+            : 0;
+        return value.seconds * 1000 + Math.round(nanos / 1e6);
+      }
+      return null;
+    }
+
+    function resolveRideReserveDate(ride) {
+      if (!ride) return null;
+      const reserveDate =
+        resolveTimestampMillis(ride.reservePickupAt) ??
+        (ride.reserveTimeIso ? Date.parse(ride.reserveTimeIso) : null);
+      if (!reserveDate || Number.isNaN(reserveDate)) {
+        return null;
+      }
+      const date = new Date(reserveDate);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatReserveDisplay(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return "";
+      }
+      return date.toLocaleString([], {
+        weekday: "short",
+        hour: "numeric",
+        minute: "2-digit"
+      });
+    }
+
+    function isRideReadyForDrivers(ride, nowMillis = Date.now()) {
+      const reserveDate = resolveRideReserveDate(ride);
+      if (!reserveDate) {
+        return true;
+      }
+      const diffMs = reserveDate.getTime() - nowMillis;
+      return diffMs <= RESERVED_DRIVER_RELEASE_MINUTES * 60000;
+    }
+
     function riderInitials(name) {
       return (name || "RS")
         .split(" ")
@@ -2139,6 +2212,24 @@
         chip.textContent = `Rider ${index + 1}`;
         driverOverlayChips.appendChild(chip);
       });
+    }
+
+    function renderDriverOfferReserveInfo(ride) {
+      if (!driverOfferReserveRow || !driverOfferPickupTime) return;
+      const reserveDate = resolveRideReserveDate(ride);
+      if (!reserveDate) {
+        driverOfferReserveRow.style.display = "none";
+        driverOfferPickupTime.textContent = "";
+        return;
+      }
+      const label = formatReserveDisplay(reserveDate);
+      if (!label) {
+        driverOfferReserveRow.style.display = "none";
+        driverOfferPickupTime.textContent = "";
+        return;
+      }
+      driverOfferPickupTime.textContent = label;
+      driverOfferReserveRow.style.display = "block";
     }
 
     function sanitizeDriverChatText(value) {
@@ -2407,6 +2498,7 @@
       driverOfferDropoffText.textContent = dropoffLabel(ride) || "Dropoff pending";
       const riderCount = ride?.numRiders || ride?.riderCount || ride?.currentRiderCount || 1;
       driverOfferRiderCount.textContent = `${riderCount} rider${riderCount === 1 ? "" : "s"}`;
+      renderDriverOfferReserveInfo(ride);
       setDriverOverlayState(DRIVER_STATES.OFFER, { forceReveal: true });
       playRideAlertSound();
     }
@@ -2415,30 +2507,42 @@
       const sourceRides = Array.isArray(allRides) ? allRides : [];
       latestRideSnapshot = sourceRides.slice();
       const allowedStatuses = ["pending_driver", "pool_searching", "pooled_pending_driver", "pending"];
+      const now = Date.now();
       const visible = sourceRides.filter((r) => {
         if (!isOnline) return false;
         if (r.driverId) return false;
         const st = r.status || "pending";
-        return allowedStatuses.includes(st);
+        if (!allowedStatuses.includes(st)) return false;
+        return isRideReadyForDrivers(r, now);
       });
+      const scheduledPending = sourceRides.some((ride) => {
+        if (ride.driverId) return false;
+        const st = ride.status || "pending";
+        if (!allowedStatuses.includes(st)) return false;
+        return !isRideReadyForDrivers(ride, now);
+      });
+      hasScheduledPendingRides = scheduledPending;
 
       latestVisiblePendingRides = visible;
       syncRideOfferQueue(visible);
-      updateRidesListMessage(visible);
+      updateRidesListMessage(visible, { scheduledPending });
       maybeTriggerEarlyNextRide();
       maybeShowNextRideOffer();
     }
 
-    function updateRidesListMessage(visibleRides) {
+    function updateRidesListMessage(visibleRides, { scheduledPending } = {}) {
       if (!ridesList) return;
       if (!isOnline) {
         ridesList.innerHTML = '<div class="small">Go online to receive ride requests.</div>';
         return;
       }
+      const pendingScheduled =
+        typeof scheduledPending === "boolean" ? scheduledPending : hasScheduledPendingRides;
       const pendingCount = rideOfferQueue.length + (pendingRideOffer ? 1 : 0);
       if (!visibleRides.length && pendingCount === 0) {
-        ridesList.innerHTML =
-          '<div class="small">Awaiting new ride requests… they will appear as overlays.</div>';
+        ridesList.innerHTML = pendingScheduled
+          ? '<div class="small">Next reserved ride is scheduled for later. We\'ll alert you 40 minutes before pickup.</div>'
+          : '<div class="small">Awaiting new ride requests… they will appear as overlays.</div>';
         return;
       }
       ridesList.innerHTML = `<div class="small">Ride offers pop up automatically. ${
@@ -2608,7 +2712,9 @@
           rideOfferQueue.unshift(ride);
         } finally {
           rideAutoReservePromise = null;
-          updateRidesListMessage(latestVisiblePendingRides);
+          updateRidesListMessage(latestVisiblePendingRides, {
+            scheduledPending: hasScheduledPendingRides
+          });
           maybeTriggerEarlyNextRide();
         }
       })();

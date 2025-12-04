@@ -737,7 +737,7 @@ const MEMBERSHIP_TIER_TO_PLAN = Object.freeze({
   NWA: "nwa_unlimited",
 });
 const RESERVATION_FEE_CENTS = 500;
-const RESERVATION_MIN_LEAD_MINUTES = 5;
+const RESERVATION_MIN_LEAD_MINUTES = 40;
 const RESERVATION_MAX_LEAD_MINUTES = 24 * 60;
 const REFERRAL_CODES_COLLECTION = "referralCodes";
 const REFERRAL_USAGE_COLLECTION = "referralCodeUsage";
