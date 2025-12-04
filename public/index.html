@@ -11393,21 +11393,29 @@
               return;
             }
             installButton.disabled = true;
-            deferredPwaPrompt.prompt();
-            const choice = await deferredPwaPrompt.userChoice;
-            const outcome = choice?.outcome;
-            deferredPwaPrompt = null;
-            if (outcome === "accepted") {
-              try {
-                localStorage.setItem("ridesync_pwa_installed", "1");
-              } catch (_) {
-                // ignore storage errors
+            try {
+              deferredPwaPrompt.prompt();
+              const choice = await deferredPwaPrompt.userChoice;
+              const outcome = choice?.outcome;
+              deferredPwaPrompt = null;
+              if (outcome === "accepted") {
+                try {
+                  localStorage.setItem("ridesync_pwa_installed", "1");
+                } catch (_) {
+                  // ignore storage errors
+                }
+                hidePwaOverlay();
+                return;
               }
-              hidePwaOverlay();
-              return;
-            }
-            if (outcome === "dismissed") {
-              hidePwaOverlay({ rememberDismiss: true });
+              if (outcome === "dismissed") {
+                // Remember the dismissal so we do not trap the user on a dead overlay.
+                hidePwaOverlay({ rememberDismiss: true });
+                return;
+              }
+            } finally {
+              // If the browser refuses to show another prompt, keep the button disabled
+              // until a new beforeinstallprompt event fires.
+              installButton.disabled = !deferredPwaPrompt;
             }
           };
         }
