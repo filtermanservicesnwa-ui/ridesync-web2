@@ -1,12 +1,12 @@
 const APP_CONFIG_URL = "/app-config.json";
-const LOCAL_STORAGE_TOKEN_KEY = "ridesyncAdminToken";
 const REFRESH_INTERVAL_MS = 60_000;
 const FIREBASE_PROJECT_ID = "ride-sync-nwa";
 const ADMIN_PAGE_PASSWORD = "Aurora-Verdant-4729";
 const ADMIN_PAGE_ACCESS_KEY = "ridesyncAdminPageAccess";
+const ADMIN_PAGE_PASSWORD_HEADER = "X-Admin-Page-Pass";
 
 const adminState = {
-  token: null,
+  pagePassword: null,
   endpoints: {},
   refreshTimer: null,
   activity: [],
@@ -15,16 +15,11 @@ const adminState = {
 };
 
 const adminRoot = document.getElementById("adminRoot");
-const adminLoginPanel = document.getElementById("adminLoginPanel");
 const adminDashboard = document.getElementById("adminDashboard");
 const adminAccessGate = document.getElementById("adminAccessGate");
 const adminAccessPasswordInput = document.getElementById("adminAccessPasswordInput");
 const adminAccessButton = document.getElementById("adminAccessButton");
 const adminAccessError = document.getElementById("adminAccessError");
-const loginButton = document.getElementById("adminLoginButton");
-const loginError = document.getElementById("adminLoginError");
-const screenNameInput = document.getElementById("adminScreenNameInput");
-const passwordInput = document.getElementById("adminPasswordInput");
 const ridersOnlineEl = document.getElementById("adminRidersOnlineCount");
 const driversOnlineEl = document.getElementById("adminDriversOnlineCount");
 const revenueTodayEl = document.getElementById("adminRevenueToday");
@@ -43,19 +38,51 @@ function ensureAdminRootVisible() {
   }
 }
 
-function hasPageAccess() {
+function readStoredPagePassword() {
   try {
-    return sessionStorage.getItem(ADMIN_PAGE_ACCESS_KEY) === "granted";
+    const rawValue = sessionStorage.getItem(ADMIN_PAGE_ACCESS_KEY);
+    if (!rawValue) {
+      return null;
+    }
+    const parsed = JSON.parse(rawValue);
+    if (parsed && typeof parsed.password === "string" && parsed.password.length) {
+      return parsed.password;
+    }
   } catch (err) {
-    return false;
+    return null;
+  }
+  return null;
+}
+
+function hasPageAccess() {
+  const storedPassword = readStoredPagePassword();
+  if (storedPassword) {
+    adminState.pagePassword = storedPassword;
+    return true;
+  }
+  return false;
+}
+
+function rememberPagePassword(password) {
+  adminState.pagePassword = password;
+  try {
+    sessionStorage.setItem(
+      ADMIN_PAGE_ACCESS_KEY,
+      JSON.stringify({
+        password,
+        grantedAt: Date.now(),
+      })
+    );
+  } catch (err) {
+    // Ignore storage errors.
   }
 }
 
-function grantPageAccess() {
+function clearStoredPagePassword() {
   try {
-    sessionStorage.setItem(ADMIN_PAGE_ACCESS_KEY, "granted");
+    sessionStorage.removeItem(ADMIN_PAGE_ACCESS_KEY);
   } catch (err) {
-    // Ignore storage issues and fall back to requiring password again later.
+    // Ignore storage issues.
   }
 }
 
@@ -64,8 +91,8 @@ function showAccessGate() {
   if (adminAccessGate) {
     adminAccessGate.style.display = "block";
   }
-  if (adminLoginPanel) {
-    adminLoginPanel.style.display = "none";
+  if (adminAccessPasswordInput) {
+    adminAccessPasswordInput.value = "";
   }
   if (adminDashboard) {
     adminDashboard.style.display = "none";
@@ -95,7 +122,7 @@ function handleAccessUnlock(event) {
     adminAccessError.textContent = "";
   }
   adminAccessPasswordInput.value = "";
-  grantPageAccess();
+  rememberPagePassword(providedPassword);
   hideAccessGate();
   initializeAdminApp();
 }
@@ -243,8 +270,8 @@ async function adminFetch(endpointKey, body = null) {
       "Content-Type": "application/json",
     },
   };
-  if (adminState.token) {
-    options.headers.Authorization = `Bearer ${adminState.token}`;
+  if (adminState.pagePassword) {
+    options.headers[ADMIN_PAGE_PASSWORD_HEADER] = adminState.pagePassword;
   }
   if (body) {
     options.body = JSON.stringify(body);
@@ -266,68 +293,41 @@ async function adminFetch(endpointKey, body = null) {
   return data;
 }
 
-function showLoginPanel() {
-  clearInterval(adminState.refreshTimer);
-  adminState.refreshTimer = null;
-  if (adminDashboard) {
-    adminDashboard.style.display = "none";
-  }
-  if (adminLoginPanel) {
-    adminLoginPanel.style.display = "block";
-  }
-  if (loginError) {
-    loginError.textContent = "";
-  }
-}
-
 function showDashboard() {
-  if (adminLoginPanel) {
-    adminLoginPanel.style.display = "none";
-  }
+  hideAccessGate();
+  ensureAdminRootVisible();
   if (adminDashboard) {
     adminDashboard.style.display = "block";
   }
 }
 
-function persistToken(token) {
-  adminState.token = token;
-  if (token) {
-    localStorage.setItem(LOCAL_STORAGE_TOKEN_KEY, token);
-  } else {
-    localStorage.removeItem(LOCAL_STORAGE_TOKEN_KEY);
+function handleUnauthorizedAccess(message = "Session expired. Please re-enter the password.") {
+  clearInterval(adminState.refreshTimer);
+  adminState.refreshTimer = null;
+  adminState.pagePassword = null;
+  clearStoredPagePassword();
+  if (adminDashboard) {
+    adminDashboard.style.display = "none";
   }
-}
-
-async function handleLogin() {
-  const screenName = screenNameInput?.value?.trim();
-  const password = passwordInput?.value || "";
-  loginError.textContent = "";
-  loginButton.disabled = true;
-  try {
-    const response = await adminFetch("login", { screenName, password });
-    persistToken(response.token);
-    showDashboard();
-    await refreshAdminDashboard();
-    scheduleAutoRefresh();
-  } catch (err) {
-    if (err.message === "unauthorized") {
-      persistToken(null);
-    }
-    loginError.textContent = "Invalid admin username or password.";
-  } finally {
-    loginButton.disabled = false;
+  if (adminAccessError) {
+    adminAccessError.textContent = message;
   }
+  showAccessGate();
 }
 
 function scheduleAutoRefresh() {
   clearInterval(adminState.refreshTimer);
+  if (!adminState.pagePassword) {
+    adminState.refreshTimer = null;
+    return;
+  }
   adminState.refreshTimer = setInterval(() => {
     refreshAdminDashboard().catch((err) => console.error(err));
   }, REFRESH_INTERVAL_MS);
 }
 
 async function refreshAdminDashboard() {
-  if (!adminState.token) {
+  if (!adminState.pagePassword) {
     return;
   }
   try {
@@ -344,8 +344,7 @@ async function refreshAdminDashboard() {
     renderPendingTable();
   } catch (err) {
     if (err.message === "unauthorized") {
-      persistToken(null);
-      showLoginPanel();
+      handleUnauthorizedAccess();
       return;
     }
     console.error("Failed to refresh admin dashboard", err);
@@ -468,8 +467,7 @@ async function handleUserSearch() {
     renderUserResults(response?.results || []);
   } catch (err) {
     if (err.message === "unauthorized") {
-      persistToken(null);
-      showLoginPanel();
+      handleUnauthorizedAccess();
       return;
     }
     console.error("User search failed", err);
@@ -485,8 +483,7 @@ async function handlePlanChange(userId, planKey) {
     await refreshAdminDashboard();
   } catch (err) {
     if (err.message === "unauthorized") {
-      persistToken(null);
-      showLoginPanel();
+      handleUnauthorizedAccess();
       return;
     }
     console.error("Membership update failed", err);
@@ -508,8 +505,7 @@ async function handlePendingAction(action, requestId) {
     await refreshAdminDashboard();
   } catch (err) {
     if (err.message === "unauthorized") {
-      persistToken(null);
-      showLoginPanel();
+      handleUnauthorizedAccess();
       return;
     }
     console.error(`Failed to ${action} request`, err);
@@ -517,15 +513,6 @@ async function handlePendingAction(action, requestId) {
 }
 
 function attachEventListeners() {
-  loginButton?.addEventListener("click", (e) => {
-    e.preventDefault();
-    handleLogin();
-  });
-  passwordInput?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      handleLogin();
-    }
-  });
   userSearchButton?.addEventListener("click", (e) => {
     e.preventDefault();
     handleUserSearch();
@@ -556,7 +543,15 @@ function attachEventListeners() {
 }
 
 async function initializeAdminApp() {
-  if (adminAppReady || adminAppInitializing) {
+  if (adminAppReady) {
+    if (adminState.pagePassword) {
+      showDashboard();
+      await refreshAdminDashboard();
+      scheduleAutoRefresh();
+    }
+    return;
+  }
+  if (adminAppInitializing) {
     return;
   }
   adminAppInitializing = true;
@@ -565,20 +560,18 @@ async function initializeAdminApp() {
     adminState.endpoints = buildAdminEndpoints(config);
     ensureAdminRootVisible();
     attachEventListeners();
-    const storedToken = localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY);
-    if (storedToken) {
-      persistToken(storedToken);
+    if (adminState.pagePassword) {
       showDashboard();
       await refreshAdminDashboard();
       scheduleAutoRefresh();
     } else {
-      showLoginPanel();
+      showAccessGate();
     }
     adminAppReady = true;
   } catch (err) {
     console.error("Failed to initialize admin dashboard", err);
-    if (loginError) {
-      loginError.textContent = "Unable to load admin configuration.";
+    if (adminAccessError) {
+      adminAccessError.textContent = "Unable to load admin configuration.";
     }
   } finally {
     adminAppInitializing = false;
