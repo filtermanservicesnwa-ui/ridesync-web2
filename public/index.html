@@ -11392,15 +11392,22 @@
             if (!deferredPwaPrompt) {
               return;
             }
+            installButton.disabled = true;
             deferredPwaPrompt.prompt();
             const choice = await deferredPwaPrompt.userChoice;
-            if (choice?.outcome === "accepted") {
+            const outcome = choice?.outcome;
+            deferredPwaPrompt = null;
+            if (outcome === "accepted") {
               try {
                 localStorage.setItem("ridesync_pwa_installed", "1");
               } catch (_) {
                 // ignore storage errors
               }
               hidePwaOverlay();
+              return;
+            }
+            if (outcome === "dismissed") {
+              hidePwaOverlay({ rememberDismiss: true });
             }
           };
         }
