@@ -1,4 +1,6 @@
 process.env.NODE_ENV = "test";
+process.env.ADMIN_PASSWORD_HASH =
+  process.env.ADMIN_PASSWORD_HASH || "test-admin-password-hash";
 
 jest.mock("firebase-admin", () => {
   const FieldValue = {
@@ -232,8 +234,9 @@ describe("reservation helpers", () => {
   });
 
   it("applies the reserve fee for future pickups", () => {
+    const futureLeadMinutes = 45; // exceeds RESERVATION_MIN_LEAD_MINUTES (40)
     const future = resolveReservePickupDetails(
-      new Date(Date.now() + 30 * 60000).toISOString()
+      new Date(Date.now() + futureLeadMinutes * 60000).toISOString()
     );
     expect(future.reserveFeeCents).toBe(500);
     expect(typeof future.reserveTimeIso).toBe("string");

@@ -136,9 +136,7 @@ const runtimeConfig = (() => {
   }
 })();
 
-const ADMIN_DEFAULT_SCREEN_NAME = "Ride Sync";
-const ADMIN_PASSWORD_HASH_FALLBACK =
-  "f39abb8887d77c0222beed1896e568fd303ddf69fa65a48710df4220e48e9baf";
+const ADMIN_DEFAULT_SCREEN_NAME = "Clifton Hill";
 const ADMIN_TOKEN_TTL_SECONDS_DEFAULT = 60 * 60 * 2; // 2 hours
 const DEFAULT_ADMIN_ALLOWED_ORIGINS = [
   "https://ride-sync-nwa.web.app",
@@ -204,7 +202,13 @@ const ADMIN_PASSWORD_HASH =
     runtimeAdminConfig.password_hash ||
       runtimeAdminConfig.passwordHash ||
       readEnvValue("ADMIN_PASSWORD_HASH")
-  ) || ADMIN_PASSWORD_HASH_FALLBACK;
+  ) || null;
+
+if (!ADMIN_PASSWORD_HASH) {
+  throw new Error(
+    "Admin password hash is not configured. Set admin.password_hash config or ADMIN_PASSWORD_HASH env."
+  );
+}
 const ADMIN_TOKEN_SECRET =
   sanitizeSecretString(
     runtimeAdminConfig.token_secret ||
