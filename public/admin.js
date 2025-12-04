@@ -2,7 +2,6 @@ const APP_CONFIG_URL = "/app-config.json";
 const LOCAL_STORAGE_TOKEN_KEY = "ridesyncAdminToken";
 const REFRESH_INTERVAL_MS = 60_000;
 const FIREBASE_PROJECT_ID = "ride-sync-nwa";
-const ADMIN_PAGE_PASSWORD = "Aurora-Verdant-4729";
 const ADMIN_PAGE_ACCESS_KEY = "ridesyncAdminPageAccess";
 
 const adminState = {
@@ -78,21 +77,83 @@ function hideAccessGate() {
   }
 }
 
-function handleAccessUnlock(event) {
+async function resolveVerifyAccessEndpoint() {
+  if (adminState.endpoints?.verifyAccess) {
+    return adminState.endpoints.verifyAccess;
+  }
+  try {
+    const config = await loadConfig();
+    adminState.endpoints = buildAdminEndpoints(config);
+  } catch (err) {
+    adminState.endpoints = buildAdminEndpoints();
+  }
+  return adminState.endpoints.verifyAccess || "";
+}
+
+async function verifyAdminAccessPassword(input) {
+  const password = typeof input === "string" ? input.trim() : "";
+  if (!password) {
+    throw new Error("Enter the page password.");
+  }
+  const endpoint = await resolveVerifyAccessEndpoint();
+  if (!endpoint) {
+    throw new Error("Admin access endpoint unavailable.");
+  }
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password }),
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (err) {
+    data = null;
+  }
+  if (!res.ok || data?.ok === false) {
+    if (res.status === 401) {
+      throw new Error("Incorrect page password.");
+    }
+    throw new Error(data?.error || "Unable to verify admin access.");
+  }
+}
+
+async function handleAccessUnlock(event) {
   event?.preventDefault();
   if (!adminAccessPasswordInput) {
     initializeAdminApp();
     return;
   }
-  const providedPassword = adminAccessPasswordInput.value?.trim() || "";
-  if (providedPassword !== ADMIN_PAGE_PASSWORD) {
+  const providedPassword = adminAccessPasswordInput.value || "";
+  if (!providedPassword.trim()) {
     if (adminAccessError) {
-      adminAccessError.textContent = "Incorrect page password.";
+      adminAccessError.textContent = "Enter the page password.";
     }
     return;
   }
   if (adminAccessError) {
     adminAccessError.textContent = "";
+  }
+  if (adminAccessButton) {
+    adminAccessButton.disabled = true;
+  }
+  let verified = false;
+  try {
+    await verifyAdminAccessPassword(providedPassword);
+    verified = true;
+  } catch (err) {
+    if (adminAccessError) {
+      adminAccessError.textContent = err?.message || "Unable to verify admin access.";
+    }
+  } finally {
+    if (adminAccessButton) {
+      adminAccessButton.disabled = false;
+    }
+  }
+  if (!verified) {
+    return;
   }
   adminAccessPasswordInput.value = "";
   grantPageAccess();
@@ -191,6 +252,12 @@ function buildAdminEndpoints(config = {}) {
     ? `https://us-central1-${FIREBASE_PROJECT_ID}.cloudfunctions.net`
     : "";
   return {
+    verifyAccess: resolveEndpoint(
+      functionsConfig,
+      "adminVerifyAccessUrl",
+      defaultBase,
+      "verifyAdminPageAccess"
+    ),
     login: resolveEndpoint(functionsConfig, "adminLoginUrl", defaultBase, "adminLogin"),
     stats: resolveEndpoint(functionsConfig, "adminStatsUrl", defaultBase, "getAdminStats"),
     activity: resolveEndpoint(

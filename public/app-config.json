@@ -4,6 +4,7 @@
     "createRideCheckoutSessionUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/createRideCheckoutSession",
     "finalizeMembershipCheckoutSessionUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/finalizeMembershipCheckoutSession",
     "getWeatherThemeUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/getWeatherTheme",
+    "adminVerifyAccessUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/verifyAdminPageAccess",
     "adminLoginUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/adminLogin",
     "adminStatsUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/getAdminStats",
     "adminActivityUrl": "https://us-central1-ride-sync-nwa.cloudfunctions.net/getAdminActivityFeed",

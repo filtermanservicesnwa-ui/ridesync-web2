@@ -6395,6 +6395,28 @@ async function setUserMembershipPlanAdmin({
 
 // === ADMIN DASHBOARD ENDPOINTS ===
 
+exports.verifyAdminPageAccess = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const body = readJsonBody(req);
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!verifyAdminPasswordInput(password)) {
+      throw new AdminHttpError(401, "Invalid admin access password");
+    }
+    sendAdminJson(res, 200, { ok: true });
+  } catch (err) {
+    handleAdminRequestError(res, err, "verifyAdminPageAccess");
+  }
+});
+
 exports.adminLogin = functions.https.onRequest(async (req, res) => {
   setAdminCorsHeaders(req, res);
   if (req.method === "OPTIONS") {
