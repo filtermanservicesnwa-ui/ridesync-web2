@@ -2109,8 +2109,8 @@
               <div class="waitlist-meta">
                 <div id="riderWaitlistBadge" class="waitlist-pill"></div>
                 <div class="waitlist-timer-block">
-                  <div class="waitlist-timer-label">Time waiting</div>
-                  <div id="riderWaitlistTimer" class="waitlist-timer-value">00:00</div>
+                  <div class="waitlist-timer-label">Driver ETA</div>
+                  <div id="riderWaitlistTimer" class="waitlist-timer-value">--:--</div>
                 </div>
               </div>
             </div>
@@ -3921,10 +3921,17 @@
       onlineIds: new Set(),
       busyDriverIds: new Set()
     };
+    const WAITLIST_AVAILABLE_DRIVER_MINUTES = 2;
+    const WAITLIST_BUSY_BASE_MINUTES = 3;
+    const WAITLIST_PER_BUSY_DRIVER_MINUTES = 1.5;
+    const WAITLIST_MAX_FALLBACK_MINUTES = 12;
+    const WAITLIST_OFFLINE_MINUTES = 8;
+    const WAITLIST_FALLBACK_REFRESH_THRESHOLD_MS = 15000;
     const waitlistState = {
       active: false,
-      startedAt: null,
-      timerId: null
+      timerId: null,
+      etaTargetTimestamp: null,
+      etaSource: null
     };
     const RIDE_CHAT_ACTIVE_STATUSES = new Set([
       "driver_assigned",
@@ -6611,12 +6618,10 @@
       if (!riderWaitlistPanel) return;
       if (!waitlistState.active) {
         waitlistState.active = true;
-        if (!waitlistState.startedAt) {
-          waitlistState.startedAt = Date.now();
-        }
       }
       riderWaitlistPanel.classList.add("active");
       riderWaitlistPanel.setAttribute("aria-hidden", "false");
+      refreshWaitlistEtaEstimate(latestRideForOverlay?.data || null);
       if (!waitlistState.timerId) {
         waitlistState.timerId = window.setInterval(tickWaitlistTimer, 1000);
       }
@@ -6629,13 +6634,13 @@
         waitlistState.timerId = null;
       }
       waitlistState.active = false;
-      waitlistState.startedAt = null;
+      clearWaitlistEta();
       if (riderWaitlistPanel) {
         riderWaitlistPanel.classList.remove("active");
         riderWaitlistPanel.setAttribute("aria-hidden", "true");
       }
       if (riderWaitlistTimerEl) {
-        riderWaitlistTimerEl.textContent = "00:00";
+        riderWaitlistTimerEl.textContent = "--:--";
       }
       if (riderWaitlistBadgeEl) {
         riderWaitlistBadgeEl.textContent = "";
@@ -6644,16 +6649,168 @@
     }
 
     function tickWaitlistTimer() {
-      if (!waitlistState.active || !waitlistState.startedAt || !riderWaitlistTimerEl) {
+      if (!waitlistState.active || !riderWaitlistTimerEl) {
         return;
       }
-      const elapsedSeconds = Math.max(
-        0,
-        Math.floor((Date.now() - waitlistState.startedAt) / 1000)
+      if (typeof waitlistState.etaTargetTimestamp === "number") {
+        const remainingSeconds = Math.max(
+          0,
+          Math.round((waitlistState.etaTargetTimestamp - Date.now()) / 1000)
+        );
+        riderWaitlistTimerEl.textContent = formatWaitlistClockValue(remainingSeconds);
+        return;
+      }
+      riderWaitlistTimerEl.textContent = "--:--";
+    }
+
+    function formatWaitlistClockValue(totalSeconds) {
+      const safeSeconds = Math.max(0, Math.round(totalSeconds));
+      const minutes = String(Math.floor(safeSeconds / 60)).padStart(2, "0");
+      const seconds = String(safeSeconds % 60).padStart(2, "0");
+      return `${minutes}:${seconds}`;
+    }
+
+    function parseTimestampMillis(candidate) {
+      if (!candidate) return null;
+      try {
+        if (typeof candidate.toDate === "function") {
+          const date = candidate.toDate();
+          return Number.isNaN(date.getTime()) ? null : date.getTime();
+        }
+        if (typeof candidate.seconds === "number") {
+          return candidate.seconds * 1000;
+        }
+        if (typeof candidate === "number") {
+          return candidate > 1e12 ? candidate : candidate * 1000;
+        }
+        if (typeof candidate === "string") {
+          const parsed = Date.parse(candidate);
+          return Number.isNaN(parsed) ? null : parsed;
+        }
+      } catch (_) {
+        return null;
+      }
+      return null;
+    }
+
+    function resolveRidePickupEtaSeconds(ride) {
+      if (!ride) return null;
+      const minuteFields = [
+        "driverEtaMinutes",
+        "pickupEtaMinutes",
+        "matchEtaMinutes",
+        "estimatedPickupMinutes",
+        "estimatedDriverEtaMinutes",
+        "waitlistEtaMinutes"
+      ];
+      for (const field of minuteFields) {
+        if (Object.prototype.hasOwnProperty.call(ride, field)) {
+          const minutes = Number(ride[field]);
+          if (Number.isFinite(minutes) && minutes > 0) {
+            return Math.round(minutes * 60);
+          }
+        }
+      }
+      const secondFields = [
+        "driverEtaSeconds",
+        "pickupEtaSeconds",
+        "matchEtaSeconds",
+        "waitlistEtaSeconds"
+      ];
+      for (const field of secondFields) {
+        if (Object.prototype.hasOwnProperty.call(ride, field)) {
+          const seconds = Number(ride[field]);
+          if (Number.isFinite(seconds) && seconds > 0) {
+            return Math.round(seconds);
+          }
+        }
+      }
+      const timestampFields = [
+        "reservePickupAt",
+        "reserveTimeIso",
+        "reservePickupTime",
+        "scheduledPickupAt"
+      ];
+      for (const field of timestampFields) {
+        if (!Object.prototype.hasOwnProperty.call(ride, field)) {
+          continue;
+        }
+        const millis = parseTimestampMillis(ride[field]);
+        if (typeof millis === "number") {
+          const diffSeconds = Math.round((millis - Date.now()) / 1000);
+          if (diffSeconds > 0) {
+            return diffSeconds;
+          }
+        }
+      }
+      return null;
+    }
+
+    function estimateWaitSecondsFromAvailability() {
+      const online = Number(driverAvailability.onlineCount || 0);
+      const busy = Math.min(getBusyOnlineDriverCount(), online);
+      if (online <= 0) {
+        return Math.round(Math.max(1, WAITLIST_OFFLINE_MINUTES) * 60);
+      }
+      const available = online - busy;
+      if (available > 0) {
+        return Math.round(Math.max(0.5, WAITLIST_AVAILABLE_DRIVER_MINUTES) * 60);
+      }
+      const estimateMinutes = Math.min(
+        WAITLIST_MAX_FALLBACK_MINUTES,
+        WAITLIST_BUSY_BASE_MINUTES + Math.max(1, busy) * WAITLIST_PER_BUSY_DRIVER_MINUTES
       );
-      const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
-      const seconds = String(elapsedSeconds % 60).padStart(2, "0");
-      riderWaitlistTimerEl.textContent = `${minutes}:${seconds}`;
+      return Math.round(Math.max(estimateMinutes, 1) * 60);
+    }
+
+    function setWaitlistEtaSeconds(seconds, source = "ride") {
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        clearWaitlistEta();
+        return;
+      }
+      waitlistState.etaSource = source;
+      waitlistState.etaTargetTimestamp = Date.now() + Math.round(seconds) * 1000;
+      if (waitlistState.active) {
+        tickWaitlistTimer();
+      }
+    }
+
+    function clearWaitlistEta() {
+      waitlistState.etaTargetTimestamp = null;
+      waitlistState.etaSource = null;
+      if (waitlistState.active && riderWaitlistTimerEl) {
+        riderWaitlistTimerEl.textContent = "--:--";
+      }
+    }
+
+    function refreshWaitlistEtaEstimate(rideData = null) {
+      const waitingViewActive =
+        waitlistState.active || riderOverlayState === RIDER_STATES.SEARCHING;
+      if (!waitingViewActive) {
+        clearWaitlistEta();
+        return;
+      }
+      const directSeconds = resolveRidePickupEtaSeconds(rideData);
+      if (directSeconds != null) {
+        setWaitlistEtaSeconds(directSeconds, "ride");
+        return;
+      }
+      const fallbackSeconds = estimateWaitSecondsFromAvailability();
+      if (!fallbackSeconds) {
+        clearWaitlistEta();
+        return;
+      }
+      if (waitlistState.etaSource === "ride" && waitlistState.etaTargetTimestamp) {
+        return;
+      }
+      const fallbackTarget = Date.now() + fallbackSeconds * 1000;
+      if (
+        !waitlistState.etaTargetTimestamp ||
+        Math.abs(waitlistState.etaTargetTimestamp - fallbackTarget) >
+          WAITLIST_FALLBACK_REFRESH_THRESHOLD_MS
+      ) {
+        setWaitlistEtaSeconds(fallbackSeconds, "fallback");
+      }
     }
 
     function getBusyOnlineDriverCount() {
@@ -6709,10 +6866,8 @@
       const available = online - busy;
       const shouldShow = waitingOnDrivers && online > 0 && available <= 0;
       if (shouldShow) {
-        if (!waitlistState.startedAt) {
-          waitlistState.startedAt = Date.now();
-        }
         updateWaitlistCopy();
+        refreshWaitlistEtaEstimate(latestRideForOverlay?.data || null);
         activateWaitlistPanel();
       } else if (waitlistState.active) {
         deactivateWaitlistPanel();
@@ -7051,6 +7206,10 @@
     function handleRideSnapshot(rideId, data) {
       latestRideForOverlay = { rideId, data };
       const status = normalizeRiderStatus(data);
+      const waitingOnDriver = WAITLIST_RIDE_STATUSES.has(status);
+      if (!waitingOnDriver) {
+        clearWaitlistEta();
+      }
       rememberRideCompletionContext(status, data);
       const destinationLabel =
         data.toDestination || data.toAddress || data.destAddress || "Destination";
@@ -7077,6 +7236,7 @@
         case "pooled_pending_driver":
           setOverlayCopy("Syncing your ride", "Looking for a verified driver…");
           setRiderOverlayState(RIDER_STATES.SEARCHING);
+          refreshWaitlistEtaEstimate(data);
           break;
         case "driver_assigned":
           updateDriverModules(data);
