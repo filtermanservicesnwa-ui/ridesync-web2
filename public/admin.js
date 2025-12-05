@@ -692,6 +692,7 @@ async function loadAdminUsersPage(action = "initial") {
     } else if (action === "prev" && poppedTokenActive) {
       paging.prevTokens.push(poppedTokenValue);
     }
+    renderUsersTable();
     renderUsersPagination();
     if (err.message === "unauthorized") {
       handleUnauthorizedAccess();
