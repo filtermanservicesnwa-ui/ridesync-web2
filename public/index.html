@@ -393,6 +393,49 @@
     .group-qr-section.visible {
       max-height: 360px;
       opacity: 1;
+    .sync-riders-button {
+      width: auto;
+      align-self: flex-start;
+      margin-top: 6px;
+      padding: 6px 14px;
+    }
+    .sync-riders-modal-card {
+      width: min(420px, calc(100% - 40px));
+      background: rgba(2,6,23,0.95);
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,0.45);
+      padding: 18px;
+      box-shadow: 0 20px 45px rgba(2,6,23,0.85);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .sync-riders-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .sync-riders-modal-card canvas {
+      width: 220px;
+      height: 220px;
+      margin: 8px auto;
+      background: #fff;
+      border-radius: 12px;
+      padding: 8px;
+    }
+    .sync-riders-modal-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .sync-riders-modal-link {
+      font-size: 0.75rem;
+      word-break: break-all;
+      color: #93c5fd;
+    }
+    .sync-riders-copy-feedback {
+      min-height: 18px;
     }
     .destination-input-row {
       display: flex;
@@ -1975,6 +2018,14 @@
             <div class="small">
               For U of A pooling, choose 1 rider. For private group rides with friends, choose 2–4 and use the QR.
             </div>
+            <button
+              id="syncRidersButton"
+              type="button"
+              class="btn-secondary btn-small sync-riders-button"
+              style="display:none;"
+            >
+              Sync Riders
+            </button>
           </div>
           <div
             id="groupQrSection"
@@ -2977,6 +3028,53 @@
     </div>
   </div>
 
+  <div id="syncRidersOverlay" class="overlay" aria-hidden="true">
+    <div
+      class="sync-riders-modal-card"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="syncRidersModalTitle"
+    >
+      <div class="sync-riders-modal-header">
+        <div>
+          <div class="section-title" style="margin-top:0;">Group ride QR</div>
+          <h3 id="syncRidersModalTitle" style="margin:4px 0 0;">Sync Riders</h3>
+        </div>
+        <button
+          id="syncRidersOverlayClose"
+          type="button"
+          class="btn-secondary btn-small"
+        >
+          Close
+        </button>
+      </div>
+      <p id="syncRidersModalSubtitle" class="small" style="margin-top:0;">
+        Share this code so friends can join your ride after signing in.
+      </p>
+      <canvas
+        id="syncRidersModalCanvas"
+        width="220"
+        height="220"
+        aria-hidden="true"
+      ></canvas>
+      <div
+        id="syncRidersModalOccupancy"
+        class="small"
+        style="text-align:center; display:none;"
+      ></div>
+      <div class="sync-riders-modal-actions">
+        <button id="syncRidersCopyLink" type="button" class="btn-secondary btn-small">
+          Copy share link
+        </button>
+        <div
+          id="syncRidersCopyFeedback"
+          class="small sync-riders-copy-feedback"
+          aria-live="polite"
+        ></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Membership overlays removed: rider view now provides information only. -->
 
   <div id="pwaInstallOverlay" class="pwa-install-overlay hidden" aria-hidden="true">
@@ -3871,6 +3969,7 @@
     const pickupOverrideHint = document.getElementById("pickupOverrideHint");
     const pickupOverrideError = document.getElementById("pickupOverrideError");
     const numRidersEl = document.getElementById("numRiders");
+    const syncRidersButton = document.getElementById("syncRidersButton");
     const ridersSection = document.getElementById("ridersSection");
     const tripMapPreviewEl = document.getElementById("tripMapPreview");
     const destinationPreviewMapEl = document.getElementById("destinationPreviewMap");
@@ -3894,7 +3993,17 @@
     const groupQrCanvas = document.getElementById("groupQrCanvas");
     const groupQrPendingMessage = document.getElementById("groupQrPendingMessage");
     const groupOccupancyLabel = document.getElementById("groupOccupancyLabel");
+    const syncRidersOverlay = document.getElementById("syncRidersOverlay");
+    const syncRidersOverlayClose = document.getElementById("syncRidersOverlayClose");
+    const syncRidersModalCanvas = document.getElementById("syncRidersModalCanvas");
+    const syncRidersModalOccupancy = document.getElementById("syncRidersModalOccupancy");
+    const syncRidersCopyLink = document.getElementById("syncRidersCopyLink");
+    const syncRidersCopyFeedback = document.getElementById("syncRidersCopyFeedback");
     let groupQr = null;
+    let syncRidersQr = null;
+    let syncRidersJoinUrl = "";
+    let syncRidersFlowActive = false;
+    let syncRidersAwaitingRideActivation = false;
 
     function setGroupQrVisibility(isVisible) {
       if (!groupQrSection) return;
@@ -4414,10 +4523,16 @@
         hideGroupQr();
         activeRideIsGroup = false;
         refreshGroupQrVisibility();
+        updateSyncRidersButtonVisibility();
         updateCancelButtonVisibility();
         closeRideFareOverlay(true);
         resetFinalTipUi();
         clearProtectedRideState();
+        syncRidersFlowActive = false;
+        syncRidersAwaitingRideActivation = false;
+        syncRidersJoinUrl = "";
+        updateSyncRidersOccupancyLabel("");
+        closeSyncRidersOverlay();
       }
 
       function resetJoinModeUi() {
@@ -5869,6 +5984,7 @@
         if (!currentValue || currentValue !== lastValue) {
           clearDestinationSelection();
         }
+        updateSyncRidersButtonVisibility();
       });
     }
 
@@ -6792,6 +6908,23 @@
       });
     }
 
+    function setButtonBusy(button, loadingLabel) {
+      if (!button) {
+        return () => {};
+      }
+      const previousText = button.textContent;
+      button.disabled = true;
+      if (loadingLabel) {
+        button.textContent = loadingLabel;
+      }
+      return () => {
+        button.disabled = false;
+        if (typeof previousText === "string") {
+          button.textContent = previousText;
+        }
+      };
+    }
+
     async function ensureDestinationReadyForSync() {
       if (destinationLatLng && lastRideMetrics) {
         return true;
@@ -6811,6 +6944,7 @@
           destinationLatLng = place.geometry.location;
           if (destinationEl && place.formatted_address) {
             destinationEl.value = place.formatted_address;
+            updateSyncRidersButtonVisibility();
           }
           if (destMarker) {
             destMarker.setPosition(destinationLatLng);
@@ -6875,6 +7009,7 @@
       if (directionsRenderer) {
         directionsRenderer.set("directions", null);
       }
+      updateSyncRidersButtonVisibility();
     }
 
     function resetTripPlanner() {
@@ -8007,6 +8142,51 @@
       });
     }
       
+    function updateSyncRidersOccupancyLabel(text) {
+      if (!syncRidersModalOccupancy) return;
+      if (text) {
+        syncRidersModalOccupancy.textContent = text;
+        syncRidersModalOccupancy.style.display = "block";
+      } else {
+        syncRidersModalOccupancy.textContent = "";
+        syncRidersModalOccupancy.style.display = "none";
+      }
+    }
+
+    function openSyncRidersOverlay(rideId) {
+      if (!rideId || !syncRidersOverlay || !syncRidersModalCanvas) {
+        return;
+      }
+      const joinUrl = `${window.location.origin}?join=${encodeURIComponent(rideId)}`;
+      syncRidersJoinUrl = joinUrl;
+      if (!syncRidersQr) {
+        syncRidersQr = new QRious({
+          element: syncRidersModalCanvas,
+          size: 220,
+          value: joinUrl
+        });
+      } else {
+        syncRidersQr.set({ value: joinUrl });
+      }
+      const existingOccupancy = groupOccupancyLabel?.textContent?.trim();
+      if (existingOccupancy) {
+        updateSyncRidersOccupancyLabel(existingOccupancy);
+      } else if (!activeRideIsGroup) {
+        updateSyncRidersOccupancyLabel("");
+      }
+      if (syncRidersCopyFeedback) {
+        syncRidersCopyFeedback.textContent = "";
+      }
+      syncRidersFlowActive = false;
+      syncRidersAwaitingRideActivation = false;
+      toggleOverlay(syncRidersOverlay, true, syncRidersOverlayClose);
+    }
+
+    function closeSyncRidersOverlay() {
+      if (!syncRidersOverlay) return;
+      toggleOverlay(syncRidersOverlay, false);
+    }
+
     function hideGroupQr() {
       setGroupQrVisibility(false);
       if (groupQrIntro) {
@@ -8027,6 +8207,7 @@
         groupOccupancyUnsub();
         groupOccupancyUnsub = null;
       }
+      updateSyncRidersOccupancyLabel("");
     }
 
     function showGroupQrPlaceholder(message) {
@@ -8052,6 +8233,7 @@
         groupOccupancyLabel.textContent = "";
         groupOccupancyLabel.style.display = "none";
       }
+      updateSyncRidersOccupancyLabel("");
     }
 
     function showGroupQr(rideId) {
@@ -8081,10 +8263,19 @@
       }
       if (groupOccupancyLabel) {
         groupOccupancyLabel.style.display = "block";
+        updateSyncRidersOccupancyLabel(groupOccupancyLabel.textContent);
       }
       activeRideIsGroup = true;
       wantsGroupRide = true;
       startGroupOccupancyWatcher(rideId);
+    }
+
+    function updateSyncRidersButtonVisibility() {
+      if (!syncRidersButton) return;
+      const hasDestinationInput =
+        typeof destinationEl?.value === "string" && destinationEl.value.trim().length > 0;
+      const shouldShow = (wantsGroupRide && hasDestinationInput) || activeRideIsGroup;
+      syncRidersButton.style.display = shouldShow ? "inline-flex" : "none";
     }
 
     function updateGroupRideIntentFromSelect() {
@@ -8096,6 +8287,7 @@
       const selectedValue = parseInt(numRidersEl.value || "1", 10);
       wantsGroupRide = selectedValue > 1;
       refreshGroupQrVisibility();
+      updateSyncRidersButtonVisibility();
     }
 
     function refreshGroupQrVisibility() {
@@ -8108,6 +8300,7 @@
         return;
       }
       hideGroupQr();
+      updateSyncRidersButtonVisibility();
     }
 
     function startGroupOccupancyWatcher(rideId) {
@@ -8124,6 +8317,7 @@
         if (groupOccupancyLabel) {
           groupOccupancyLabel.textContent = `Group: ${cur} of ${max} riders.`;
         }
+        updateSyncRidersOccupancyLabel(`Group: ${cur} of ${max} riders.`);
       });
     }
 
@@ -9091,11 +9285,15 @@
       updateSyncTipUi();
     }
 
-    function closeSyncConfirmOverlay() {
+    function closeSyncConfirmOverlay(options = {}) {
       if (!syncConfirmOverlay) return;
       toggleOverlay(syncConfirmOverlay, false);
       setSyncConfirmBusy(false);
       isSyncConfirmOpen = false;
+      if (!syncRidersAwaitingRideActivation || options.resetSyncRiders) {
+        syncRidersFlowActive = false;
+        syncRidersAwaitingRideActivation = false;
+      }
     }
 
     function openSyncConfirmOverlay(options = {}) {
@@ -9217,6 +9415,9 @@
       const upgradePlan = syncMembershipUpgradeMode
         ? syncSelectedMembershipPlan
         : null;
+      if (syncRidersFlowActive) {
+        syncRidersAwaitingRideActivation = true;
+      }
       setSyncConfirmBusy(true);
       closeSyncConfirmOverlay();
       try {
@@ -11033,6 +11234,7 @@
       startRideStatusWatcher(rideId);
       updateCancelButtonVisibility();
       refreshGroupQrVisibility();
+      updateSyncRidersButtonVisibility();
       if (ridePayload?.poolType === "uofa") {
         startPoolGroupWatcher(rideId);
       }
@@ -11045,6 +11247,11 @@
       setOverlayCopy("Syncing your ride", overlaySubtitle);
       setRiderOverlayState(RIDER_STATES.SEARCHING);
       showRideView();
+      if (activeRideIsGroup && (syncRidersFlowActive || syncRidersAwaitingRideActivation)) {
+        openSyncRidersOverlay(rideId);
+      }
+      syncRidersFlowActive = false;
+      syncRidersAwaitingRideActivation = false;
     }
 
     async function fetchActiveRideById(rideId) {
@@ -11647,10 +11854,15 @@
         }
         profileError.textContent = err.message || "Could not start this ride.";
         profileMessage.textContent = "";
+        syncRidersAwaitingRideActivation = false;
+        syncRidersFlowActive = false;
       } finally {
         if (syncButton) {
           syncButton.disabled = false;
           updateSyncButtonLabel();
+        }
+        if (!syncRidersAwaitingRideActivation) {
+          syncRidersFlowActive = false;
         }
       }
     }
@@ -11744,25 +11956,99 @@
       }
     }
 
-    syncButton.addEventListener("click", async () => {
+    async function ensureDestinationReadyAndOpenSyncConfirm(options = {}) {
+      const {
+        triggerButton = null,
+        loadingLabel = "Checking…",
+        afterReset = null
+      } = options;
       if (joinMode && joinTargetRide) {
         await handleJoinRide();
-        return;
+        return false;
       }
-      if (syncButton) {
-        syncButton.disabled = true;
-        syncButton.textContent = "Checking…";
-      }
+      const resetButton = setButtonBusy(triggerButton, loadingLabel);
       const ready = await ensureDestinationReadyForSync();
-      if (syncButton) {
-        syncButton.disabled = false;
-        updateSyncButtonLabel();
+      if (typeof resetButton === "function") {
+        resetButton();
+      }
+      if (typeof afterReset === "function") {
+        afterReset();
       }
       if (!ready) {
-        return;
+        return false;
       }
       openSyncConfirmOverlay();
+      return true;
+    }
+
+    syncButton.addEventListener("click", async () => {
+      await ensureDestinationReadyAndOpenSyncConfirm({
+        triggerButton: syncButton,
+        loadingLabel: "Checking…",
+        afterReset: updateSyncButtonLabel
+      });
     });
+
+    if (syncRidersButton) {
+      syncRidersButton.addEventListener("click", async () => {
+        if (!wantsGroupRide) {
+          profileError.textContent = "Select at least 2 riders to sync.";
+          return;
+        }
+        if (currentRideId && activeRideIsGroup) {
+          openSyncRidersOverlay(currentRideId);
+          return;
+        }
+        if (currentRideId && !activeRideIsGroup) {
+          profileError.textContent = "Sync this ride with 2–4 riders to share the QR.";
+          return;
+        }
+        const opened = await ensureDestinationReadyAndOpenSyncConfirm({
+          triggerButton: syncRidersButton,
+          loadingLabel: "Preparing…"
+        });
+        if (!opened) {
+          return;
+        }
+        syncRidersFlowActive = true;
+        syncRidersAwaitingRideActivation = false;
+        profileMessage.textContent =
+          "Confirm your fare to generate the group QR.";
+      });
+    }
+
+    if (syncRidersOverlayClose) {
+      syncRidersOverlayClose.addEventListener("click", closeSyncRidersOverlay);
+    }
+
+    if (syncRidersOverlay) {
+      syncRidersOverlay.addEventListener("click", (event) => {
+        if (event.target === syncRidersOverlay) {
+          closeSyncRidersOverlay();
+        }
+      });
+    }
+
+    if (syncRidersCopyLink) {
+      syncRidersCopyLink.addEventListener("click", async () => {
+        if (!syncRidersJoinUrl) {
+          if (syncRidersCopyFeedback) {
+            syncRidersCopyFeedback.textContent = "Generate your ride QR first.";
+          }
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(syncRidersJoinUrl);
+          if (syncRidersCopyFeedback) {
+            syncRidersCopyFeedback.textContent = "Link copied to clipboard.";
+          }
+        } catch (err) {
+          if (syncRidersCopyFeedback) {
+            syncRidersCopyFeedback.textContent = syncRidersJoinUrl;
+          }
+        }
+      });
+    }
 
     showPaymentResultFromLocation();
 
@@ -11790,6 +12076,7 @@
 
         if (host.toDestination) {
           destinationEl.value = host.toDestination;
+          updateSyncRidersButtonVisibility();
         }
         updateSyncButtonLabel();
       } catch (err) {
