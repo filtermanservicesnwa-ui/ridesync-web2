@@ -4,6 +4,7 @@ const FIREBASE_PROJECT_ID = "ride-sync-nwa";
 const ADMIN_PAGE_PASSWORD = "Aurora-Verdant-4729";
 const ADMIN_PAGE_ACCESS_KEY = "ridesyncAdminPageAccess";
 const ADMIN_PAGE_PASSWORD_HEADER = "X-Admin-Page-Pass";
+const ADMIN_USERS_PAGE_SIZE = 25;
 
 const adminState = {
   pagePassword: null,
@@ -12,6 +13,9 @@ const adminState = {
   activity: [],
   pending: [],
   stats: null,
+  users: [],
+  usersPaging: createAdminUsersPagingState(),
+  loadingUsers: false,
 };
 
 const adminRoot = document.getElementById("adminRoot");
@@ -29,6 +33,11 @@ const pendingBodyEl = document.getElementById("adminUofaPendingBody");
 const userSearchInput = document.getElementById("adminUserSearchInput");
 const userSearchButton = document.getElementById("adminUserSearchButton");
 const userDetailsEl = document.getElementById("adminUserDetails");
+const usersTableBody = document.getElementById("adminUsersTableBody");
+const usersPrevButton = document.getElementById("adminUsersPrevButton");
+const usersNextButton = document.getElementById("adminUsersNextButton");
+const usersRefreshButton = document.getElementById("adminUsersRefreshButton");
+const usersPageStatus = document.getElementById("adminUsersPageStatus");
 let adminAppReady = false;
 let adminAppInitializing = false;
 
@@ -36,6 +45,23 @@ function ensureAdminRootVisible() {
   if (adminRoot && adminRoot.style.display === "none") {
     adminRoot.style.display = "flex";
   }
+}
+
+function createAdminUsersPagingState() {
+  return {
+    currentToken: null,
+    nextToken: null,
+    prevTokens: [],
+    pageSize: ADMIN_USERS_PAGE_SIZE,
+    loaded: false,
+  };
+}
+
+function resetAdminUsersListState() {
+  adminState.users = [];
+  adminState.usersPaging = createAdminUsersPagingState();
+  renderUsersTable();
+  renderUsersPagination();
 }
 
 function readStoredPagePassword() {
@@ -250,6 +276,12 @@ function buildAdminEndpoints(config = {}) {
       defaultBase,
       "adminSearchUser"
     ),
+    listUsers: resolveEndpoint(
+      functionsConfig,
+      "adminListUsersUrl",
+      defaultBase,
+      "adminListUsers"
+    ),
     setMembership: resolveEndpoint(
       functionsConfig,
       "adminSetMembershipPlanUrl",
@@ -306,6 +338,7 @@ function handleUnauthorizedAccess(message = "Session expired. Please re-enter th
   adminState.refreshTimer = null;
   adminState.pagePassword = null;
   clearStoredPagePassword();
+  resetAdminUsersListState();
   if (adminDashboard) {
     adminDashboard.style.display = "none";
   }
@@ -456,6 +489,80 @@ function renderUserResults(users = []) {
     .join("");
 }
 
+function renderUsersTable() {
+  if (!usersTableBody) return;
+  const rows = adminState.users || [];
+  if (!rows.length) {
+    const message = adminState.loadingUsers
+      ? "Loading users..."
+      : adminState.usersPaging?.loaded
+      ? "No users in this page."
+      : "No users loaded.";
+    usersTableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:16px;">${escapeHtml(
+      message
+    )}</td></tr>`;
+    return;
+  }
+  usersTableBody.innerHTML = rows
+    .map((user) => {
+      const membershipLine = escapeHtml(
+        `${user.membershipType || "basic"} (${user.membershipStatus || "none"})`
+      );
+      const expires = user.membershipExpiresAt
+        ? escapeHtml(formatTimestamp(user.membershipExpiresAt))
+        : "—";
+      const name = safeDisplay(user.name, "Unknown");
+      const email = safeDisplay(user.email, "—");
+      const verified = user.uofaVerified ? "Yes" : "No";
+      const userIdAttr = escapeHtml(user.userId || "");
+      return `<tr>
+        <td>${name}</td>
+        <td>${email}</td>
+        <td>${membershipLine}</td>
+        <td>${expires}</td>
+        <td>${escapeHtml(verified)}</td>
+        <td>
+          <div class="admin-action-row compact">
+            <button class="btn-secondary btn-compact" data-plan="basic" data-user="${userIdAttr}">Basic</button>
+            <button class="btn-secondary btn-compact" data-plan="uofa_unlimited" data-user="${userIdAttr}">U of A</button>
+            <button class="btn-secondary btn-compact" data-plan="nwa_unlimited" data-user="${userIdAttr}">NWA</button>
+          </div>
+        </td>
+      </tr>`;
+    })
+    .join("");
+}
+
+function renderUsersPagination() {
+  const paging = adminState.usersPaging || createAdminUsersPagingState();
+  if (usersPrevButton) {
+    usersPrevButton.disabled = adminState.loadingUsers || paging.prevTokens.length === 0;
+  }
+  if (usersNextButton) {
+    usersNextButton.disabled = adminState.loadingUsers || !paging.nextToken;
+  }
+  if (!usersPageStatus) {
+    return;
+  }
+  if (adminState.loadingUsers) {
+    usersPageStatus.textContent = "Loading users...";
+    return;
+  }
+  if (!paging.loaded) {
+    usersPageStatus.textContent = "No users loaded.";
+    return;
+  }
+  const count = adminState.users?.length || 0;
+  if (!count) {
+    usersPageStatus.textContent = "No users in this page.";
+    return;
+  }
+  const completedPages = paging.prevTokens.length;
+  const startIndex = completedPages * paging.pageSize + 1;
+  const endIndex = startIndex + count - 1;
+  usersPageStatus.textContent = `Showing ${startIndex}-${endIndex} (${count} users)`;
+}
+
 async function handleUserSearch() {
   const query = userSearchInput?.value?.trim();
   if (!query) {
@@ -481,12 +588,22 @@ async function handlePlanChange(userId, planKey) {
     await adminFetch("setMembership", { userId, plan: planKey });
     await handleUserSearch();
     await refreshAdminDashboard();
+    await loadAdminUsersPage("reload");
   } catch (err) {
     if (err.message === "unauthorized") {
       handleUnauthorizedAccess();
       return;
     }
     console.error("Membership update failed", err);
+  }
+}
+
+function handleMembershipActionClick(target) {
+  if (!(target instanceof HTMLElement)) return;
+  const plan = target.dataset.plan;
+  const userId = target.dataset.user;
+  if (plan && userId) {
+    handlePlanChange(userId, plan);
   }
 }
 
@@ -512,6 +629,78 @@ async function handlePendingAction(action, requestId) {
   }
 }
 
+async function loadAdminUsersPage(action = "initial") {
+  if (!adminState.pagePassword) {
+    return;
+  }
+  const paging = adminState.usersPaging || createAdminUsersPagingState();
+  adminState.usersPaging = paging;
+  if (adminState.loadingUsers && action !== "reload") {
+    return;
+  }
+  let pageToken = null;
+  let pushedToken = false;
+  let poppedTokenValue;
+  let poppedTokenActive = false;
+  if (action === "next") {
+    if (!paging.nextToken) {
+      return;
+    }
+    paging.prevTokens.push(paging.currentToken || null);
+    pushedToken = true;
+    pageToken = paging.nextToken;
+  } else if (action === "prev") {
+    if (!paging.prevTokens.length) {
+      return;
+    }
+    poppedTokenValue = paging.prevTokens.pop();
+    poppedTokenActive = true;
+    pageToken = poppedTokenValue || null;
+  } else if (action === "reload") {
+    pageToken = paging.currentToken || null;
+  } else {
+    paging.prevTokens = [];
+    paging.currentToken = null;
+    paging.nextToken = null;
+    paging.loaded = false;
+    pageToken = null;
+  }
+  const shouldClearRows = action !== "reload";
+  if (shouldClearRows) {
+    adminState.users = [];
+  }
+  adminState.loadingUsers = true;
+  renderUsersTable();
+  renderUsersPagination();
+  try {
+    const body = { pageSize: paging.pageSize };
+    if (pageToken) {
+      body.pageToken = pageToken;
+    }
+    const response = await adminFetch("listUsers", body);
+    adminState.users = response?.users || [];
+    paging.currentToken = pageToken || null;
+    paging.nextToken = response?.nextPageToken || null;
+    paging.loaded = true;
+    adminState.loadingUsers = false;
+    renderUsersTable();
+    renderUsersPagination();
+  } catch (err) {
+    adminState.loadingUsers = false;
+    if (action === "next" && pushedToken) {
+      paging.prevTokens.pop();
+    } else if (action === "prev" && poppedTokenActive) {
+      paging.prevTokens.push(poppedTokenValue);
+    }
+    renderUsersPagination();
+    if (err.message === "unauthorized") {
+      handleUnauthorizedAccess();
+      return;
+    }
+    console.error("Failed to load admin users", err);
+  }
+}
+
 function attachEventListeners() {
   userSearchButton?.addEventListener("click", (e) => {
     e.preventDefault();
@@ -523,13 +712,10 @@ function attachEventListeners() {
     }
   });
   userDetailsEl?.addEventListener("click", (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const plan = target.dataset.plan;
-    const userId = target.dataset.user;
-    if (plan && userId) {
-      handlePlanChange(userId, plan);
-    }
+    handleMembershipActionClick(event.target);
+  });
+  usersTableBody?.addEventListener("click", (event) => {
+    handleMembershipActionClick(event.target);
   });
   pendingBodyEl?.addEventListener("click", (event) => {
     const target = event.target;
@@ -540,13 +726,27 @@ function attachEventListeners() {
       handlePendingAction("reject", target.dataset.reject);
     }
   });
+  usersPrevButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    loadAdminUsersPage("prev");
+  });
+  usersNextButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    loadAdminUsersPage("next");
+  });
+  usersRefreshButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    const action = adminState.usersPaging?.loaded ? "reload" : "initial";
+    loadAdminUsersPage(action);
+  });
 }
 
 async function initializeAdminApp() {
   if (adminAppReady) {
     if (adminState.pagePassword) {
       showDashboard();
-      await refreshAdminDashboard();
+      const userPageAction = adminState.usersPaging?.loaded ? "reload" : "initial";
+      await Promise.all([refreshAdminDashboard(), loadAdminUsersPage(userPageAction)]);
       scheduleAutoRefresh();
     }
     return;
@@ -562,7 +762,7 @@ async function initializeAdminApp() {
     attachEventListeners();
     if (adminState.pagePassword) {
       showDashboard();
-      await refreshAdminDashboard();
+      await Promise.all([refreshAdminDashboard(), loadAdminUsersPage("initial")]);
       scheduleAutoRefresh();
     } else {
       showAccessGate();

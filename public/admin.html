@@ -143,6 +143,31 @@
       letter-spacing: 0.05em;
       font-size: 0.75rem;
     }
+    .table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+    }
+    .admin-section-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .admin-users-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .admin-pager {
+      display: flex;
+      gap: 6px;
+    }
+    .btn-compact {
+      padding: 6px 10px;
+      font-size: 0.8rem;
+    }
     .admin-search-row {
       display: flex;
       flex-direction: column;
@@ -182,6 +207,9 @@
       flex-wrap: wrap;
       gap: 8px;
       margin-top: 12px;
+    }
+    .admin-action-row.compact {
+      gap: 6px;
     }
     .error {
       color: #fecaca;
@@ -261,6 +289,39 @@
           <button id="adminUserSearchButton" class="btn-secondary">Search</button>
         </div>
         <div id="adminUserDetails"></div>
+      </div>
+
+      <div class="admin-section">
+        <div class="admin-section-header">
+          <h3>All Users</h3>
+          <div class="admin-users-controls">
+            <button id="adminUsersRefreshButton" class="btn-secondary btn-compact">Refresh</button>
+            <div class="admin-pager">
+              <button id="adminUsersPrevButton" class="btn-secondary btn-compact" disabled>Prev</button>
+              <button id="adminUsersNextButton" class="btn-secondary btn-compact" disabled>Next</button>
+            </div>
+          </div>
+        </div>
+        <p class="admin-note" id="adminUsersPageStatus">No users loaded.</p>
+        <div class="table-wrapper">
+          <table class="admin-table admin-users-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Membership</th>
+                <th>Expires</th>
+                <th>U of A Verified</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="adminUsersTableBody">
+              <tr>
+                <td colspan="6" style="text-align:center; padding:16px;">No users loaded.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
