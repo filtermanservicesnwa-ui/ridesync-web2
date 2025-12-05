@@ -687,11 +687,14 @@ admin.initializeApp();
 const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
+const FieldPath = admin.firestore.FieldPath;
 const ADMIN_RIDER_PRESENCE_WINDOW_MINUTES = 5;
 const ADMIN_ACTIVITY_LOOKBACK_HOURS = 48;
 const ADMIN_ACTIVITY_FEED_LIMIT = 40;
 const ADMIN_ACTIVITY_MEMBERSHIP_LOOKBACK_HOURS = 72;
 const MEMBERSHIP_REQUEST_COLLECTION = "membershipRequests";
+const ADMIN_USERS_DEFAULT_PAGE_SIZE = 25;
+const ADMIN_USERS_MAX_PAGE_SIZE = 100;
 const PIN_CHARSET = "0123456789";
 
 const MAX_POOL_DISTANCE_KM = 3;
@@ -6398,6 +6401,52 @@ function serializeUserForAdmin(docSnap) {
   };
 }
 
+function encodeAdminUsersPageToken(docId) {
+  if (typeof docId !== "string" || !docId.length) {
+    return null;
+  }
+  try {
+    return Buffer.from(JSON.stringify({ docId }), "utf8").toString("base64");
+  } catch (err) {
+    console.warn("[RideSync][admin] encode page token failed", err?.message || err);
+    return null;
+  }
+}
+
+function decodeAdminUsersPageToken(rawToken) {
+  if (typeof rawToken !== "string" || !rawToken.length) {
+    return null;
+  }
+  try {
+    const json = Buffer.from(rawToken, "base64").toString("utf8");
+    const parsed = JSON.parse(json);
+    if (parsed && typeof parsed.docId === "string" && parsed.docId.length) {
+      return parsed;
+    }
+  } catch (err) {
+    console.warn("[RideSync][admin] decode page token failed", err?.message || err);
+  }
+  return null;
+}
+
+async function listUsersForAdmin({ limit, pageToken } = {}) {
+  const desiredLimit = Number.isFinite(limit) ? Math.floor(limit) : ADMIN_USERS_DEFAULT_PAGE_SIZE;
+  const pageSize = Math.min(Math.max(desiredLimit, 1), ADMIN_USERS_MAX_PAGE_SIZE);
+  let query = db.collection("users").orderBy(FieldPath.documentId()).limit(pageSize);
+  const decodedToken = decodeAdminUsersPageToken(pageToken);
+  if (decodedToken?.docId) {
+    query = query.startAfter(decodedToken.docId);
+  }
+  const snapshot = await query.get();
+  const users = [];
+  snapshot.forEach((docSnap) => users.push(serializeUserForAdmin(docSnap)));
+  const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+  return {
+    users,
+    nextPageToken: lastDoc ? encodeAdminUsersPageToken(lastDoc.id) : null,
+  };
+}
+
 async function searchUsersByQueryString(query) {
   const trimmed = typeof query === "string" ? query.trim() : "";
   if (!trimmed) {
@@ -6700,6 +6749,35 @@ exports.adminSearchUser = functions.https.onRequest(async (req, res) => {
     sendAdminJson(res, 200, { ok: true, results });
   } catch (err) {
     handleAdminRequestError(res, err, "adminSearchUser");
+  }
+});
+
+exports.adminListUsers = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    ensureAdminRequestAuthorized(req);
+    const body = readJsonBody(req);
+    const pageSizeRaw = Number(body?.pageSize);
+    const pageTokenRaw = typeof body?.pageToken === "string" ? body.pageToken : "";
+    const { users, nextPageToken } = await listUsersForAdmin({
+      limit: pageSizeRaw,
+      pageToken: pageTokenRaw,
+    });
+    sendAdminJson(res, 200, {
+      ok: true,
+      users,
+      nextPageToken,
+    });
+  } catch (err) {
+    handleAdminRequestError(res, err, "adminListUsers");
   }
 });
 
