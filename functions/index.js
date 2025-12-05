@@ -884,6 +884,120 @@ function coercePositiveNumber(value) {
   return Number.isFinite(num) && num >= 0 ? num : null;
 }
 
+function resolveReferralConfigNumber(value, fallback) {
+  const normalized = coercePositiveNumber(value);
+  if (normalized === null || Number.isNaN(normalized)) {
+    return fallback;
+  }
+  return normalized;
+}
+
+function sanitizeAppBaseUrl(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const url = new URL(trimmed);
+    const protocol = url.protocol.toLowerCase();
+    const hostname = url.hostname.toLowerCase();
+    const isLocalhost =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1";
+    const isHttps = protocol === "https:";
+    const isHttpLocal = protocol === "http:" && isLocalhost;
+    if (!isHttps && !isHttpLocal) {
+      return null;
+    }
+    return url.origin.replace(/\/+$/, "");
+  } catch (err) {
+    return null;
+  }
+}
+
+const DEFAULT_APP_BASE_URL =
+  sanitizeAppBaseUrl(readEnvValue("APP_BASE_URL") || runtimeConfig?.app?.base_url) ||
+  sanitizeAppBaseUrl(
+    readEnvValue("CHECKOUT_BASE_URL") || runtimeConfig?.app?.checkout_base_url
+  ) ||
+  "https://ridesync.live";
+
+const REFERRAL_SHARE_DEFAULTS = Object.freeze({
+  amountOffCents: Math.max(
+    0,
+    resolveReferralConfigNumber(
+      runtimeConfig?.referrals?.amount_off_cents ??
+        readEnvValue("REFERRAL_AMOUNT_OFF_CENTS"),
+      500
+    )
+  ),
+  usageLimit: Math.max(
+    0,
+    resolveReferralConfigNumber(
+      runtimeConfig?.referrals?.usage_limit ??
+        readEnvValue("REFERRAL_USAGE_LIMIT"),
+      10000
+    )
+  ),
+  maxPerUser: Math.max(
+    1,
+    resolveReferralConfigNumber(
+      runtimeConfig?.referrals?.max_per_user ??
+        readEnvValue("REFERRAL_MAX_PER_USER"),
+      1
+    )
+  ),
+  minFareCents: Math.max(
+    0,
+    resolveReferralConfigNumber(
+      runtimeConfig?.referrals?.min_fare_cents ??
+        readEnvValue("REFERRAL_MIN_FARE_CENTS"),
+      0
+    )
+  ),
+  description:
+    sanitizeProfileString(
+      (runtimeConfig?.referrals?.description ||
+        readEnvValue("REFERRAL_DESCRIPTION") ||
+        "").toString(),
+      140
+    ) || REFERRAL_DEFAULT_DESCRIPTION,
+});
+
+function resolveReferralAllowedPlans() {
+  const aggregate =
+    runtimeConfig?.referrals?.allowed_plans ??
+    runtimeConfig?.referrals?.allowedPlans ??
+    readEnvValue("REFERRAL_ALLOWED_PLANS");
+  if (!aggregate) {
+    return ["all"];
+  }
+  const normalizeList = (list) =>
+    list
+      .map((plan) => normalizeMembershipPlan(plan || ""))
+      .filter((plan) => !!plan);
+  if (Array.isArray(aggregate)) {
+    const normalized = normalizeList(aggregate);
+    return normalized.length ? normalized : ["all"];
+  }
+  if (typeof aggregate === "string") {
+    const normalized = normalizeList(
+      aggregate
+        .split(/[, ]+/)
+        .map((plan) => plan.trim())
+        .filter(Boolean)
+    );
+    return normalized.length ? normalized : ["all"];
+  }
+  return ["all"];
+}
+
+const REFERRAL_SHARE_ALLOWED_PLANS = resolveReferralAllowedPlans();
+
 function resolveFareConstants() {
   const faresConfig = runtimeConfig?.fares || {};
   const env = process.env || {};
@@ -1757,6 +1871,178 @@ async function rollbackReferralCodeRedemption({ code, userId, rideId }) {
       error: rollbackError?.message || rollbackError,
     });
   }
+}
+
+function resolveReferralOwnerName(profile = {}) {
+  const sources = [
+    profile.fullName,
+    profile.name,
+    profile.displayName,
+    profile.email,
+  ];
+  for (const source of sources) {
+    const sanitized = sanitizeProfileString(source, 80);
+    if (sanitized) {
+      return sanitized;
+    }
+  }
+  return null;
+}
+
+function buildUserReferralCodeCandidates(profile = {}, uid = "") {
+  const candidateSet = new Set();
+  const append = (value) => {
+    const sanitized = sanitizeReferralCode(value);
+    if (sanitized) {
+      candidateSet.add(sanitized.slice(0, 16));
+    }
+  };
+  const nameSources = [
+    profile.referralCode,
+    profile.customReferralCode,
+    profile.fullName,
+    profile.name,
+    profile.displayName,
+  ];
+  nameSources.forEach((source) => {
+    if (!source) return;
+    const slug = source
+      .toString()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+    if (!slug) return;
+    append(slug.slice(0, 12));
+    if (uid) {
+      append(`${slug.slice(0, 8)}${uid.slice(-3)}`);
+    }
+  });
+  if (profile.email) {
+    const handle = profile.email.split("@")[0] || "";
+    const handleSlug = handle.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (handleSlug) {
+      append(`${handleSlug.slice(0, 9)}${uid.slice(-3)}`);
+    }
+  }
+  if (uid) {
+    append(`RS${uid.slice(-6).toUpperCase()}`);
+  }
+  return Array.from(candidateSet).filter(Boolean);
+}
+
+function generateRandomReferralCode(uid = "") {
+  const suffix = crypto.randomBytes(3).toString("hex").toUpperCase();
+  const uidTail = (uid || "").toString().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const base = uidTail ? uidTail.slice(-3) : "RS";
+  const raw = `RS${base}${suffix}`;
+  return sanitizeReferralCode(raw)?.slice(0, 16) || null;
+}
+
+async function ensureReferralCodeDocument(tx, code, { uid, profile }) {
+  if (!code) {
+    return null;
+  }
+  const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(code);
+  const existingSnap = await tx.get(codeRef);
+  if (existingSnap.exists) {
+    return existingSnap.data() || {};
+  }
+  const payload = {
+    code,
+    ownerUserId: uid,
+    ownerName: resolveReferralOwnerName(profile),
+    description: REFERRAL_SHARE_DEFAULTS.description,
+    discountType: "amount",
+    amountOffCents: Math.max(0, Math.round(REFERRAL_SHARE_DEFAULTS.amountOffCents || 0)),
+    maxPerUser: Math.max(1, Math.round(REFERRAL_SHARE_DEFAULTS.maxPerUser || 1)),
+    usageCount: 0,
+    minFareCents: Math.max(0, Math.round(REFERRAL_SHARE_DEFAULTS.minFareCents || 0)),
+    allowedPlans: REFERRAL_SHARE_ALLOWED_PLANS,
+    active: true,
+    status: "active",
+    type: "user_referral",
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  if (REFERRAL_SHARE_DEFAULTS.usageLimit > 0) {
+    payload.usageLimit = Math.round(REFERRAL_SHARE_DEFAULTS.usageLimit);
+  }
+  tx.set(codeRef, payload, { merge: true });
+  return payload;
+}
+
+async function findAvailableReferralCode(tx, profile, uid) {
+  const candidates = buildUserReferralCodeCandidates(profile, uid);
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(candidate);
+    const snap = await tx.get(codeRef);
+    if (!snap.exists) {
+      return candidate;
+    }
+  }
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const generated = generateRandomReferralCode(uid);
+    if (!generated) continue;
+    const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(generated);
+    const snap = await tx.get(codeRef);
+    if (!snap.exists) {
+      return generated;
+    }
+  }
+  return null;
+}
+
+async function ensureUserReferralCode({ uid, profile: profileInput = null }) {
+  if (!uid) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Sign in to access referral codes."
+    );
+  }
+  const userRef = db.collection("users").doc(uid);
+  let resolvedProfile = profileInput;
+  let ensuredCode = null;
+  await db.runTransaction(async (tx) => {
+    const userSnap = await tx.get(userRef);
+    const storedProfile = userSnap.exists ? userSnap.data() || {} : {};
+    resolvedProfile = {
+      ...storedProfile,
+      ...(profileInput || {}),
+    };
+    let referralCode = sanitizeReferralCode(resolvedProfile.referralCode);
+    if (!referralCode) {
+      referralCode = await findAvailableReferralCode(tx, resolvedProfile, uid);
+    }
+    if (!referralCode) {
+      throw new functions.https.HttpsError(
+        "resource-exhausted",
+        "Unable to generate a referral code right now. Try again later."
+      );
+    }
+    await ensureReferralCodeDocument(tx, referralCode, { uid, profile: resolvedProfile });
+    tx.set(
+      userRef,
+      {
+        referralCode,
+        referralLinkGeneratedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    ensuredCode = referralCode;
+  });
+  return {
+    code: ensuredCode,
+    profile: resolvedProfile,
+  };
+}
+
+function buildReferralShareLink(code) {
+  if (!code) {
+    return DEFAULT_APP_BASE_URL;
+  }
+  const base = DEFAULT_APP_BASE_URL.replace(/\/+$/, "");
+  const encoded = encodeURIComponent(code);
+  return `${base}/?referral=${encoded}#signup`;
 }
 
 async function createStripeCustomerForUser({
@@ -5306,6 +5592,28 @@ exports.saveUserProfile = functions.https.onCall(async (data, context) => {
       ...docPayload,
       updatedAt: Date.now(),
     },
+  };
+});
+
+exports.getReferralShareInfo = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  const { profile } = await loadUserProfileOrThrow(uid);
+  const ensured = await ensureUserReferralCode({ uid, profile });
+  const code = ensured?.code;
+  if (!code) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Referral code is unavailable right now."
+    );
+  }
+  const shareUrl = buildReferralShareLink(code);
+  return {
+    code,
+    shareUrl,
+    amountOffCents: Math.max(0, Math.round(REFERRAL_SHARE_DEFAULTS.amountOffCents || 0)),
+    description: REFERRAL_SHARE_DEFAULTS.description,
+    minFareCents: Math.max(0, Math.round(REFERRAL_SHARE_DEFAULTS.minFareCents || 0)),
+    allowedPlans: REFERRAL_SHARE_ALLOWED_PLANS,
   };
 });
 

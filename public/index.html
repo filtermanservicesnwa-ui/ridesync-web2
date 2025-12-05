@@ -1700,6 +1700,58 @@
     .tip-adjust-row button {
       flex: 1 1 auto;
     }
+    .info-banner {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(59,130,246,0.35);
+      background: rgba(37,99,235,0.12);
+      color: #bfdbfe;
+      font-size: 0.85rem;
+    }
+    .referral-card {
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(15,23,42,0.75);
+    }
+    .referral-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .referral-card-subtitle {
+      margin: 4px 0 0;
+      font-size: 0.85rem;
+      color: #cbd5f5;
+    }
+    .referral-code-display {
+      margin: 12px 0;
+    }
+    .referral-code-label {
+      font-size: 0.8rem;
+      color: rgba(148,163,184,0.9);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .referral-code-value {
+      margin-top: 4px;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #f8fafc;
+    }
+    .referral-share-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .referral-share-message {
+      margin-top: 8px;
+      color: #cbd5f5;
+    }
     .tip-hint {
       font-size: 12px;
       color: rgba(226,232,240,0.85);
@@ -1840,6 +1892,7 @@
       </div>
 
       <div id="authError" class="error"></div>
+      <div id="authReferralNotice" class="info-banner" style="display:none;"></div>
 
       <label for="email">Email</label>
       <input id="email" type="email" placeholder="you@example.com" autocomplete="email" />
@@ -2208,6 +2261,41 @@
             Edit profile
           </button>
         </div>
+      </div>
+
+      <div id="referralCard" class="referral-card" style="display:none;">
+        <div class="referral-card-header">
+          <div>
+            <div class="section-title" style="margin-top:0;border:none;padding-top:0;">
+              Invite friends
+            </div>
+            <p id="referralCardSubtitle" class="referral-card-subtitle">
+              Share your RideSync code to give friends a discount.
+            </p>
+          </div>
+          <span id="referralCodePill" class="badge badge-basic">—</span>
+        </div>
+        <div class="referral-code-display" aria-live="polite">
+          <div class="referral-code-label">Your referral code</div>
+          <div id="referralCodeValue" class="referral-code-value">Generating…</div>
+        </div>
+        <div class="referral-share-actions">
+          <button
+            id="shareReferralButton"
+            type="button"
+            class="btn-primary btn-small"
+          >
+            Share link
+          </button>
+          <button
+            id="copyReferralButton"
+            type="button"
+            class="btn-secondary btn-small"
+          >
+            Copy link
+          </button>
+        </div>
+        <p id="referralShareMessage" class="small referral-share-message"></p>
       </div>
 
       <!-- Inline edit form -->
@@ -3439,6 +3527,10 @@
       functionsClient,
       "validateReferralCodeForRide"
     );
+    const getReferralShareInfoFn = httpsCallable(
+      functionsClient,
+      "getReferralShareInfo"
+    );
     const confirmRidePaymentIntentFn = httpsCallable(
       functionsClient,
       "confirmRidePaymentIntent"
@@ -3639,6 +3731,9 @@
 
     const urlParams = new URLSearchParams(window.location.search);
     const joinRideIdFromUrl = urlParams.get("join");
+    let pendingReferralCodeFromUrl = sanitizeReferralInput(
+      urlParams.get("referral") || urlParams.get("ref")
+    );
     const checkoutReturnState = {
       pendingId:
         urlParams.get("pending_id") ||
@@ -3675,6 +3770,16 @@
       membershipCheckoutReturnState.status = "waiting";
     }
 
+    let referralShareState = {
+      loading: false,
+      code: null,
+      shareUrl: null,
+      description: "",
+      amountOffCents: 0,
+      minFareCents: 0,
+      error: "",
+    };
+
     const membershipCheckoutState = {
       status: "idle",
       activePlan: null,
@@ -3695,6 +3800,17 @@
       }
       const normalized = value.trim().toLowerCase();
       return POOL_GENDER_ALLOWLIST.has(normalized) ? normalized : null;
+    }
+
+    function sanitizeReferralInput(value) {
+      if (typeof value !== "string") {
+        return "";
+      }
+      const upper = value.trim().toUpperCase();
+      if (!upper) {
+        return "";
+      }
+      return upper.replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
     }
 
     function generateRidePin(length = 4) {
@@ -3722,6 +3838,7 @@
     const loadingView = document.getElementById("loadingView");
     const toggleLink = document.getElementById("toggleLink");
     const authError = document.getElementById("authError");
+    const authReferralNotice = document.getElementById("authReferralNotice");
     const authButton = document.getElementById("authButton");
     const emailEl = document.getElementById("email");
     const passwordEl = document.getElementById("password");
@@ -3928,6 +4045,13 @@
     const riderPhoneDetailEl = document.getElementById("riderPhoneDetail");
     const riderAddressDetailEl = document.getElementById("riderAddressDetail");
     const riderMembershipDetailEl = document.getElementById("riderMembershipDetail");
+    const referralCard = document.getElementById("referralCard");
+    const referralCardSubtitle = document.getElementById("referralCardSubtitle");
+    const referralCodeValueEl = document.getElementById("referralCodeValue");
+    const referralShareMessageEl = document.getElementById("referralShareMessage");
+    const referralCodePill = document.getElementById("referralCodePill");
+    const shareReferralButton = document.getElementById("shareReferralButton");
+    const copyReferralButton = document.getElementById("copyReferralButton");
     const editProfileButton = document.getElementById("editProfileButton");
     const editProfileSection = document.getElementById("editProfileSection");
     const editFullNameEl = document.getElementById("editFullName");
@@ -4233,6 +4357,34 @@
 
     let isSignupMode = false;
     let currentUserProfile = null;
+
+    function setSignupMode(enabled) {
+      isSignupMode = !!enabled;
+      if (signupFields) {
+        signupFields.style.display = isSignupMode ? "block" : "none";
+      }
+      if (authButton) {
+        authButton.textContent = isSignupMode ? "Create account" : "Log in";
+      }
+      if (toggleLink) {
+        toggleLink.textContent = isSignupMode
+          ? "Already have an account? Log in"
+          : "New here? Create account";
+      }
+      if (authReferralNotice) {
+        if (isSignupMode && pendingReferralCodeFromUrl) {
+          authReferralNotice.style.display = "block";
+          authReferralNotice.textContent = `Referral code ${pendingReferralCodeFromUrl} detected. Create an account to redeem it on your first ride.`;
+        } else {
+          authReferralNotice.style.display = "none";
+          authReferralNotice.textContent = "";
+        }
+      }
+    }
+
+    if (pendingReferralCodeFromUrl && authReferralNotice) {
+      setSignupMode(true);
+    }
 
     let map;
     let directionsService;
@@ -5917,16 +6069,7 @@
     }
 
     toggleLink.addEventListener("click", () => {
-      isSignupMode = !isSignupMode;
-      if (isSignupMode) {
-        signupFields.style.display = "block";
-        authButton.textContent = "Create account";
-        toggleLink.textContent = "Already have an account? Log in";
-      } else {
-        signupFields.style.display = "none";
-        authButton.textContent = "Log in";
-        toggleLink.textContent = "New here? Create account";
-      }
+      setSignupMode(!isSignupMode);
       authError.textContent = "";
     });
       authButton.addEventListener("click", async () => {
@@ -5966,6 +6109,7 @@
         ridersSection.style.display = "block";
       }
       showAuthView();
+      setSignupMode(false);
       updateCancelButtonVisibility();
     });
 
@@ -6137,6 +6281,235 @@
       setMembershipBadge(p);
       renderMembershipCard(p);
       updateSyncButtonLabel();
+      refreshReferralShareCard();
+    }
+
+    function buildLocalReferralUrl(code) {
+      const origin = window.location.origin.replace(/\/+$/, "");
+      const encoded = encodeURIComponent(code || "");
+      return `${origin}/?referral=${encoded}#signup`;
+    }
+
+    function formatReferralBenefitCopy() {
+      if (referralShareState.amountOffCents) {
+        return `${formatCurrencyFromCents(
+          Math.max(0, Math.round(referralShareState.amountOffCents || 0)),
+          "usd"
+        )} off their first ride`;
+      }
+      return "a discount on their first ride";
+    }
+
+    function updateReferralCardDisplay(messageOverride = "") {
+      if (!referralCard) {
+        return;
+      }
+      if (!auth?.currentUser) {
+        referralCard.style.display = "none";
+        return;
+      }
+      referralCard.style.display = "block";
+      if (referralCodeValueEl) {
+        if (referralShareState.loading) {
+          referralCodeValueEl.textContent = "Generating…";
+        } else if (referralShareState.code) {
+          referralCodeValueEl.textContent = referralShareState.code;
+        } else {
+          referralCodeValueEl.textContent = "Tap to generate";
+        }
+      }
+      if (referralCodePill) {
+        referralCodePill.textContent = referralShareState.code || "—";
+      }
+      if (shareReferralButton) {
+        shareReferralButton.disabled = referralShareState.loading;
+      }
+      if (copyReferralButton) {
+        copyReferralButton.disabled =
+          referralShareState.loading ||
+          (!referralShareState.code && !referralShareState.shareUrl);
+      }
+      if (referralCardSubtitle) {
+        if (referralShareState.minFareCents > 0) {
+          referralCardSubtitle.textContent = `Give ${formatReferralBenefitCopy()} when they sign up (min fare ${formatCurrencyFromCents(
+            referralShareState.minFareCents,
+            "usd"
+          )}).`;
+        } else {
+          referralCardSubtitle.textContent =
+            "Share your RideSync code to give friends a discount.";
+        }
+      }
+      const message =
+        messageOverride ||
+        referralShareState.error ||
+        (referralShareState.code
+          ? `Friends get ${formatReferralBenefitCopy()}.`
+          : "Tap Share to generate your referral link.");
+      if (referralShareMessageEl) {
+        referralShareMessageEl.textContent = message;
+      }
+    }
+
+    function resetReferralShareState() {
+      referralShareState = {
+        loading: false,
+        code: null,
+        shareUrl: null,
+        description: "",
+        amountOffCents: 0,
+        minFareCents: 0,
+        error: "",
+      };
+      updateReferralCardDisplay("");
+    }
+
+    async function loadReferralShareInfo() {
+      if (!getReferralShareInfoFn || !auth?.currentUser) {
+        return null;
+      }
+      if (referralShareState.loading) {
+        return referralShareState;
+      }
+      referralShareState.loading = true;
+      updateReferralCardDisplay();
+      try {
+        const response = await getReferralShareInfoFn();
+        const data = response?.data || {};
+        referralShareState = {
+          loading: false,
+          code: (data.code || "").trim(),
+          shareUrl: data.shareUrl || null,
+          description: data.description || "",
+          amountOffCents: Number(data.amountOffCents) || 0,
+          minFareCents: Number(data.minFareCents) || 0,
+          error: "",
+        };
+        updateReferralCardDisplay();
+        return referralShareState;
+      } catch (err) {
+        const normalizedError = handleCallableError(
+          "getReferralShareInfo",
+          err,
+          "Could not load referral info."
+        );
+        referralShareState.loading = false;
+        referralShareState.error = normalizedError.message;
+        updateReferralCardDisplay();
+        return null;
+      }
+    }
+
+    async function refreshReferralShareCard() {
+      if (!referralCard || !auth?.currentUser) {
+        return;
+      }
+      if (!referralShareState.code && !referralShareState.loading) {
+        await loadReferralShareInfo();
+      } else {
+        updateReferralCardDisplay();
+      }
+    }
+
+    function resolveReferralShareUrl() {
+      if (!referralShareState.code) {
+        return null;
+      }
+      return referralShareState.shareUrl || buildLocalReferralUrl(referralShareState.code);
+    }
+
+    function buildReferralShareText() {
+      if (!referralShareState.code) {
+        return "Join RideSync with my referral link.";
+      }
+      return `Use my RideSync code ${referralShareState.code} for ${formatReferralBenefitCopy()}.`;
+    }
+
+    async function shareReferralLink() {
+      if (!auth?.currentUser) {
+        updateReferralCardDisplay("Sign in to share your referral link.");
+        return;
+      }
+      if (!referralShareState.code && !referralShareState.loading) {
+        await loadReferralShareInfo();
+      }
+      if (!referralShareState.code) {
+        return;
+      }
+      const shareUrl = resolveReferralShareUrl();
+      if (!shareUrl) {
+        return;
+      }
+      const shareText = buildReferralShareText();
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: "RideSync referral",
+            text: shareText,
+            url: shareUrl,
+          });
+          updateReferralCardDisplay("Thanks for sharing RideSync!");
+        } catch (err) {
+          if (err?.name === "AbortError") {
+            return;
+          }
+          updateReferralCardDisplay("Couldn't open the share sheet. Try copying the link.");
+        }
+      } else {
+        await copyReferralLink();
+      }
+    }
+
+    async function copyReferralLink() {
+      if (!auth?.currentUser) {
+        updateReferralCardDisplay("Sign in to copy your referral link.");
+        return;
+      }
+      if (!referralShareState.code && !referralShareState.loading) {
+        await loadReferralShareInfo();
+      }
+      if (!referralShareState.code) {
+        return;
+      }
+      const shareUrl = resolveReferralShareUrl();
+      if (!shareUrl) {
+        return;
+      }
+      const copied = await copyTextToClipboard(shareUrl);
+      if (copied) {
+        updateReferralCardDisplay("Referral link copied!");
+      } else if (referralShareMessageEl) {
+        referralShareMessageEl.textContent = shareUrl;
+      }
+    }
+
+    async function copyTextToClipboard(value) {
+      if (!value) {
+        return false;
+      }
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(value);
+          return true;
+        } catch (err) {
+          console.warn("clipboard write failed", err);
+        }
+      }
+      const temp = document.createElement("textarea");
+      temp.value = value;
+      temp.setAttribute("readonly", "");
+      temp.style.position = "absolute";
+      temp.style.left = "-9999px";
+      document.body.appendChild(temp);
+      temp.select();
+      let success = false;
+      try {
+        success = document.execCommand("copy");
+      } catch (err) {
+        success = false;
+      }
+      document.body.removeChild(temp);
+      return success;
     }
 
     editProfileButton.addEventListener("click", () => {
@@ -6215,6 +6588,7 @@
         currentUserProfile = null;
         showAuthView();
         teardownRideChat(true);
+        resetReferralShareState();
         if (hasPendingMembershipCheckoutReturn()) {
           openPaymentStatusOverlay(
             "Sign in to finish membership",
@@ -6249,6 +6623,8 @@
       if (!pendingOverlay) {
         closePaymentStatusOverlay();
       }
+
+      await applyPendingReferralCodeFromUrl();
 
       if (joinRideIdFromUrl && !joinMode) {
         await enterJoinMode(joinRideIdFromUrl);
@@ -9039,6 +9415,27 @@
       }
     }
 
+    async function applyPendingReferralCodeFromUrl() {
+      if (!pendingReferralCodeFromUrl) {
+        return;
+      }
+      if (!auth?.currentUser || !referralCodeInput || !validateReferralCodeForRideFn) {
+        return;
+      }
+      referralCodeInput.value = pendingReferralCodeFromUrl;
+      try {
+        await handleReferralCodeApply();
+      } catch (err) {
+        console.warn("auto-apply referral code failed", err);
+      }
+      pendingReferralCodeFromUrl = "";
+      stripReferralParamsFromUrl();
+      if (authReferralNotice) {
+        authReferralNotice.style.display = "none";
+        authReferralNotice.textContent = "";
+      }
+    }
+
     populateReserveTimeSelect();
     updateReserveTimeHint();
 
@@ -9503,6 +9900,18 @@
       });
     }
 
+    if (shareReferralButton) {
+      shareReferralButton.addEventListener("click", () => {
+        shareReferralLink();
+      });
+    }
+
+    if (copyReferralButton) {
+      copyReferralButton.addEventListener("click", () => {
+        copyReferralLink();
+      });
+    }
+
     if (syncConfirmClose) {
       syncConfirmClose.addEventListener("click", closeSyncConfirmOverlay);
     }
@@ -9551,6 +9960,27 @@
         membershipCheckoutReturnState.sessionId &&
         membershipCheckoutReturnState.status !== "completed"
       );
+    }
+
+    function stripReferralParamsFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      let changed = false;
+      ["referral", "ref"].forEach((key) => {
+        if (params.has(key)) {
+          params.delete(key);
+          changed = true;
+        }
+      });
+      if (!changed) {
+        return;
+      }
+      const query = params.toString();
+      const hash = window.location.hash || "";
+      const newUrl =
+        `${window.location.origin}${window.location.pathname}` +
+        (query ? `?${query}` : "") +
+        hash;
+      window.history.replaceState({}, document.title, newUrl);
     }
 
     function stripMembershipCheckoutParamsFromUrl() {
