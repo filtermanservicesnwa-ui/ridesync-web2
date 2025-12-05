@@ -1970,7 +1970,7 @@
           </div>
           <div id="groupQrSection" class="trip-field" style="display:none; margin-top:12px;">
             <div class="small" id="groupQrIntro">
-              Riding with friends? Ask each of them to scan this QR and sign in to join this ride.
+              Riding with friends? Share this QR as soon as you choose 2–4 riders — it updates automatically once your ride is synced.
             </div>
             <div
               id="groupQrPendingMessage"
@@ -3890,6 +3890,38 @@
     const groupQrPendingMessage = document.getElementById("groupQrPendingMessage");
     const groupOccupancyLabel = document.getElementById("groupOccupancyLabel");
     let groupQr = null;
+
+    function ensureGroupQrInstance(initialValue) {
+      if (!groupQrCanvas) {
+        return null;
+      }
+      if (!groupQr) {
+        groupQr = new QRious({
+          element: groupQrCanvas,
+          size: 140,
+          value:
+            initialValue ||
+            `${window.location.origin}?groupInvite=1`
+        });
+      }
+      return groupQr;
+    }
+
+    function buildPendingGroupQrValue() {
+      const inviteParams = new URLSearchParams();
+      inviteParams.set("groupInvite", "1");
+      const selectedValue = parseInt(numRidersEl?.value || "1", 10);
+      if (Number.isFinite(selectedValue) && selectedValue > 1) {
+        inviteParams.set("groupSize", String(selectedValue));
+      }
+      if (typeof resolveSyncMemberDisplayName === "function") {
+        const hostName = (resolveSyncMemberDisplayName() || "").trim();
+        if (hostName) {
+          inviteParams.set("host", hostName);
+        }
+      }
+      return `${window.location.origin}?${inviteParams.toString()}`;
+    }
 
     try {
       await loadGoogleMapsSdk({ apiKey: mapsApiKey, libraries: mapsLibraries });
@@ -8036,6 +8068,9 @@
         groupOccupancyLabel.textContent = "";
         groupOccupancyLabel.style.display = "none";
       }
+      if (groupQrIntro) {
+        groupQrIntro.style.display = "block";
+      }
       if (groupOccupancyUnsub) {
         groupOccupancyUnsub();
         groupOccupancyUnsub = null;
@@ -8048,18 +8083,23 @@
         groupOccupancyUnsub();
         groupOccupancyUnsub = null;
       }
+      const fallbackValue = buildPendingGroupQrValue();
+      const qr = ensureGroupQrInstance(fallbackValue);
+      if (qr && fallbackValue) {
+        qr.set({ value: fallbackValue });
+      }
       groupQrSection.style.display = "block";
       if (groupQrIntro) {
-        groupQrIntro.style.display = "none";
+        groupQrIntro.style.display = "block";
       }
       if (groupQrPendingMessage) {
         groupQrPendingMessage.textContent =
           message ||
-          "Sync your ride to generate a QR your friends can scan to join.";
+          "Share this QR now so your friends can sign in. Once you sync your ride, we'll update the same code with your join link.";
         groupQrPendingMessage.style.display = "block";
       }
       if (groupQrCanvas) {
-        groupQrCanvas.style.display = "none";
+        groupQrCanvas.style.display = "block";
       }
       if (groupOccupancyLabel) {
         groupOccupancyLabel.textContent = "";
@@ -8077,14 +8117,9 @@
         groupQrIntro.style.display = "block";
       }
       const joinUrl = `${window.location.origin}?join=${encodeURIComponent(rideId)}`;
-      if (!groupQr) {
-        groupQr = new QRious({
-          element: groupQrCanvas,
-          size: 140,
-          value: joinUrl
-        });
-      } else {
-        groupQr.set({ value: joinUrl });
+      const qr = ensureGroupQrInstance(joinUrl);
+      if (qr) {
+        qr.set({ value: joinUrl });
       }
       groupQrSection.style.display = "block";
       groupQrCanvas.style.display = "block";
