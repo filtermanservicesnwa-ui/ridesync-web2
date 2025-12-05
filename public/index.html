@@ -400,6 +400,23 @@
       margin-top: 6px;
       padding: 6px 14px;
     }
+    .sync-qr-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-width: 0;
+    }
+    .sync-qr-trigger::after {
+      content: "";
+      display: inline-block;
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 4px 4px 0 4px;
+      border-color: currentColor transparent transparent transparent;
+      margin-left: auto;
+    }
     .sync-riders-modal-card {
       width: min(420px, calc(100% - 40px));
       background: rgba(2,6,23,0.95);
@@ -2022,10 +2039,12 @@
             <button
               id="syncRidersButton"
               type="button"
-              class="btn-secondary btn-small sync-riders-button"
+              class="btn-secondary btn-small sync-riders-button sync-qr-trigger"
               style="display:none;"
+              aria-haspopup="dialog"
+              aria-controls="syncRidersOverlay"
             >
-              Sync Riders
+              Sync QR
             </button>
           </div>
           <div
@@ -2035,7 +2054,7 @@
             aria-expanded="false"
           >
             <div class="small" id="groupQrIntro">
-              Riding with friends? Ask each of them to scan this QR and sign in to join this ride.
+              Tap Sync QR to open the overlay and share the code with friends. We'll track how many riders have joined below.
             </div>
             <div
               id="groupQrPendingMessage"
@@ -4000,7 +4019,6 @@
     const syncRidersModalOccupancy = document.getElementById("syncRidersModalOccupancy");
     const syncRidersCopyLink = document.getElementById("syncRidersCopyLink");
     const syncRidersCopyFeedback = document.getElementById("syncRidersCopyFeedback");
-    let groupQr = null;
     let syncRidersQr = null;
     let syncRidersJoinUrl = "";
     let syncRidersFlowActive = false;
@@ -8224,7 +8242,7 @@
       if (groupQrPendingMessage) {
         groupQrPendingMessage.textContent =
           message ||
-          "Sync your ride to generate a QR your friends can scan to join.";
+          "Sync your ride first, then tap Sync QR to open the overlay code.";
         groupQrPendingMessage.style.display = "block";
       }
       if (groupQrCanvas) {
@@ -8238,34 +8256,26 @@
     }
 
     function showGroupQr(rideId) {
-      if (!groupQrSection || !groupQrCanvas) return;
+      if (!groupQrSection) return;
       if (!rideId) {
         showGroupQrPlaceholder();
         return;
       }
+      setGroupQrVisibility(true);
       if (groupQrIntro) {
         groupQrIntro.style.display = "block";
       }
-      const joinUrl = `${window.location.origin}?join=${encodeURIComponent(rideId)}`;
-      if (!groupQr) {
-        groupQr = new QRious({
-          element: groupQrCanvas,
-          size: 140,
-          value: joinUrl
-        });
-      } else {
-        groupQr.set({ value: joinUrl });
-      }
-      setGroupQrVisibility(true);
-      groupQrCanvas.style.display = "block";
       if (groupQrPendingMessage) {
         groupQrPendingMessage.textContent = "";
         groupQrPendingMessage.style.display = "none";
       }
+      if (groupQrCanvas) {
+        groupQrCanvas.style.display = "none";
+      }
       if (groupOccupancyLabel) {
         groupOccupancyLabel.style.display = "block";
-        updateSyncRidersOccupancyLabel(groupOccupancyLabel.textContent);
       }
+      updateSyncRidersOccupancyLabel(groupOccupancyLabel?.textContent || "");
       activeRideIsGroup = true;
       wantsGroupRide = true;
       startGroupOccupancyWatcher(rideId);
@@ -8319,6 +8329,17 @@
           groupOccupancyLabel.textContent = `Group: ${cur} of ${max} riders.`;
         }
         updateSyncRidersOccupancyLabel(`Group: ${cur} of ${max} riders.`);
+        const groupFull = max > 0 && cur >= max;
+        if (
+          groupFull &&
+          syncRidersOverlay?.classList?.contains("active")
+        ) {
+          closeSyncRidersOverlay();
+          if (profileMessage) {
+            profileMessage.textContent =
+              "All riders joined. Sync your destination when you're ready.";
+          }
+        }
       });
     }
 
