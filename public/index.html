@@ -382,6 +382,18 @@
       display: flex;
       flex-direction: column;
     }
+    .group-qr-section {
+      margin-top: 12px;
+      gap: 6px;
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transition: max-height 0.25s ease, opacity 0.2s ease;
+    }
+    .group-qr-section.visible {
+      max-height: 360px;
+      opacity: 1;
+    }
     .destination-input-row {
       display: flex;
       align-items: center;
@@ -1964,7 +1976,12 @@
               For U of A pooling, choose 1 rider. For private group rides with friends, choose 2–4 and use the QR.
             </div>
           </div>
-          <div id="groupQrSection" class="trip-field" style="display:none; margin-top:12px;">
+          <div
+            id="groupQrSection"
+            class="trip-field group-qr-section"
+            aria-live="polite"
+            aria-expanded="false"
+          >
             <div class="small" id="groupQrIntro">
               Riding with friends? Ask each of them to scan this QR and sign in to join this ride.
             </div>
@@ -3878,6 +3895,12 @@
     const groupQrPendingMessage = document.getElementById("groupQrPendingMessage");
     const groupOccupancyLabel = document.getElementById("groupOccupancyLabel");
     let groupQr = null;
+
+    function setGroupQrVisibility(isVisible) {
+      if (!groupQrSection) return;
+      groupQrSection.classList.toggle("visible", Boolean(isVisible));
+      groupQrSection.setAttribute("aria-expanded", isVisible ? "true" : "false");
+    }
 
     try {
       await loadGoogleMapsSdk({ apiKey: mapsApiKey, libraries: mapsLibraries });
@@ -7985,8 +8008,9 @@
     }
       
     function hideGroupQr() {
-      if (groupQrSection) {
-        groupQrSection.style.display = "none";
+      setGroupQrVisibility(false);
+      if (groupQrIntro) {
+        groupQrIntro.style.display = "none";
       }
       if (groupQrCanvas) {
         groupQrCanvas.style.display = "none";
@@ -8011,9 +8035,9 @@
         groupOccupancyUnsub();
         groupOccupancyUnsub = null;
       }
-      groupQrSection.style.display = "block";
+      setGroupQrVisibility(true);
       if (groupQrIntro) {
-        groupQrIntro.style.display = "none";
+        groupQrIntro.style.display = "block";
       }
       if (groupQrPendingMessage) {
         groupQrPendingMessage.textContent =
@@ -8049,7 +8073,7 @@
       } else {
         groupQr.set({ value: joinUrl });
       }
-      groupQrSection.style.display = "block";
+      setGroupQrVisibility(true);
       groupQrCanvas.style.display = "block";
       if (groupQrPendingMessage) {
         groupQrPendingMessage.textContent = "";
