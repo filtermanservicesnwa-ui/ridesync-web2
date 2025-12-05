@@ -1969,7 +1969,7 @@
             </div>
           </div>
           <div id="groupQrSection" class="trip-field" style="display:none; margin-top:12px;">
-            <div class="small" id="groupQrIntro">
+            <div class="small" id="groupQrIntro" hidden>
               Riding with friends? Ask each of them to scan this QR and sign in to join this ride.
             </div>
             <div
@@ -8025,6 +8025,9 @@
       if (groupQrSection) {
         groupQrSection.style.display = "none";
       }
+      if (groupQrIntro) {
+        groupQrIntro.hidden = true;
+      }
       if (groupQrCanvas) {
         groupQrCanvas.style.display = "none";
       }
@@ -8050,7 +8053,7 @@
       }
       groupQrSection.style.display = "block";
       if (groupQrIntro) {
-        groupQrIntro.style.display = "none";
+        groupQrIntro.hidden = true;
       }
       if (groupQrPendingMessage) {
         groupQrPendingMessage.textContent =
@@ -8074,7 +8077,7 @@
         return;
       }
       if (groupQrIntro) {
-        groupQrIntro.style.display = "block";
+        groupQrIntro.hidden = false;
       }
       const joinUrl = `${window.location.origin}?join=${encodeURIComponent(rideId)}`;
       if (!groupQr) {
