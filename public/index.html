@@ -11501,14 +11501,18 @@
             currentUserProfile?.membership ||
             "basic"
         );
+        const requiresGenderMatch = joinTargetRide?.poolType === "uofa";
         const riderGender = normalizePoolGender(currentUserProfile?.gender);
-        if (!riderGender) {
+        if (requiresGenderMatch && !riderGender) {
           profileError.textContent =
             "Set your profile gender to Male or Female to join pooling rides.";
           return;
         }
         const targetGender = normalizePoolGender(joinTargetRide?.gender);
-        if (!targetGender || targetGender !== riderGender) {
+        if (
+          requiresGenderMatch &&
+          (!targetGender || targetGender !== riderGender)
+        ) {
           profileError.textContent =
             "You can only join riders who share your gender.";
           return;

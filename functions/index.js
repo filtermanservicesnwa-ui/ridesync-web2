@@ -5487,13 +5487,7 @@ exports.joinRideGroup = functions.https.onCall(async (data, context) => {
   const { profile } = await loadUserProfileOrThrow(uid);
   const membershipType = normalizeMembershipPlan(profile.membershipType || "basic");
   const membershipStatus = profile.membershipStatus || "none";
-  const riderGender = normalizePoolGender(profile.gender);
-  if (!riderGender) {
-    throw new functions.https.HttpsError(
-      "failed-precondition",
-      "Set your profile gender before joining pooled rides."
-    );
-  }
+  let riderGender = normalizePoolGender(profile.gender) || null;
   await enforceRideCooldown(uid, membershipType);
 
   const hostRef = db.collection("rideRequests").doc(hostRideId);
@@ -5516,8 +5510,19 @@ exports.joinRideGroup = functions.https.onCall(async (data, context) => {
         "This ride is no longer open for pooling."
       );
     }
+    const hostPoolType = host.poolType || null;
+    const requiresGenderMatch = hostPoolType === "uofa";
     const hostGender = normalizePoolGender(host.gender);
-    if (!hostGender || hostGender !== riderGender) {
+    if (requiresGenderMatch && !riderGender) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Set your profile gender before joining pooled rides."
+      );
+    }
+    if (
+      requiresGenderMatch &&
+      (!hostGender || hostGender !== riderGender)
+    ) {
       throw new functions.https.HttpsError(
         "failed-precondition",
         "This group ride is restricted to riders with matching gender."
