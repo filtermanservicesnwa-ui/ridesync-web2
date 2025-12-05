@@ -3885,6 +3885,7 @@
     const cancelError = document.getElementById("cancelError");
 
     const groupQrSection = document.getElementById("groupQrSection");
+    const groupQrIntro = document.getElementById("groupQrIntro");
     const groupQrCanvas = document.getElementById("groupQrCanvas");
     const groupQrPendingMessage = document.getElementById("groupQrPendingMessage");
     const groupOccupancyLabel = document.getElementById("groupOccupancyLabel");
@@ -8048,6 +8049,9 @@
         groupOccupancyUnsub = null;
       }
       groupQrSection.style.display = "block";
+      if (groupQrIntro) {
+        groupQrIntro.style.display = "none";
+      }
       if (groupQrPendingMessage) {
         groupQrPendingMessage.textContent =
           message ||
@@ -8068,6 +8072,9 @@
       if (!rideId) {
         showGroupQrPlaceholder();
         return;
+      }
+      if (groupQrIntro) {
+        groupQrIntro.style.display = "block";
       }
       const joinUrl = `${window.location.origin}?join=${encodeURIComponent(rideId)}`;
       if (!groupQr) {
