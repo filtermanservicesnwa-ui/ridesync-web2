@@ -1968,6 +1968,27 @@
               For U of A pooling, choose 1 rider. For private group rides with friends, choose 2–4 and use the QR.
             </div>
           </div>
+          <div id="groupQrSection" class="trip-field" style="display:none; margin-top:12px;">
+            <div class="small" id="groupQrIntro">
+              Riding with friends? Ask each of them to scan this QR and sign in to join this ride.
+            </div>
+            <div
+              id="groupQrPendingMessage"
+              class="small"
+              style="margin-top:6px; display:none;"
+            ></div>
+            <canvas
+              id="groupQrCanvas"
+              width="140"
+              height="140"
+              style="margin-top:8px; display:none;"
+            ></canvas>
+            <div
+              id="groupOccupancyLabel"
+              class="small"
+              style="margin-top:6px; display:none;"
+            ></div>
+          </div>
         </div>
         <div id="tripMapPreview" class="trip-map-preview" aria-hidden="true">
           <div id="destinationPreviewMap" class="trip-map-canvas"></div>
@@ -2430,18 +2451,6 @@
         </div>
       </div>
 
-        <!-- QR section for private group rides -->
-        <div id="groupQrSection" style="display:none; margin-top:14px;">
-          <div class="small">
-            Riding with friends? Ask each of them to scan this QR and sign in to join this ride.
-          </div>
-          <canvas id="groupQrCanvas"
-                  width="140"
-                  height="140"
-                  style="margin-top:8px;"></canvas>
-          <div id="groupOccupancyLabel" class="small" style="margin-top:6px;"></div>
-        </div>
-
         <button id="cancelRideButton" class="btn-secondary" style="margin-top:16px;" hidden>
           Cancel ride
         </button>
@@ -2553,6 +2562,29 @@
           </button>
         </div>
         <p id="referralCodeMessage" class="small" aria-live="polite"></p>
+      </div>
+
+      <div id="discountCodeSection" class="fare-section">
+        <label for="discountCodeInput" class="field-label">
+          Discount code (optional)
+        </label>
+        <div class="inline-input-row">
+          <input
+            id="discountCodeInput"
+            type="text"
+            class="text-input"
+            autocomplete="off"
+            placeholder="Enter discount code"
+          />
+          <button
+            id="applyDiscountCodeButton"
+            type="button"
+            class="btn-secondary btn-small"
+          >
+            Apply
+          </button>
+        </div>
+        <p id="discountCodeMessage" class="small" aria-live="polite"></p>
       </div>
 
       <div class="section-title" style="margin-top:12px;">Tip your driver</div>
@@ -3768,6 +3800,10 @@
     const referralCodeInput = document.getElementById("referralCodeInput");
     const applyReferralCodeButton = document.getElementById("applyReferralCodeButton");
     const referralCodeMessage = document.getElementById("referralCodeMessage");
+    const discountCodeSection = document.getElementById("discountCodeSection");
+    const discountCodeInput = document.getElementById("discountCodeInput");
+    const applyDiscountCodeButton = document.getElementById("applyDiscountCodeButton");
+    const discountCodeMessage = document.getElementById("discountCodeMessage");
     const syncConfirmButton = document.getElementById("syncConfirmButton");
     const syncConfirmClose = document.getElementById("syncConfirmClose");
     const syncConfirmCancel = document.getElementById("syncConfirmCancel");
@@ -3849,7 +3885,9 @@
     const cancelError = document.getElementById("cancelError");
 
     const groupQrSection = document.getElementById("groupQrSection");
+    const groupQrIntro = document.getElementById("groupQrIntro");
     const groupQrCanvas = document.getElementById("groupQrCanvas");
+    const groupQrPendingMessage = document.getElementById("groupQrPendingMessage");
     const groupOccupancyLabel = document.getElementById("groupOccupancyLabel");
     let groupQr = null;
 
@@ -4173,9 +4211,20 @@
     let currentRideId = null;
     let currentRideStatus = null;
     let currentRideWatcher = null;
+    let wantsGroupRide = false;
+    let activeRideIsGroup = false;
     let lastRideCompletionContext = null;
     let cooldownOverlayUnlockAt = null;
     let cooldownOverlayTimerId = null;
+
+    if (numRidersEl) {
+      const handleGroupSelectionChange = () => updateGroupRideIntentFromSelect();
+      numRidersEl.addEventListener("input", handleGroupSelectionChange);
+      numRidersEl.addEventListener("change", handleGroupSelectionChange);
+      updateGroupRideIntentFromSelect();
+    } else {
+      wantsGroupRide = false;
+    }
 
     const ACTIVE_RIDE_STORAGE_KEY = "ridesync.activeRide.v1";
     const TERMINAL_RIDE_STATUSES = new Set([
@@ -4352,6 +4401,8 @@
         teardownRideChat(true);
         deactivateWaitlistPanel();
         hideGroupQr();
+        activeRideIsGroup = false;
+        refreshGroupQrVisibility();
         updateCancelButtonVisibility();
         closeRideFareOverlay(true);
         resetFinalTipUi();
@@ -6847,6 +6898,7 @@
         numRidersEl.value = "1";
         numRidersEl.disabled = false;
       }
+      updateGroupRideIntentFromSelect();
       [...extraStopsState].forEach((stop) => removeExtraStop(stop.id));
       updateAddStopAvailability();
       renderFareExtraStops();
@@ -7969,12 +8021,20 @@
       });
     }
       
-      function hideGroupQr() {
+    function hideGroupQr() {
       if (groupQrSection) {
         groupQrSection.style.display = "none";
       }
+      if (groupQrCanvas) {
+        groupQrCanvas.style.display = "none";
+      }
+      if (groupQrPendingMessage) {
+        groupQrPendingMessage.textContent = "";
+        groupQrPendingMessage.style.display = "none";
+      }
       if (groupOccupancyLabel) {
         groupOccupancyLabel.textContent = "";
+        groupOccupancyLabel.style.display = "none";
       }
       if (groupOccupancyUnsub) {
         groupOccupancyUnsub();
@@ -7982,8 +8042,40 @@
       }
     }
 
+    function showGroupQrPlaceholder(message) {
+      if (!groupQrSection) return;
+      if (groupOccupancyUnsub) {
+        groupOccupancyUnsub();
+        groupOccupancyUnsub = null;
+      }
+      groupQrSection.style.display = "block";
+      if (groupQrIntro) {
+        groupQrIntro.style.display = "none";
+      }
+      if (groupQrPendingMessage) {
+        groupQrPendingMessage.textContent =
+          message ||
+          "Sync your ride to generate a QR your friends can scan to join.";
+        groupQrPendingMessage.style.display = "block";
+      }
+      if (groupQrCanvas) {
+        groupQrCanvas.style.display = "none";
+      }
+      if (groupOccupancyLabel) {
+        groupOccupancyLabel.textContent = "";
+        groupOccupancyLabel.style.display = "none";
+      }
+    }
+
     function showGroupQr(rideId) {
       if (!groupQrSection || !groupQrCanvas) return;
+      if (!rideId) {
+        showGroupQrPlaceholder();
+        return;
+      }
+      if (groupQrIntro) {
+        groupQrIntro.style.display = "block";
+      }
       const joinUrl = `${window.location.origin}?join=${encodeURIComponent(rideId)}`;
       if (!groupQr) {
         groupQr = new QRious({
@@ -7995,7 +8087,40 @@
         groupQr.set({ value: joinUrl });
       }
       groupQrSection.style.display = "block";
+      groupQrCanvas.style.display = "block";
+      if (groupQrPendingMessage) {
+        groupQrPendingMessage.textContent = "";
+        groupQrPendingMessage.style.display = "none";
+      }
+      if (groupOccupancyLabel) {
+        groupOccupancyLabel.style.display = "block";
+      }
+      activeRideIsGroup = true;
+      wantsGroupRide = true;
       startGroupOccupancyWatcher(rideId);
+    }
+
+    function updateGroupRideIntentFromSelect() {
+      if (!numRidersEl) {
+        wantsGroupRide = false;
+        refreshGroupQrVisibility();
+        return;
+      }
+      const selectedValue = parseInt(numRidersEl.value || "1", 10);
+      wantsGroupRide = selectedValue > 1;
+      refreshGroupQrVisibility();
+    }
+
+    function refreshGroupQrVisibility() {
+      if (activeRideIsGroup && currentRideId) {
+        showGroupQr(currentRideId);
+        return;
+      }
+      if (wantsGroupRide) {
+        showGroupQrPlaceholder();
+        return;
+      }
+      hideGroupQr();
     }
 
     function startGroupOccupancyWatcher(rideId) {
@@ -8604,13 +8729,30 @@
     }
 
     function updateReferralMessage(message) {
+      const copy = message || "";
       if (referralCodeMessage) {
-        referralCodeMessage.textContent = message || "";
+        referralCodeMessage.textContent = copy;
+      }
+      if (discountCodeMessage) {
+        discountCodeMessage.textContent = copy;
       }
     }
 
-    function clearReferralState(message = "") {
+    function syncReferralInputsFromState() {
+      const value = syncConfirmState.referral.code || "";
+      if (referralCodeInput) {
+        referralCodeInput.value = value;
+      }
+      if (discountCodeInput) {
+        discountCodeInput.value = value;
+      }
+    }
+
+    function clearReferralState(message = "", { preserveInputs = true } = {}) {
       syncConfirmState.referral = { code: null, discountCents: 0, description: "" };
+      if (!preserveInputs) {
+        syncReferralInputsFromState();
+      }
       updateReferralMessage(message);
       updateSyncConfirmTotalDisplay();
     }
@@ -8621,11 +8763,38 @@
         discountCents: Math.max(0, Math.round(discountCents || 0)),
         description: description || "",
       };
+      syncReferralInputsFromState();
       updateReferralMessage(
         syncConfirmState.referral.description ||
-          (syncConfirmState.referral.code ? "Referral code applied." : "")
+          (syncConfirmState.referral.code ? "Code applied." : "")
       );
       updateSyncConfirmTotalDisplay();
+    }
+
+    function handleCodeInputChange(inputEl) {
+      if (!inputEl) return;
+      const rawValue = inputEl.value || "";
+      const value = rawValue.trim();
+      const otherInput =
+        inputEl === referralCodeInput ? discountCodeInput : referralCodeInput;
+      const previousCode = syncConfirmState.referral.code;
+      if (!value) {
+        if (previousCode && otherInput && otherInput.value.trim() === previousCode) {
+          otherInput.value = "";
+        }
+        clearReferralState("", { preserveInputs: true });
+        updateReferralMessage("");
+        return;
+      }
+      if (previousCode && value !== previousCode) {
+        if (otherInput && otherInput.value.trim() === previousCode) {
+          otherInput.value = "";
+        }
+        clearReferralState("", { preserveInputs: true });
+        updateReferralMessage("");
+        return;
+      }
+      updateReferralMessage("");
     }
 
     function buildReferralFareContext() {
@@ -8643,19 +8812,25 @@
       };
     }
 
-    async function handleReferralCodeApply() {
-      if (!applyReferralCodeButton || !referralCodeInput) return;
-      const code = referralCodeInput.value.trim();
+    async function handleReferralCodeApply(
+      inputEl = referralCodeInput,
+      triggerButton = applyReferralCodeButton
+    ) {
+      if (!inputEl) return;
+      const code = inputEl.value.trim();
       if (!code) {
-        clearReferralState("Enter a code first.");
+        clearReferralState("Enter a code first.", { preserveInputs: false });
+        syncReferralInputsFromState();
         return;
       }
       updateReferralMessage("");
       if (!validateReferralCodeForRideFn) {
-        updateReferralMessage("Referral validation is unavailable right now.");
+        updateReferralMessage("Code validation is unavailable right now.");
         return;
       }
-      applyReferralCodeButton.disabled = true;
+      if (triggerButton) {
+        triggerButton.disabled = true;
+      }
       try {
         const payload = {
           code,
@@ -8676,7 +8851,9 @@
         console.error("validateReferralCodeForRide failed", err);
         updateReferralMessage("Could not apply code. Try again.");
       } finally {
-        applyReferralCodeButton.disabled = false;
+        if (triggerButton) {
+          triggerButton.disabled = false;
+        }
       }
     }
 
@@ -8980,18 +9157,14 @@
       }
       if (!preserveFareExtras) {
         resetSyncConfirmState();
-        if (referralCodeInput) {
-          referralCodeInput.value = "";
-        }
+        syncReferralInputsFromState();
         updateReferralMessage("");
-      } else if (referralCodeInput && syncConfirmState.referral.code) {
-        referralCodeInput.value = syncConfirmState.referral.code;
+      } else {
+        syncReferralInputsFromState();
         updateReferralMessage(
           syncConfirmState.referral.description ||
-            (syncConfirmState.referral.code ? "Referral code applied." : "")
+            (syncConfirmState.referral.code ? "Code applied." : "")
         );
-      } else if (referralCodeInput) {
-        referralCodeInput.value = "";
       }
       initializeReserveInputs({ preserveSelection: preserveFareExtras });
       updateSyncConfirmTotalDisplay();
@@ -9106,24 +9279,38 @@
     });
 
     if (applyReferralCodeButton) {
-      applyReferralCodeButton.addEventListener("click", handleReferralCodeApply);
+      applyReferralCodeButton.addEventListener("click", () =>
+        handleReferralCodeApply(referralCodeInput, applyReferralCodeButton)
+      );
+    }
+
+    if (applyDiscountCodeButton) {
+      applyDiscountCodeButton.addEventListener("click", () =>
+        handleReferralCodeApply(discountCodeInput, applyDiscountCodeButton)
+      );
     }
 
     if (referralCodeInput) {
-      referralCodeInput.addEventListener("input", () => {
-        const value = referralCodeInput.value.trim();
-        if (!value) {
-          clearReferralState("");
-          return;
+      referralCodeInput.addEventListener("input", () =>
+        handleCodeInputChange(referralCodeInput)
+      );
+      referralCodeInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          handleReferralCodeApply(referralCodeInput, applyReferralCodeButton);
         }
-        if (
-          syncConfirmState.referral.code &&
-          value !== syncConfirmState.referral.code
-        ) {
-          clearReferralState("");
-          return;
+      });
+    }
+
+    if (discountCodeInput) {
+      discountCodeInput.addEventListener("input", () =>
+        handleCodeInputChange(discountCodeInput)
+      );
+      discountCodeInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          handleReferralCodeApply(discountCodeInput, applyDiscountCodeButton);
         }
-        updateReferralMessage("");
       });
     }
 
@@ -10847,6 +11034,10 @@
 
     async function activateRideAfterCreation(rideId, ridePayload) {
       currentRideId = rideId;
+      activeRideIsGroup = Boolean(ridePayload?.isGroupRide);
+      if (activeRideIsGroup) {
+        wantsGroupRide = true;
+      }
       rememberRideProtectionState(rideId, {
         ...(ridePayload || {}),
         status: ridePayload?.status || "pending",
@@ -10854,11 +11045,7 @@
       });
       startRideStatusWatcher(rideId);
       updateCancelButtonVisibility();
-      if (ridePayload?.isGroupRide) {
-        showGroupQr(rideId);
-      } else {
-        hideGroupQr();
-      }
+      refreshGroupQrVisibility();
       if (ridePayload?.poolType === "uofa") {
         startPoolGroupWatcher(rideId);
       }
@@ -11309,7 +11496,8 @@
       }
       profileError.textContent = "";
       clearPoolGroupUI();
-      hideGroupQr();
+      activeRideIsGroup = false;
+      refreshGroupQrVisibility();
 
       if (!destinationLatLng || !lastRideMetrics || !lastRideMetrics.fareBreakdown) {
         profileError.textContent = "Set destination and wait for fare estimate first.";
@@ -11553,7 +11741,8 @@
         joinTargetRide = null;
         startRideStatusWatcher(rideId);
         updateCancelButtonVisibility();
-        hideGroupQr();
+        activeRideIsGroup = false;
+        refreshGroupQrVisibility();
         setOverlayCopy("Syncing your ride", joinDestination);
         setRiderOverlayState(RIDER_STATES.SEARCHING);
         showRideView();
@@ -11610,6 +11799,7 @@
         ridersSection.style.display = "none";
         numRidersEl.value = "1";
         numRidersEl.disabled = true;
+        updateGroupRideIntentFromSelect();
 
         if (host.toDestination) {
           destinationEl.value = host.toDestination;
