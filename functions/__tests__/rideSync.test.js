@@ -61,6 +61,7 @@ const {
   clampTipAmountCents,
   validateTipBounds,
   computeRideHoldAmountCents,
+  resolveRidePaymentStatus,
   computeReferralDiscountCents,
   evaluateReferralCodeEligibility,
   resolveReservePickupDetails,
@@ -186,6 +187,26 @@ describe("manual capture helpers", () => {
     expect(computeRideHoldAmountCents(1500, 1200)).toBe(2700);
     expect(computeRideHoldAmountCents(1500, 0)).toBe(1500);
     expect(computeRideHoldAmountCents(0, 0)).toBe(0);
+  });
+});
+
+describe("ride payment status resolution", () => {
+  it("marks zero-fare rides as included", () => {
+    expect(resolveRidePaymentStatus("basic", 0)).toEqual({
+      paymentStatus: "included",
+      paymentMethod: "included",
+    });
+  });
+
+  it("requires upfront payment whenever fare is due", () => {
+    expect(resolveRidePaymentStatus("basic", 1200)).toEqual({
+      paymentStatus: "pending_payment",
+      paymentMethod: "stripe",
+    });
+    expect(resolveRidePaymentStatus("uofa_unlimited", 500)).toEqual({
+      paymentStatus: "pending_payment",
+      paymentMethod: "stripe",
+    });
   });
 });
 

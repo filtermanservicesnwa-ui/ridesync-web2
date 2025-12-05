@@ -2574,7 +2574,7 @@
         style="display:none;"
       />
       <p id="syncTipMessage" class="sync-tip-note">
-        Tips go directly to your driver. You can adjust after the ride.
+        Tips go directly to your driver and are charged with your fare.
       </p>
 
       <div class="section-title" style="margin-top:18px;">Membership</div>
@@ -2701,7 +2701,7 @@
       </div>
       <div id="preauthTipSection" class="payment-tip-section" aria-live="polite">
         <div class="section-title" style="margin-top:18px;">
-          Add a tip (you can change it after the ride)
+          Add a tip (charged now, optional)
         </div>
         <div id="preauthTipOptions" class="tip-options">
           <button type="button" class="tip-button" data-tip="0">No tip</button>
@@ -2721,12 +2721,12 @@
           style="display:none;"
         />
         <p id="preauthTipMessage" class="tip-hint">
-          Tips are optional. If you add one, we'll include it with your temporary hold.
+          Tips are optional. If you add one, we'll charge it now with your fare.
         </p>
       </div>
       <div class="fare-box" id="preauthHoldSummary" style="margin-top:12px;">
         <div class="fare-row">
-          <div class="fare-label">Temporary hold</div>
+          <div class="fare-label">Total charge</div>
           <div class="fare-value" id="preauthHoldAmount">$0.00</div>
         </div>
       </div>
@@ -4116,7 +4116,7 @@
       "fare_due",
       "preauthorized",
       "preauth_pending",
-      "pending", // basic plan rides start as pending until paid
+      "pending", // legacy rides may still report pending until paid
       "pending_payment"
     ]);
     const MAX_EXTRA_STOPS = 3;
@@ -8879,10 +8879,10 @@
       }
       if (syncTipMessage) {
         if (selectedCents > 0) {
-          syncTipMessage.textContent = `We'll place a temporary hold for your fare plus ${formatCurrencyFromCents(
+          syncTipMessage.textContent = `We'll charge your fare plus ${formatCurrencyFromCents(
             selectedCents,
             "usd"
-          )}. You can adjust or remove it after the ride before we finish the charge.`;
+          )} right now. You can change it before confirming payment.`;
         } else {
           syncTipMessage.textContent =
             "No tip selected. Tips are optional and go directly to your driver.";
@@ -9723,10 +9723,10 @@
           preauthTipMessage.textContent = `Tips are optional. Your selected tip (${formatCurrencyFromCents(
             selectedTipCents,
             "usd"
-          )}) will be included in the temporary hold.`;
+          )}) is charged now with your fare.`;
         } else {
           preauthTipMessage.textContent =
-            "Tips are optional. We'll only place a hold for your fare unless you add one.";
+            "Tips are optional. We'll only charge your fare unless you add one.";
         }
       }
     }
@@ -10399,7 +10399,7 @@
       if (rideTipCaptureState.submitting) return;
       if (!rideTipCaptureState.rideId || !rideTipCaptureState.paymentIntentId) {
         if (finalizeTipMessage) {
-          finalizeTipMessage.textContent = "Payment hold not found.";
+          finalizeTipMessage.textContent = "Payment not found.";
         }
         return;
       }
@@ -10467,7 +10467,7 @@
         hidePaymentRedirectOverlay();
         closePaymentOverlay();
         if (context?.type === "ride_preauth") {
-          rejectRidePreauthFlow(new Error("Payment hold canceled."));
+          rejectRidePreauthFlow(new Error("Payment canceled."));
           return;
         }
         if (context?.type === "ride") {
@@ -10487,7 +10487,7 @@
           hidePaymentRedirectOverlay();
           closePaymentOverlay();
           if (context?.type === "ride_preauth") {
-            rejectRidePreauthFlow(new Error("Payment hold canceled."));
+            rejectRidePreauthFlow(new Error("Payment canceled."));
             return;
           }
           if (context?.type === "ride") {
@@ -10630,15 +10630,14 @@
         lastPaymentOverlayOptions.context = { ...options.context };
       }
       if (paymentOverlayTitle) {
-        paymentOverlayTitle.textContent = options.title || "Complete payment";
+        paymentOverlayTitle.textContent = options.title || "Pay now";
       }
       if (paymentOverlaySubtitle) {
         paymentOverlaySubtitle.textContent = options.subtitle || "";
       }
       if (paymentOverlayConfirm) {
         paymentOverlayConfirm.textContent =
-          options.confirmLabel ||
-          (isRidePreauth ? "Authorize hold" : "Pay now");
+          options.confirmLabel || "Pay now";
         paymentOverlayConfirm.disabled = false;
       }
       if (paymentOverlayMessage) {
@@ -11192,10 +11191,10 @@
       const suffix = sanitizedRidePayload.fare?.membershipLabel
         ? `${sanitizedRidePayload.fare.membershipLabel}.`
         : "Ride synced.";
-      profileMessage.textContent = `${suffix} Pay ${formattedTotal} when the ride ends.`;
+      profileMessage.textContent = `${suffix} Pay ${formattedTotal} now to sync your ride.`;
       profileError.textContent = "";
       logStripeDebug(
-        "startRidePaymentFlow: checkout redirect disabled, fare will be collected post-ride.",
+        "startRidePaymentFlow: checkout redirect disabled, fare will be charged upfront inside the app.",
         {
           amountCents,
         }
@@ -11230,7 +11229,7 @@
         rideId: context.rideId,
         paymentIntentId: paymentIntent.id,
       });
-      profileMessage.textContent = "Payment method saved. Syncing your ride.";
+      profileMessage.textContent = "Payment received. Syncing your ride.";
       profileError.textContent = "";
       resolveRidePreauthFlow(paymentIntent);
     }
@@ -11282,8 +11281,8 @@
               Math.max(0, ridePreauthState.selectedTipCents || 0);
           updatePreauthTipUi();
           await openPaymentOverlay({
-            title: "Save your payment method",
-            subtitle: "We’ll place a temporary hold for your fare plus the tip you selected.",
+            title: "Pay now to sync your ride",
+            subtitle: "We'll charge your fare plus the tip you selected right away.",
             clientSecret: payload.clientSecret,
             livemode: payload.livemode ?? null,
             context: {
@@ -11502,14 +11501,18 @@
             currentUserProfile?.membership ||
             "basic"
         );
+        const requiresGenderMatch = joinTargetRide?.poolType === "uofa";
         const riderGender = normalizePoolGender(currentUserProfile?.gender);
-        if (!riderGender) {
+        if (requiresGenderMatch && !riderGender) {
           profileError.textContent =
             "Set your profile gender to Male or Female to join pooling rides.";
           return;
         }
         const targetGender = normalizePoolGender(joinTargetRide?.gender);
-        if (!targetGender || targetGender !== riderGender) {
+        if (
+          requiresGenderMatch &&
+          (!targetGender || targetGender !== riderGender)
+        ) {
           profileError.textContent =
             "You can only join riders who share your gender.";
           return;
