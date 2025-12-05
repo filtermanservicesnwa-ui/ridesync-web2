@@ -1854,10 +1854,6 @@
         <div class="section-title">Photos (never public)</div>
         <label>Profile picture</label>
         <input id="profilePicInput" type="file" accept="image/*" />
-        <label>Driver license</label>
-        <input id="licensePicInput" type="file" accept="image/*" />
-        <label>Student ID</label>
-        <input id="studentIdPicInput" type="file" accept="image/*" />
       </div>
 
       <button id="authButton" class="btn-primary">Log in</button>
@@ -2190,10 +2186,6 @@
         <div class="section-title">Photos</div>
         <label>Profile picture</label>
         <input id="editProfilePicInput" type="file" accept="image/*" />
-        <label>Driver license</label>
-        <input id="editLicensePicInput" type="file" accept="image/*" />
-        <label>Student ID</label>
-        <input id="editStudentIdPicInput" type="file" accept="image/*" />
 
         <button id="saveProfileButton" type="button"
                 class="btn-primary btn-small"
@@ -3628,8 +3620,6 @@
     const isStudentEl = document.getElementById("isStudent");
     const membershipEl = document.getElementById("membership");
     const profilePicInput = document.getElementById("profilePicInput");
-    const licensePicInput = document.getElementById("licensePicInput");
-    const studentIdPicInput = document.getElementById("studentIdPicInput");
     const mainLandingPage = document.getElementById("mainLandingPage");
     const landingSyncRiderButton = document.getElementById("landingSyncRider");
     const landingSyncDriverButton = document.getElementById("landingSyncDriver");
@@ -3831,8 +3821,6 @@
     const editStateEl = document.getElementById("editState");
     const editZipEl = document.getElementById("editZip");
     const editProfilePicInput = document.getElementById("editProfilePicInput");
-    const editLicensePicInput = document.getElementById("editLicensePicInput");
-    const editStudentIdPicInput = document.getElementById("editStudentIdPicInput");
     const editGenderEl = document.getElementById("editGender");
     const saveProfileButton = document.getElementById("saveProfileButton");
 
@@ -5870,8 +5858,10 @@
     }
 
     async function uploadFileIfAny(fileInput, path) {
+      if (!fileInput || !fileInput.files || !fileInput.files.length) {
+        return null;
+      }
       const file = fileInput.files[0];
-      if (!file) return null;
       const storageRef = ref(storage, path);
       await uploadBytes(storageRef, file);
       return await getDownloadURL(storageRef);
@@ -5911,14 +5901,6 @@
         profilePayload.profilePicUrl = await uploadFileIfAny(
           profilePicInput,
           `users/${activeUser.uid}/profile.jpg`
-        );
-        profilePayload.licensePicUrl = await uploadFileIfAny(
-          licensePicInput,
-          `users/${activeUser.uid}/license.jpg`
-        );
-        profilePayload.studentIdPicUrl = await uploadFileIfAny(
-          studentIdPicInput,
-          `users/${activeUser.uid}/studentId.jpg`
         );
       } catch (err) {
         console.warn("Upload error", err);
@@ -6046,18 +6028,6 @@
           path: `users/${user.uid}/profile.jpg`,
           key: "profilePicUrl",
           label: "profile photo"
-        },
-        {
-          input: editLicensePicInput,
-          path: `users/${user.uid}/license.jpg`,
-          key: "licensePicUrl",
-          label: "driver license"
-        },
-        {
-          input: editStudentIdPicInput,
-          path: `users/${user.uid}/studentId.jpg`,
-          key: "studentIdPicUrl",
-          label: "student ID"
         }
       ];
 
@@ -6074,19 +6044,12 @@
         }
       }
 
-      const isStudent = !!currentUserProfile?.isStudent;
-      if (updates.studentIdPicUrl && isStudent) {
-        updates.isStudent = true;
-      }
-
       try {
         await saveUserProfileFn(updates);
         await loadUserProfile(user.uid, user.email);
         editProfileSection.style.display = "none";
 
         editProfilePicInput.value = "";
-        editLicensePicInput.value = "";
-        editStudentIdPicInput.value = "";
 
         const failedUploads = uploadResults
           .filter((item) => item.error)
