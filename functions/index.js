@@ -2518,6 +2518,7 @@ exports.notifyDriverOnNewRide = functions.firestore
     }
     const ride = change.after.data() || {};
     const rideId = context.params.rideId;
+    let notificationLockAcquired = false;
 
     try {
       const status = ride.status || "pending";
@@ -2532,9 +2533,42 @@ exports.notifyDriverOnNewRide = functions.firestore
         return null;
       }
 
+      const driverNotificationStatus = ride.driverNotificationStatus || "pending";
       const alreadyNotified =
-        ride.driverNotificationStatus === "sent" || Boolean(ride.driverNotifiedAt);
+        ["sent", "sending"].includes(driverNotificationStatus) ||
+        Boolean(ride.driverNotifiedAt);
       if (alreadyNotified) {
+        return null;
+      }
+
+      notificationLockAcquired = await db.runTransaction(async (tx) => {
+        const freshSnap = await tx.get(change.after.ref);
+        if (!freshSnap.exists) {
+          return false;
+        }
+        const freshRide = freshSnap.data() || {};
+        const freshStatus = freshRide.status || "pending";
+        const freshPaymentStatus = (freshRide.paymentStatus || "").toLowerCase();
+        const freshNotificationStatus = freshRide.driverNotificationStatus || "pending";
+        const guardTriggered =
+          ["sent", "sending"].includes(freshNotificationStatus) ||
+          Boolean(freshRide.driverNotifiedAt);
+        const statusStillEligible = notifyStatuses.includes(freshStatus);
+        const paymentStillReady = paymentReadyStatuses.has(freshPaymentStatus);
+
+        if (guardTriggered || !statusStillEligible || !paymentStillReady) {
+          return false;
+        }
+
+        tx.update(change.after.ref, {
+          driverNotificationStatus: "sending",
+          driverNotificationLockId: context.eventId,
+          driverNotificationLockedAt: FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+
+      if (!notificationLockAcquired) {
         return null;
       }
 
@@ -2629,12 +2663,28 @@ exports.notifyDriverOnNewRide = functions.firestore
 
       await change.after.ref.update({
         driverNotificationStatus: "sent",
+        driverNotificationLockId: FieldValue.delete(),
+        driverNotificationLockedAt: FieldValue.delete(),
         driverNotifiedAt: FieldValue.serverTimestamp(),
       });
 
       return null;
     } catch (err) {
       console.error("[notifyDriverOnNewRide] Error:", err);
+      if (notificationLockAcquired) {
+        try {
+          await change.after.ref.update({
+            driverNotificationStatus: "pending",
+            driverNotificationLockId: FieldValue.delete(),
+            driverNotificationLockedAt: FieldValue.delete(),
+          });
+        } catch (resetErr) {
+          console.error(
+            "[notifyDriverOnNewRide] Failed to reset notification status after error:",
+            resetErr
+          );
+        }
+      }
       return null;
     }
   });
