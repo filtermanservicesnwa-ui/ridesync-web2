@@ -5246,8 +5246,21 @@ exports.saveUserProfile = functions.https.onCall(async (data, context) => {
   const existingRaw = snap.exists ? snap.data() || {} : {};
   const existing = await maybeDowngradeExpiredMembership(userRef, existingRaw);
 
+  const nextFirstName =
+    sanitizeProfileString(payload.firstName, 80) || existing.firstName || "";
+  const nextLastName =
+    sanitizeProfileString(payload.lastName, 80) || existing.lastName || "";
+  const incomingProfileCode = sanitizeProfileString(payload.profileCode, 40);
+  const nextProfileCode =
+    incomingProfileCode && incomingProfileCode.trim()
+      ? incomingProfileCode.trim().toUpperCase()
+      : existing.profileCode || null;
+
   const profileUpdates = {
     fullName: sanitizeProfileString(payload.fullName, 80) || existing.fullName || "",
+    firstName: nextFirstName,
+    lastName: nextLastName,
+    profileCode: nextProfileCode,
     gender: normalizePoolGender(payload.gender) || existing.gender || null,
     phone: sanitizePhoneNumber(payload.phone || payload.phoneNumber) || existing.phone || "",
     street: sanitizeProfileString(payload.street || payload.streetAddress, 140) || existing.street || "",
@@ -5283,6 +5296,9 @@ exports.saveUserProfile = functions.https.onCall(async (data, context) => {
   }
   if (docPayload.fullName) {
     docPayload.fullNameLower = docPayload.fullName.toLowerCase();
+  }
+  if (docPayload.profileCode) {
+    docPayload.profileCodeLower = docPayload.profileCode.toLowerCase();
   }
 
   if (!snap.exists) {
