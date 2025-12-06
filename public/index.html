@@ -5681,7 +5681,7 @@
 
     function isWithinPreviousDayWindow(minutes, windowEntry) {
       if (!windowEntry) return false;
-      if (windowEntry.fullDay) return true;
+    if (windowEntry.fullDay) return false;
       if (!windowEntry.crossMidnight) {
         return false;
       }
