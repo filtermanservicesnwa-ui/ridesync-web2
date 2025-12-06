@@ -392,6 +392,32 @@
       font-size: 0.9rem;
       line-height: 1.4;
     }
+    .driver-offer-earnings {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(59,130,246,0.5);
+      background: rgba(15,23,42,0.95);
+      display: none;
+    }
+    .driver-offer-earnings-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #cbd5f5;
+      margin-bottom: 2px;
+    }
+    .driver-offer-earnings-amount {
+      font-size: 1.6rem;
+      font-weight: 600;
+      color: #f8fafc;
+      margin: 2px 0 4px;
+    }
+    .driver-offer-earnings-note {
+      font-size: 0.75rem;
+      color: #a5b4fc;
+      line-height: 1.3;
+    }
     .driver-state input {
       background: #020617;
       border-radius: 12px;
@@ -988,6 +1014,11 @@
             <div id="driverOfferReserveRow" style="display:none;">
               <strong>Pickup time:</strong> <span id="driverOfferPickupTime"></span>
             </div>
+            <div id="driverOfferEarningsRow" class="driver-offer-earnings">
+              <div class="driver-offer-earnings-label">Estimated payout (Basic)</div>
+              <div id="driverOfferEarningsAmount" class="driver-offer-earnings-amount"></div>
+              <div id="driverOfferEarningsNote" class="driver-offer-earnings-note"></div>
+            </div>
           </div>
           <div class="button-row">
             <button id="driverOfferRejectButton" class="btn-secondary" type="button">Decline</button>
@@ -1204,6 +1235,62 @@
         ? mapsConfig.libraries
         : [];
     let googleMapsLoadFailed = false;
+    const fareConfig = APP_CONFIG.fares || {};
+
+    function coerceFareSettingNumber(value, fallback) {
+      if (value === null || value === undefined) return fallback;
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return fallback;
+        const parsed = Number(trimmed);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+      }
+      const num = Number(value);
+      return Number.isFinite(num) && num >= 0 ? num : fallback;
+    }
+
+    const DEFAULT_BASIC_FARE_SETTINGS = {
+      RATE_PER_MIN: 0.6,
+      PLATFORM_FEE: 1.5,
+      PER_RIDE_FEE: 1.5,
+      PROCESSING_FEE_RATE: 0.03
+    };
+
+    const BASIC_FARE_SETTINGS = {
+      RATE_PER_MIN: coerceFareSettingNumber(
+        fareConfig.basicRatePerMin,
+        DEFAULT_BASIC_FARE_SETTINGS.RATE_PER_MIN
+      ),
+      PLATFORM_FEE: coerceFareSettingNumber(
+        fareConfig.basicPlatformFee,
+        DEFAULT_BASIC_FARE_SETTINGS.PLATFORM_FEE
+      ),
+      PER_RIDE_FEE: coerceFareSettingNumber(
+        fareConfig.basicPerRideFee,
+        DEFAULT_BASIC_FARE_SETTINGS.PER_RIDE_FEE
+      ),
+      PROCESSING_FEE_RATE: coerceFareSettingNumber(
+        fareConfig.basicProcessingFeeRate,
+        DEFAULT_BASIC_FARE_SETTINGS.PROCESSING_FEE_RATE
+      )
+    };
+
+    const BASIC_MEMBERSHIP_ALIASES = new Set(
+      [
+        "basic",
+        "basic (pay per ride)",
+        "basic plan",
+        "plan: basic",
+        "basic (default)"
+      ].map((alias) => alias.toLowerCase())
+    );
+
+    const USD_CURRENCY_FORMATTER = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
 
     const SUPPORT_PHONE_NUMBER = supportConfig.phoneNumber || "";
     const SUPPORT_TEL_LINK = SUPPORT_PHONE_NUMBER
@@ -1314,6 +1401,9 @@
     const driverOfferRiderCount = document.getElementById("driverOfferRiderCount");
     const driverOfferReserveRow = document.getElementById("driverOfferReserveRow");
     const driverOfferPickupTime = document.getElementById("driverOfferPickupTime");
+    const driverOfferEarningsRow = document.getElementById("driverOfferEarningsRow");
+    const driverOfferEarningsAmount = document.getElementById("driverOfferEarningsAmount");
+    const driverOfferEarningsNote = document.getElementById("driverOfferEarningsNote");
     const driverOfferAcceptButton = document.getElementById("driverOfferAcceptButton");
     const driverOfferRejectButton = document.getElementById("driverOfferRejectButton");
     const driverNavPickupAddress = document.getElementById("driverNavPickupAddress");
@@ -2072,6 +2162,193 @@
       return `Membership: ${value}`;
     }
 
+    function normalizeMembershipString(value) {
+      if (value === null || value === undefined) return "";
+      return value.toString().trim().toLowerCase();
+    }
+
+    function rideUsesBasicMembership(ride) {
+      if (!ride) return false;
+      const candidates = [
+        ride?.membershipType,
+        ride?.membership,
+        ride?.membershipPlan,
+        ride?.membershipTier,
+        ride?.membership_tier
+      ];
+      for (const candidate of candidates) {
+        const normalized = normalizeMembershipString(candidate);
+        if (!normalized) continue;
+        if (normalized === "basic" || BASIC_MEMBERSHIP_ALIASES.has(normalized)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function roundCurrency(value) {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return null;
+      return Math.round(num * 100) / 100;
+    }
+
+    function formatUsd(amount) {
+      if (!Number.isFinite(amount)) {
+        return "";
+      }
+      const clamped = Math.max(0, Math.round(amount * 100) / 100);
+      return USD_CURRENCY_FORMATTER.format(clamped);
+    }
+
+    function resolveRideMinutes(ride) {
+      if (!ride) return null;
+      const candidates = [
+        ride?.estimatedDurationMinutes,
+        ride?.metrics?.estimatedDurationMinutes,
+        ride?.rideMetrics?.estimatedDurationMinutes
+      ];
+      for (const candidate of candidates) {
+        const minutes = Number(candidate);
+        if (Number.isFinite(minutes) && minutes > 0) {
+          return minutes;
+        }
+      }
+      return null;
+    }
+
+    function computeBasicFareBreakdown(minutesRaw) {
+      const minutes = Number(minutesRaw);
+      if (!Number.isFinite(minutes) || minutes <= 0) {
+        return null;
+      }
+      const clamped = Math.min(Math.max(minutes, 1), 600);
+      const rideSubtotal =
+        clamped * BASIC_FARE_SETTINGS.RATE_PER_MIN +
+        BASIC_FARE_SETTINGS.PLATFORM_FEE +
+        BASIC_FARE_SETTINGS.PER_RIDE_FEE;
+      const processingFee = rideSubtotal * BASIC_FARE_SETTINGS.PROCESSING_FEE_RATE;
+      return {
+        rideSubtotal: roundCurrency(rideSubtotal),
+        processingFee: roundCurrency(processingFee),
+        total: roundCurrency(rideSubtotal + processingFee),
+        minutes: Math.round(clamped * 10) / 10
+      };
+    }
+
+    function buildFareBreakdownFromTotal(total, minutesHint = null) {
+      if (!Number.isFinite(total) || total <= 0) {
+        return null;
+      }
+      const subtotal = roundCurrency(total / (1 + BASIC_FARE_SETTINGS.PROCESSING_FEE_RATE));
+      const processingFee =
+        subtotal !== null ? roundCurrency(total - subtotal) : null;
+      return {
+        rideSubtotal: subtotal,
+        processingFee,
+        total: roundCurrency(total),
+        minutes: minutesHint
+      };
+    }
+
+    function coerceCurrencyAmount(value) {
+      if (value === null || value === undefined) return null;
+      if (typeof value === "string") {
+        const cleaned = value.trim().replace(/[^0-9.-]/g, "");
+        if (!cleaned) return null;
+        const parsed = Number(cleaned);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      }
+      const num = Number(value);
+      return Number.isFinite(num) && num > 0 ? num : null;
+    }
+
+    function normalizeFareObject(source, ride) {
+      if (!source || typeof source !== "object") return null;
+      const rideSubtotal = coerceCurrencyAmount(
+        source.rideSubtotal ??
+          source.subtotal ??
+          source.base ??
+          source.baseFare ??
+          source.baseAmount
+      );
+      const total = coerceCurrencyAmount(
+        source.total ??
+          source.totalFare ??
+          source.amount ??
+          source.amountTotal ??
+          source.totalWithFees
+      );
+      const processingFee =
+        coerceCurrencyAmount(
+          source.processingFee ??
+            source.processing ??
+            source.processingFeeAmount ??
+            source.fees?.processing
+        ) ??
+        (rideSubtotal !== null && total !== null
+          ? roundCurrency(total - rideSubtotal)
+          : null);
+      if (rideSubtotal === null && total === null) {
+        return null;
+      }
+      const minutes = resolveRideMinutes(ride);
+      return {
+        rideSubtotal: rideSubtotal !== null ? roundCurrency(rideSubtotal) : null,
+        processingFee,
+        total:
+          total !== null
+            ? roundCurrency(total)
+            : rideSubtotal !== null
+            ? roundCurrency(
+                rideSubtotal + rideSubtotal * BASIC_FARE_SETTINGS.PROCESSING_FEE_RATE
+              )
+            : null,
+        minutes
+      };
+    }
+
+    function resolveRideFareBreakdown(ride) {
+      if (!ride) return null;
+      const directSources = [ride?.fare, ride?.fareBreakdown, ride?.fareInfo];
+      for (const source of directSources) {
+        const normalized = normalizeFareObject(source, ride);
+        if (normalized) {
+          return normalized;
+        }
+      }
+      const minutes = resolveRideMinutes(ride);
+      const centCandidates = [
+        ride?.totalFareCents,
+        ride?.estimatedFareCents,
+        ride?.totalFareEstimateCents,
+        ride?.fare?.totalCents,
+        ride?.totalCents,
+        ride?.stripeAmountCents
+      ];
+      for (const candidate of centCandidates) {
+        const cents = Number(candidate);
+        if (Number.isFinite(cents) && cents > 0) {
+          return buildFareBreakdownFromTotal(cents / 100, minutes);
+        }
+      }
+      const dollarCandidates = [
+        ride?.totalFare,
+        ride?.estimatedFare,
+        ride?.fare?.total,
+        ride?.total
+      ];
+      for (const candidate of dollarCandidates) {
+        const total = coerceCurrencyAmount(candidate);
+        if (total) {
+          return buildFareBreakdownFromTotal(total, minutes);
+        }
+      }
+      if (Number.isFinite(minutes) && minutes > 0) {
+        return computeBasicFareBreakdown(minutes);
+      }
+      return null;
+    }
+
     function pickupLabel(rider) {
       if (rider?.pickupAddress) return rider.pickupAddress;
       if (rider?.fromAddress) return rider.fromAddress;
@@ -2233,6 +2510,52 @@
       }
       driverOfferPickupTime.textContent = label;
       driverOfferReserveRow.style.display = "block";
+    }
+
+    function renderDriverOfferEarnings(ride) {
+      if (!driverOfferEarningsRow || !driverOfferEarningsAmount || !driverOfferEarningsNote) {
+        return;
+      }
+      if (!ride || !rideUsesBasicMembership(ride)) {
+        driverOfferEarningsRow.style.display = "none";
+        driverOfferEarningsAmount.textContent = "";
+        driverOfferEarningsNote.textContent = "";
+        return;
+      }
+      const fareInfo = resolveRideFareBreakdown(ride);
+      if (!fareInfo) {
+        driverOfferEarningsRow.style.display = "none";
+        driverOfferEarningsAmount.textContent = "";
+        driverOfferEarningsNote.textContent = "";
+        return;
+      }
+      const payout = Number.isFinite(fareInfo.rideSubtotal)
+        ? fareInfo.rideSubtotal
+        : Number.isFinite(fareInfo.total)
+        ? fareInfo.total
+        : null;
+      if (!Number.isFinite(payout) || payout <= 0) {
+        driverOfferEarningsRow.style.display = "none";
+        driverOfferEarningsAmount.textContent = "";
+        driverOfferEarningsNote.textContent = "";
+        return;
+      }
+      driverOfferEarningsAmount.textContent = formatUsd(payout);
+      const noteParts = ["Basic membership fare."];
+      if (Number.isFinite(fareInfo.total) && Number.isFinite(fareInfo.processingFee)) {
+        noteParts.push(
+          `Rider billed ${formatUsd(fareInfo.total)} (~${formatUsd(
+            fareInfo.processingFee
+          )} processing).`
+        );
+      } else if (Number.isFinite(fareInfo.total)) {
+        noteParts.push(`Rider billed ${formatUsd(fareInfo.total)}.`);
+      }
+      if (Number.isFinite(fareInfo.minutes)) {
+        noteParts.push(`Estimate based on ~${Math.round(fareInfo.minutes)} min trip.`);
+      }
+      driverOfferEarningsNote.textContent = noteParts.join(" ");
+      driverOfferEarningsRow.style.display = "block";
     }
 
     function sanitizeDriverChatText(value) {
@@ -2502,6 +2825,7 @@
       const riderCount = ride?.numRiders || ride?.riderCount || ride?.currentRiderCount || 1;
       driverOfferRiderCount.textContent = `${riderCount} rider${riderCount === 1 ? "" : "s"}`;
       renderDriverOfferReserveInfo(ride);
+      renderDriverOfferEarnings(ride);
       setDriverOverlayState(DRIVER_STATES.OFFER, { forceReveal: true });
       playRideAlertSound();
     }
