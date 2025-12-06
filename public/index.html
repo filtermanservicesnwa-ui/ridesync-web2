@@ -8463,10 +8463,14 @@
         rideViewTabInfo.setAttribute("hidden", "true");
       }
       updateGuestContributionSummary();
-      if (profileMessage) {
-        profileMessage.textContent =
-          "Guest Sync activated. Add your share or tip whenever you're ready.";
-        profileError.textContent = "";
+      if (profileMessage || profileError) {
+        if (profileMessage) {
+          profileMessage.textContent =
+            "Guest Sync activated. Add your share or tip whenever you're ready.";
+        }
+        if (profileError) {
+          profileError.textContent = "";
+        }
       }
     }
 
