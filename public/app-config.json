@@ -67,5 +67,29 @@
     "vehicleImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTEwIiB2aWV3Qm94PSIwIDAgMTYwIDExMCI+CiAgPHJlY3Qgd2lkdGg9IjE2MCIgaGVpZ2h0PSIxMTAiIHJ4PSIxOCIgZmlsbD0iIzAyMDYxNyIvPgogIDxyZWN0IHg9IjE4IiB5PSIzOCIgd2lkdGg9IjEyNCIgaGVpZ2h0PSI0MCIgcng9IjEyIiBmaWxsPSIjMWUyOTNiIi8+CiAgPGNpcmNsZSBjeD0iNDUiIGN5PSI5MCIgcj0iMTIiIGZpbGw9IiMwZjE3MmEiIHN0cm9rZT0iIzQ3NTU2OSIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPGNpcmNsZSBjeD0iMTE1IiBjeT0iOTAiIHI9IjEyIiBmaWxsPSIjMGYxNzJhIiBzdHJva2U9IiM0NzU1NjkiIHN0cm9rZS13aWR0aD0iNCIvPgo8L3N2Zz4=",
     "licenseImage": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAiIGhlaWdodD0iMTEwIiB2aWV3Qm94PSIwIDAgMTYwIDExMCI+CiAgPHJlY3Qgd2lkdGg9IjE2MCIgaGVpZ2h0PSIxMTAiIHJ4PSIxNiIgZmlsbD0iIzAyMDYxNyIvPgogIDxyZWN0IHg9IjE2IiB5PSIyMCIgd2lkdGg9IjEyOCIgaGVpZ2h0PSI3MCIgcng9IjEwIiBmaWxsPSIjMGYxNzJhIiBzdHJva2U9IiMzMzQxNTUiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxyZWN0IHg9IjI4IiB5PSIzMiIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iOCIgZmlsbD0iIzFlM2E4YSIvPgo8L3N2Zz4=",
     "riderAvatar": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3MiIgaGVpZ2h0PSI3MiIgdmlld0JveD0iMCAwIDcyIDcyIj4KICA8cmVjdCB3aWR0aD0iNzIiIGhlaWdodD0iNzIiIHJ4PSIyMCIgZmlsbD0iIzAyMDYxNyIvPgogIDxwYXRoIGQ9Ik0zNiAzOWMtNyAwLTEyLjgtNS44LTEyLjgtMTIuOFMyOSAxMy41IDM2IDEzLjVzMTIuOCA1LjggMTIuOCAxMi44UzQzIDM5IDM2IDM5Wm0wIDQuOGM5LjUgMCAxOSAzLjUgMTkgOC45djMuNUgxN3YtMy41YzAtNS40IDkuNS04LjkgMTktOC45WiIgZmlsbD0iIzQ3NTU2OSIvPgo8L3N2Zz4="
+  },
+  "availability": {
+    "timezone": "America/Chicago",
+    "windows": {
+      "monday": [],
+      "tuesday": [
+        { "start": "19:00", "end": "02:00" }
+      ],
+      "wednesday": [
+        { "start": "19:00", "end": "02:00" }
+      ],
+      "thursday": [
+        { "start": "19:00", "end": "02:00" }
+      ],
+      "friday": [
+        { "start": "19:00", "end": "02:00" }
+      ],
+      "saturday": [
+        { "start": "07:00", "end": "02:00" }
+      ],
+      "sunday": [
+        { "start": "09:00", "end": "17:00" }
+      ]
+    }
   }
 }

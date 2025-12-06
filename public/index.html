@@ -345,6 +345,52 @@
     }
     .toggle-auth span { text-decoration: underline; cursor: pointer; }
 
+    .availability-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(18px, 6vw, 32px);
+      background: rgba(2,6,23,0.97);
+      z-index: 200;
+    }
+    .availability-overlay.active {
+      display: flex;
+    }
+    .availability-card {
+      width: min(520px, 100%);
+      background: rgba(2,6,23,0.95);
+      border-radius: 18px;
+      border: 1px solid rgba(148,163,184,0.6);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.65);
+      padding: clamp(18px, 5vw, 30px);
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .availability-card h2 {
+      margin: 0;
+      font-size: 1.45rem;
+    }
+    .availability-card p {
+      margin: 0;
+      color: #e5e7eb;
+    }
+    .availability-hours {
+      margin-top: 4px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(148,163,184,0.35);
+      font-size: 0.85rem;
+      color: #cbd5f5;
+      white-space: pre-line;
+      text-align: left;
+    }
+    body.app-availability-closed {
+      overflow: hidden;
+    }
+
     .error { color: #fecaca; font-size: 0.8rem; min-height: 18px; margin-bottom: 6px; }
     .success { color: #bbf7d0; font-size: 0.8rem; min-height: 18px; margin-bottom: 6px; }
     .small { font-size: 0.75rem; color: #9ca3af; margin-top: 4px; }
@@ -3221,6 +3267,22 @@
     <p>&copy; 2025 RideSync. All rights reserved.</p>
   </footer>
 
+  <div
+    id="availabilityOverlay"
+    class="availability-overlay"
+    aria-live="polite"
+    aria-hidden="true"
+  >
+    <div class="availability-card" role="dialog" aria-labelledby="availabilityTitle">
+      <h2 id="availabilityTitle">We&apos;ll be back soon</h2>
+      <p id="availabilityMessage">
+        RideSync is offline outside of our service hours.
+      </p>
+      <p id="availabilityNextWindow" class="small"></p>
+      <div id="availabilityScheduleList" class="availability-hours"></div>
+    </div>
+  </div>
+
   <script type="module">
     import { auth, db } from "@/lib/firebase";
     import {
@@ -3380,9 +3442,30 @@
     const supportConfig = APP_CONFIG.support || {};
     const geoConfig = APP_CONFIG.geo || {};
     const ridePolicyConfig = APP_CONFIG.ridePolicy || {};
+    const availabilityConfig = APP_CONFIG.availability || {};
     const placeholderConfig = APP_CONFIG.placeholders || {};
     const functionsConfig = APP_CONFIG.functions || {};
     const mapsConfig = APP_CONFIG.maps || APP_CONFIG.googleMaps || {};
+    const AVAILABILITY_DAY_KEYS = [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ];
+    const AVAILABILITY_DAY_LABELS = {
+      sunday: "Sunday",
+      monday: "Monday",
+      tuesday: "Tuesday",
+      wednesday: "Wednesday",
+      thursday: "Thursday",
+      friday: "Friday",
+      saturday: "Saturday",
+    };
+    const availabilitySettings = buildAvailabilitySettings(availabilityConfig);
+    let availabilityIntervalId = null;
     const DEFAULT_MAPS_API_KEY = "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0";
     const mapsApiKey = mapsConfig.apiKey || DEFAULT_MAPS_API_KEY;
     const mapsLibraries =
@@ -3857,6 +3940,10 @@
     const landingSyncDriverButton = document.getElementById("landingSyncDriver");
     const driverComingSoonOverlay = document.getElementById("driverComingSoonOverlay");
     const driverComingSoonClose = document.getElementById("driverComingSoonClose");
+    const availabilityOverlay = document.getElementById("availabilityOverlay");
+    const availabilityMessageEl = document.getElementById("availabilityMessage");
+    const availabilityNextWindowEl = document.getElementById("availabilityNextWindow");
+    const availabilityScheduleEl = document.getElementById("availabilityScheduleList");
     const appBody = document.body;
     let riderPresenceInterval = null;
     let riderPresenceUserId = null;
@@ -5357,6 +5444,409 @@
         MEMBERSHIP_PLAN_COPY[key]?.price ||
         MEMBERSHIP_PLAN_COPY.basic.price
       );
+    }
+
+    function normalizeDayKey(value) {
+      if (typeof value !== "string") return null;
+      const key = value.trim().toLowerCase();
+      return AVAILABILITY_DAY_KEYS.includes(key) ? key : null;
+    }
+
+    function parseTimeStringToMinutes(value) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        const normalized = Math.round(value);
+        return ((normalized % 1440) + 1440) % 1440;
+      }
+      if (typeof value !== "string") {
+        return null;
+      }
+      let trimmed = value.trim().toLowerCase();
+      if (!trimmed) {
+        return null;
+      }
+      let meridiem = null;
+      if (trimmed.endsWith("am") || trimmed.endsWith("pm")) {
+        meridiem = trimmed.endsWith("am") ? "am" : "pm";
+        trimmed = trimmed.slice(0, -2).trim();
+      }
+      const parts = trimmed.split(":");
+      const hours = Number(parts[0]);
+      const minutes = parts[1] !== undefined ? Number(parts[1]) : 0;
+      if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+        return null;
+      }
+      let normalizedHours = hours;
+      if (meridiem) {
+        normalizedHours = hours % 12;
+        if (meridiem === "pm") {
+          normalizedHours += 12;
+        }
+      }
+      normalizedHours = ((normalizedHours % 24) + 24) % 24;
+      const clampedMinutes = Math.max(0, Math.min(59, Math.round(minutes)));
+      return normalizedHours * 60 + clampedMinutes;
+    }
+
+    function formatAvailabilityTimeLabel(minutes) {
+      const normalized = ((Number(minutes) % 1440) + 1440) % 1440;
+      const hours = Math.floor(normalized / 60);
+      const mins = normalized % 60;
+      const period = hours >= 12 ? "PM" : "AM";
+      const hour12 = hours % 12 || 12;
+      return `${hour12}:${mins.toString().padStart(2, "0")} ${period}`;
+    }
+
+    function formatAvailabilityRangeLabel(startMinutes, endMinutes) {
+      if (startMinutes === endMinutes) {
+        return "Open 24 hours";
+      }
+      return `${formatAvailabilityTimeLabel(startMinutes)} – ${formatAvailabilityTimeLabel(
+        endMinutes
+      )}`;
+    }
+
+    function parseAvailabilityWindowEntry(entry) {
+      if (!entry) {
+        return null;
+      }
+      let startMinutes = null;
+      let endMinutes = null;
+      if (typeof entry === "string") {
+        const [startRaw, endRaw] = entry.split("-");
+        startMinutes = parseTimeStringToMinutes(startRaw);
+        endMinutes = parseTimeStringToMinutes(endRaw);
+      } else if (typeof entry === "object") {
+        const startRaw = entry.start ?? entry.from ?? entry.begin ?? entry.open;
+        const endRaw = entry.end ?? entry.to ?? entry.finish ?? entry.close;
+        startMinutes = parseTimeStringToMinutes(startRaw);
+        endMinutes = parseTimeStringToMinutes(endRaw);
+      }
+      if (!Number.isInteger(startMinutes) || !Number.isInteger(endMinutes)) {
+        return null;
+      }
+      const normalizedStart = ((startMinutes % 1440) + 1440) % 1440;
+      const normalizedEnd = ((endMinutes % 1440) + 1440) % 1440;
+      const fullDay = normalizedStart === normalizedEnd;
+      const crossMidnight = !fullDay && normalizedStart > normalizedEnd;
+      return {
+        start: normalizedStart,
+        end: normalizedEnd,
+        crossMidnight,
+        fullDay,
+        rangeLabel: formatAvailabilityRangeLabel(normalizedStart, normalizedEnd),
+      };
+    }
+
+    function buildAvailabilitySummaryLines(windowsByDay) {
+      return AVAILABILITY_DAY_KEYS.map((dayKey) => {
+        const dayLabel = AVAILABILITY_DAY_LABELS[dayKey] || dayKey;
+        const windows = windowsByDay?.[dayKey] || [];
+        if (!windows.length) {
+          return `${dayLabel}: Closed`;
+        }
+        const labels = windows.map((win) => win.rangeLabel);
+        return `${dayLabel}: ${labels.join(", ")}`;
+      });
+    }
+
+    function buildAvailabilityFormatter(timezone) {
+      try {
+        return new Intl.DateTimeFormat("en-US", {
+          timeZone: timezone,
+          weekday: "long",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+      } catch (err) {
+        console.warn("Invalid availability timezone", err);
+        return null;
+      }
+    }
+
+    function computeTimezoneShortName(timezone) {
+      try {
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: timezone,
+          timeZoneName: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).formatToParts(new Date());
+        return parts.find((part) => part.type === "timeZoneName")?.value || "";
+      } catch (err) {
+        console.warn("Failed to resolve timezone abbreviation", err);
+        return "";
+      }
+    }
+
+    function buildAvailabilitySettings(config = {}) {
+      const timezone =
+        typeof config.timezone === "string" && config.timezone.trim()
+          ? config.timezone.trim()
+          : "America/Chicago";
+      const windowsSource =
+        config.windows || config.days || config.schedule || config.hours || {};
+      const normalizedSource = {};
+      Object.entries(windowsSource || {}).forEach(([dayKey, value]) => {
+        const normalizedKey = normalizeDayKey(dayKey);
+        if (!normalizedKey) {
+          return;
+        }
+        if (Array.isArray(value)) {
+          normalizedSource[normalizedKey] = value;
+          return;
+        }
+        if (value === null || value === undefined) {
+          normalizedSource[normalizedKey] = [];
+          return;
+        }
+        normalizedSource[normalizedKey] = [value];
+      });
+      const windowsByDay = {};
+      let windowCount = 0;
+      AVAILABILITY_DAY_KEYS.forEach((dayKey) => {
+        const dayEntries = normalizedSource[dayKey] || [];
+        const parsedWindows = dayEntries
+          .map((entry) => parseAvailabilityWindowEntry(entry))
+          .filter(Boolean);
+        windowsByDay[dayKey] = parsedWindows;
+        windowCount += parsedWindows.length;
+      });
+      const formatter = buildAvailabilityFormatter(timezone);
+      const tzName = computeTimezoneShortName(timezone);
+      return {
+        enabled: windowCount > 0,
+        timezone,
+        tzName,
+        formatter,
+        windowsByDay,
+        summaryLines:
+          windowCount > 0 ? buildAvailabilitySummaryLines(windowsByDay) : [],
+      };
+    }
+
+    function getDayIndex(dayKey) {
+      return AVAILABILITY_DAY_KEYS.indexOf(dayKey);
+    }
+
+    function getPreviousDayKey(dayKey) {
+      const idx = getDayIndex(dayKey);
+      if (idx === -1) {
+        return null;
+      }
+      const prevIndex = (idx + AVAILABILITY_DAY_KEYS.length - 1) % AVAILABILITY_DAY_KEYS.length;
+      return AVAILABILITY_DAY_KEYS[prevIndex];
+    }
+
+    function getDayKeyWithOffset(dayKey, offset) {
+      const idx = getDayIndex(dayKey);
+      if (idx === -1) {
+        return null;
+      }
+      const nextIndex = (idx + offset) % AVAILABILITY_DAY_KEYS.length;
+      return AVAILABILITY_DAY_KEYS[(nextIndex + AVAILABILITY_DAY_KEYS.length) % AVAILABILITY_DAY_KEYS.length];
+    }
+
+    function getLocalAvailabilityContext(date = new Date()) {
+      const formatter = availabilitySettings.formatter;
+      if (!formatter) {
+        const dayKey = AVAILABILITY_DAY_KEYS[date.getDay()];
+        return {
+          dayKey,
+          minutes: date.getHours() * 60 + date.getMinutes(),
+        };
+      }
+      const parts = formatter.formatToParts(date);
+      const map = {};
+      parts.forEach((part) => {
+        map[part.type] = part.value;
+      });
+      const dayKey = normalizeDayKey(map.weekday);
+      const hours = Number(map.hour ?? 0);
+      const minutes = Number(map.minute ?? 0);
+      return {
+        dayKey,
+        minutes: hours * 60 + minutes,
+      };
+    }
+
+    function isWithinSameDayWindow(minutes, windowEntry) {
+      if (!windowEntry) return false;
+      if (windowEntry.fullDay) return true;
+      if (!windowEntry.crossMidnight) {
+        return minutes >= windowEntry.start && minutes < windowEntry.end;
+      }
+      return minutes >= windowEntry.start;
+    }
+
+    function isWithinPreviousDayWindow(minutes, windowEntry) {
+      if (!windowEntry) return false;
+    if (windowEntry.fullDay) return false;
+      if (!windowEntry.crossMidnight) {
+        return false;
+      }
+      return minutes < windowEntry.end;
+    }
+
+    function findNextAvailabilityWindow(currentDayKey, currentMinutes) {
+      if (!currentDayKey) {
+        return null;
+      }
+      for (let offset = 0; offset < AVAILABILITY_DAY_KEYS.length; offset += 1) {
+        const dayKey = getDayKeyWithOffset(currentDayKey, offset);
+        if (!dayKey) continue;
+        const windows = availabilitySettings.windowsByDay?.[dayKey] || [];
+        for (const windowEntry of windows) {
+          if (offset === 0) {
+            if (windowEntry.fullDay) {
+              if (!isWithinSameDayWindow(currentMinutes, windowEntry)) {
+                return {
+                  dayKey,
+                  rangeLabel: windowEntry.rangeLabel,
+                  startMinutes: windowEntry.start,
+                  endMinutes: windowEntry.end,
+                };
+              }
+              continue;
+            }
+            if (!windowEntry.crossMidnight && currentMinutes < windowEntry.start) {
+              return {
+                dayKey,
+                rangeLabel: windowEntry.rangeLabel,
+                startMinutes: windowEntry.start,
+                endMinutes: windowEntry.end,
+              };
+            }
+            if (windowEntry.crossMidnight && currentMinutes < windowEntry.start) {
+              return {
+                dayKey,
+                rangeLabel: windowEntry.rangeLabel,
+                startMinutes: windowEntry.start,
+                endMinutes: windowEntry.end,
+              };
+            }
+            continue;
+          }
+          return {
+            dayKey,
+            rangeLabel: windowEntry.rangeLabel,
+            startMinutes: windowEntry.start,
+            endMinutes: windowEntry.end,
+          };
+        }
+      }
+      return null;
+    }
+
+    function formatDayLabel(dayKey) {
+      return AVAILABILITY_DAY_LABELS[dayKey] || dayKey || "";
+    }
+
+    function evaluateAvailability(referenceDate = new Date()) {
+      if (!availabilitySettings.enabled) {
+        return { isOpen: true };
+      }
+      const context = getLocalAvailabilityContext(referenceDate);
+      if (!context?.dayKey) {
+        return { isOpen: true };
+      }
+      const todaysWindows = availabilitySettings.windowsByDay?.[context.dayKey] || [];
+      const openToday = todaysWindows.some((windowEntry) =>
+        isWithinSameDayWindow(context.minutes, windowEntry)
+      );
+      if (openToday) {
+        return { isOpen: true };
+      }
+      const prevDayKey = getPreviousDayKey(context.dayKey);
+      const prevWindows = availabilitySettings.windowsByDay?.[prevDayKey] || [];
+      const openFromPrevious =
+        prevWindows &&
+        prevWindows.some((windowEntry) =>
+          isWithinPreviousDayWindow(context.minutes, windowEntry)
+        );
+      if (openFromPrevious) {
+        return { isOpen: true };
+      }
+      return {
+        isOpen: false,
+        nextWindow: findNextAvailabilityWindow(context.dayKey, context.minutes),
+      };
+    }
+
+    function updateAvailabilityUi(stateOverride) {
+      if (!availabilitySettings.enabled || !availabilityOverlay) {
+        return;
+      }
+      const state = stateOverride || evaluateAvailability(new Date());
+      if (state.isOpen) {
+        availabilityOverlay.classList.remove("active");
+        availabilityOverlay.setAttribute("aria-hidden", "true");
+        appBody?.classList?.remove("app-availability-closed");
+        return;
+      }
+      availabilityOverlay.classList.add("active");
+      availabilityOverlay.setAttribute("aria-hidden", "false");
+      appBody?.classList?.add("app-availability-closed");
+      const tzLabel = availabilitySettings.tzName || availabilitySettings.timezone;
+      if (availabilityMessageEl) {
+        availabilityMessageEl.textContent = tzLabel
+          ? `RideSync is offline until our ${tzLabel} service window reopens.`
+          : "RideSync is offline until our service window reopens.";
+      }
+      if (availabilityNextWindowEl) {
+        if (state.nextWindow) {
+          const dayLabel = formatDayLabel(state.nextWindow.dayKey);
+          const tzSuffix = tzLabel ? ` (${tzLabel})` : "";
+          availabilityNextWindowEl.textContent = `Next window: ${dayLabel} ${state.nextWindow.rangeLabel}${tzSuffix}`;
+        } else {
+          availabilityNextWindowEl.textContent = "Next window: Coming soon";
+        }
+      }
+      if (availabilityScheduleEl) {
+        if (availabilitySettings.summaryLines?.length) {
+          const prefix = tzLabel ? `Hours (${tzLabel}):\n` : "Hours:\n";
+          availabilityScheduleEl.textContent =
+            prefix + availabilitySettings.summaryLines.join("\n");
+        } else {
+          availabilityScheduleEl.textContent = "";
+        }
+      }
+    }
+
+    function initializeAvailabilityUi() {
+      if (!availabilitySettings.enabled) {
+        if (availabilityOverlay) {
+          availabilityOverlay.classList.remove("active");
+          availabilityOverlay.setAttribute("aria-hidden", "true");
+        }
+        return;
+      }
+      updateAvailabilityUi();
+      if (availabilityIntervalId) {
+        clearInterval(availabilityIntervalId);
+      }
+      availabilityIntervalId = window.setInterval(() => {
+        updateAvailabilityUi();
+      }, 60_000);
+      document.addEventListener("visibilitychange", handleAvailabilityVisibilityChange);
+    }
+
+    function handleAvailabilityVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        updateAvailabilityUi();
+      }
+    }
+
+    function ensureAvailabilityOpen() {
+      if (!availabilitySettings.enabled) {
+        return true;
+      }
+      const state = evaluateAvailability(new Date());
+      if (state.isOpen) {
+        return true;
+      }
+      updateAvailabilityUi(state);
+      return false;
     }
 
     function resolvePlanPriceCents(planKey) {
@@ -9710,6 +10200,15 @@
         }
         return;
       }
+      if (!ensureAvailabilityOpen()) {
+        if (syncConfirmError) {
+          const tzLabel = availabilitySettings.tzName || availabilitySettings.timezone || "";
+          syncConfirmError.textContent = tzLabel
+            ? `RideSync is offline right now. Hours resume during our ${tzLabel} window.`
+            : "RideSync is offline right now. Please try again during service hours.";
+        }
+        return;
+      }
       const reserveValidation = ensureValidReserveSelection({ showErrors: true });
       if (!reserveValidation.valid) {
         if (syncConfirmError) {
@@ -12580,12 +13079,17 @@
       initPwaOverlay();
     }
 
+    initializeAvailabilityUi();
     schedulePwaOverlayInit();
 
     window.addEventListener("beforeunload", () => {
       if (driverAvailabilityUnsub) {
         driverAvailabilityUnsub();
         driverAvailabilityUnsub = null;
+      }
+      if (availabilityIntervalId) {
+        clearInterval(availabilityIntervalId);
+        availabilityIntervalId = null;
       }
     });
 
