@@ -12303,30 +12303,21 @@
     });
 
     if (syncRidersButton) {
-      syncRidersButton.addEventListener("click", async () => {
+      syncRidersButton.addEventListener("click", () => {
         if (!wantsGroupRide) {
           profileError.textContent = "Select at least 2 riders to sync.";
           return;
         }
-        if (currentRideId && activeRideIsGroup) {
-          openSyncRidersOverlay(currentRideId);
+        if (!currentRideId) {
+          profileError.textContent =
+            "Sync your destination first to generate the group QR.";
           return;
         }
-        if (currentRideId && !activeRideIsGroup) {
+        if (!activeRideIsGroup) {
           profileError.textContent = "Sync this ride with 2–4 riders to share the QR.";
           return;
         }
-        const opened = await ensureDestinationReadyAndOpenSyncConfirm({
-          triggerButton: syncRidersButton,
-          loadingLabel: "Preparing…"
-        });
-        if (!opened) {
-          return;
-        }
-        syncRidersFlowActive = true;
-        syncRidersAwaitingRideActivation = false;
-        profileMessage.textContent =
-          "Confirm your fare to generate the group QR.";
+        openSyncRidersOverlay(currentRideId);
       });
     }
 
