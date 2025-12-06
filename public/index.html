@@ -387,6 +387,40 @@
       white-space: pre-line;
       text-align: left;
     }
+    .availability-hours-heading {
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 6px;
+      display: block;
+    }
+    .availability-day {
+      margin: 6px 0;
+      border: 1px solid rgba(148,163,184,0.35);
+      border-radius: 10px;
+      background: rgba(15,23,42,0.75);
+      padding: 0;
+      color: #e5e7eb;
+    }
+    .availability-day summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 10px 12px;
+      font-weight: 600;
+      outline: none;
+    }
+    .availability-day summary::-webkit-details-marker {
+      display: none;
+    }
+    .availability-day[open] summary {
+      border-bottom: 1px solid rgba(148,163,184,0.25);
+    }
+    .availability-day-body {
+      padding: 10px 12px 12px;
+      font-size: 0.8rem;
+      color: #cbd5f5;
+    }
     body.app-availability-closed {
       overflow: hidden;
     }
@@ -412,6 +446,18 @@
       padding: 9px 11px;
       font-size: 0.8rem;
       margin-bottom: 10px;
+    }
+    .ride-fare-sync-card .ride-fare-sync-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .ride-fare-sync-copy {
+      flex: 1;
+    }
+    #rideFareSyncButton {
+      white-space: nowrap;
     }
     .trip-builder-card {
       display: flex;
@@ -3063,6 +3109,25 @@
         <div id="rideFareDetails" class="ride-fare-details"></div>
         <p id="rideFareMembershipNote" class="small" style="margin-top:6px; display:none;"></p>
       </div>
+      <div class="fare-box ride-fare-sync-card">
+        <div class="ride-fare-sync-row">
+          <div class="ride-fare-sync-copy">
+            <div class="fare-label">Link riders</div>
+            <p class="small" id="rideFareSyncHint">
+              Use your Sync QR to let everyone join this fare before checking out.
+            </p>
+          </div>
+          <button
+            id="rideFareSyncButton"
+            type="button"
+            class="btn-secondary btn-small"
+            aria-haspopup="dialog"
+            aria-controls="syncRidersOverlay"
+          >
+            Sync QR
+          </button>
+        </div>
+      </div>
       <div class="section-title" style="margin-top:18px;">Pay securely</div>
       <p class="small" id="rideCheckoutDetails">
         Stripe Checkout opens in a secure window so you can use any saved payment method.
@@ -4347,6 +4412,7 @@
     const rideFareMembershipRow = document.getElementById("rideFareMembershipRow");
     const rideFareMembershipLabel = document.getElementById("rideFareMembershipLabel");
     const rideFareMembershipNote = document.getElementById("rideFareMembershipNote");
+    const rideFareSyncButton = document.getElementById("rideFareSyncButton");
     const rideCardElement = document.getElementById("rideCardElement");
     const rideCardSubmit = document.getElementById("rideCardSubmit");
     const rideCardMessage = document.getElementById("rideCardMessage");
@@ -4545,6 +4611,7 @@
     let rideChatLastSendAt = 0;
 
     let currentRideId = null;
+    updateRideFareSyncButtonState();
     let currentRideStatus = null;
     let currentRideWatcher = null;
     let wantsGroupRide = false;
@@ -4723,6 +4790,7 @@
 
     function clearCurrentRideState() {
         currentRideId = null;
+        updateRideFareSyncButtonState();
         currentRideStatus = null;
         if (currentRideWatcher) {
           currentRideWatcher();
@@ -5742,6 +5810,38 @@
       return AVAILABILITY_DAY_LABELS[dayKey] || dayKey || "";
     }
 
+    function renderAvailabilitySchedule(options = {}) {
+      if (!availabilityScheduleEl) return;
+      availabilityScheduleEl.innerHTML = "";
+      if (!availabilitySettings.summaryLines?.length) {
+        return;
+      }
+      const { highlightDayKey = null } = options;
+      const tzLabel = availabilitySettings.tzName || availabilitySettings.timezone || "";
+      const heading = document.createElement("div");
+      heading.className = "availability-hours-heading";
+      heading.textContent = tzLabel ? `Hours (${tzLabel})` : "Hours";
+      availabilityScheduleEl.appendChild(heading);
+      AVAILABILITY_DAY_KEYS.forEach((dayKey) => {
+        const detailsEl = document.createElement("details");
+        detailsEl.className = "availability-day";
+        if (highlightDayKey && highlightDayKey === dayKey) {
+          detailsEl.open = true;
+        }
+        const summaryEl = document.createElement("summary");
+        summaryEl.textContent = formatDayLabel(dayKey);
+        detailsEl.appendChild(summaryEl);
+        const bodyEl = document.createElement("div");
+        bodyEl.className = "availability-day-body";
+        const windows = availabilitySettings.windowsByDay?.[dayKey] || [];
+        bodyEl.textContent = windows.length
+          ? windows.map((entry) => entry.rangeLabel).join(", ")
+          : "Closed";
+        detailsEl.appendChild(bodyEl);
+        availabilityScheduleEl.appendChild(detailsEl);
+      });
+    }
+
     function evaluateAvailability(referenceDate = new Date()) {
       if (!availabilitySettings.enabled) {
         return { isOpen: true };
@@ -5782,6 +5882,9 @@
         availabilityOverlay.classList.remove("active");
         availabilityOverlay.setAttribute("aria-hidden", "true");
         appBody?.classList?.remove("app-availability-closed");
+        if (availabilityScheduleEl) {
+          availabilityScheduleEl.innerHTML = "";
+        }
         return;
       }
       availabilityOverlay.classList.add("active");
@@ -5802,14 +5905,10 @@
           availabilityNextWindowEl.textContent = "Next window: Coming soon";
         }
       }
-      if (availabilityScheduleEl) {
-        if (availabilitySettings.summaryLines?.length) {
-          const prefix = tzLabel ? `Hours (${tzLabel}):\n` : "Hours:\n";
-          availabilityScheduleEl.textContent =
-            prefix + availabilitySettings.summaryLines.join("\n");
-        } else {
-          availabilityScheduleEl.textContent = "";
-        }
+      if (availabilitySettings.summaryLines?.length) {
+        renderAvailabilitySchedule({ highlightDayKey: state.nextWindow?.dayKey || null });
+      } else if (availabilityScheduleEl) {
+        availabilityScheduleEl.innerHTML = "";
       }
     }
 
@@ -8600,6 +8699,7 @@
 
     function handleRideSnapshot(rideId, data) {
       latestRideForOverlay = { rideId, data };
+      updateRideFareSyncButtonState();
       const status = normalizeRiderStatus(data);
       const waitingOnDriver = WAITLIST_RIDE_STATUSES.has(status);
       if (!waitingOnDriver) {
@@ -10631,26 +10731,41 @@
         rideFareMembershipRow ||
         rideFareMembershipNote
       ) {
-        const fallbackPlan = getProfilePlanKey();
-        const fallbackStatus = currentUserProfile?.membershipStatus || "none";
         const membershipLabel =
+          RIDE_FARE_MEMBERSHIP_PLACEHOLDER.label ||
           summary?.membershipLabel ||
-          formatMembershipSummary(fallbackPlan, fallbackStatus);
+          "Memberships";
         const membershipMessage =
+          RIDE_FARE_MEMBERSHIP_PLACEHOLDER.note ||
           summary?.membershipMessage ||
-          buildRideMembershipMessage(fallbackPlan, fallbackStatus);
-
+          "";
         if (rideFareMembershipLabel) {
-          rideFareMembershipLabel.textContent = membershipLabel || "—";
+          rideFareMembershipLabel.textContent = membershipLabel;
         }
         if (rideFareMembershipRow) {
-          rideFareMembershipRow.style.display = membershipLabel ? "flex" : "none";
+          rideFareMembershipRow.style.display = "flex";
         }
         if (rideFareMembershipNote) {
-          rideFareMembershipNote.textContent = membershipMessage || "";
+          rideFareMembershipNote.textContent = membershipMessage;
           rideFareMembershipNote.style.display = membershipMessage ? "block" : "none";
         }
       }
+    }
+
+    function getRideIdForSyncButton() {
+      return (
+        ridePaymentState.rideId ||
+        currentRideId ||
+        latestRideForOverlay?.rideId ||
+        null
+      );
+    }
+
+    function updateRideFareSyncButtonState() {
+      if (!rideFareSyncButton) return;
+      const rideId = getRideIdForSyncButton();
+      rideFareSyncButton.disabled = !rideId;
+      rideFareSyncButton.setAttribute("aria-disabled", rideId ? "false" : "true");
     }
 
     function resetRideTipUi() {
@@ -10867,6 +10982,7 @@
       if (rideFareClose) {
         rideFareClose.disabled = true;
       }
+      updateRideFareSyncButtonState();
     }
 
     function updatePreauthTipUi() {
@@ -10960,6 +11076,7 @@
       toggleOverlay(rideFareOverlay, false);
       ridePaymentState.showing = false;
       updateRideCheckoutButtonState();
+      updateRideFareSyncButtonState();
       if (force || ridePaymentState.completed) {
         resetRidePaymentState();
       }
@@ -11016,6 +11133,7 @@
           : "Complete your fare to finish this ride.";
       }
       renderRideFareDetails(summary);
+      updateRideFareSyncButtonState();
       resetRideTipUi();
       updateRidePaymentTotalsDisplay();
       updateRideFareStatus("Preparing payment options…", false);
@@ -11228,6 +11346,10 @@
         "Your membership is inactive and is not covering this fare. Update billing or contact RideSync support to reactivate it.",
       none:
         "Your membership isn’t active for this fare. Start or renew a plan to apply savings.",
+    };
+    const RIDE_FARE_MEMBERSHIP_PLACEHOLDER = {
+      label: "Memberships coming soon",
+      note: "Unlimited coverage returns soon. Finish this fare per ride and use Sync QR to link riders now.",
     };
 
     function buildRideMembershipMessage(planKey, status) {
@@ -12030,6 +12152,7 @@
 
     async function activateRideAfterCreation(rideId, ridePayload) {
       currentRideId = rideId;
+      updateRideFareSyncButtonState();
       activeRideIsGroup = Boolean(ridePayload?.isGroupRide);
       activeRideGuestBypass = Boolean(ridePayload?.guestBypassEnabled);
       appBody?.classList?.toggle("host-guest-bypass", guestBypassEligible || activeRideGuestBypass);
@@ -12739,6 +12862,7 @@
           joinTargetRide?.toAddress ||
           "";
         currentRideId = rideId;
+        updateRideFareSyncButtonState();
         rememberRideProtectionState(rideId, {
           status: "pool_searching",
           toDestination: joinDestination,
@@ -12817,6 +12941,21 @@
           return;
         }
         openSyncRidersOverlay(currentRideId);
+      });
+    }
+
+    if (rideFareSyncButton) {
+      rideFareSyncButton.addEventListener("click", () => {
+        const rideId = getRideIdForSyncButton();
+        if (!rideId) {
+          updateRideFareStatus("Start a ride to generate your Sync QR.", true);
+          return;
+        }
+        if (!activeRideIsGroup && !wantsGroupRide) {
+          updateRideFareStatus("Sync this ride with 2–4 riders to share the QR.", true);
+          return;
+        }
+        openSyncRidersOverlay(rideId);
       });
     }
 
