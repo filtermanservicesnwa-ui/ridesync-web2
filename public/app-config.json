@@ -42,6 +42,10 @@
       }
     }
   },
+  "memberships": {
+    "upgradesEnabled": false,
+    "comingSoonMessage": "Unlimited memberships are coming soon."
+  },
   "geo": {
     "nwaCenter": { "lat": 36.334, "lng": -94.118 },
     "nwaRadiusMiles": 30,
@@ -70,6 +74,8 @@
   },
   "availability": {
     "timezone": "America/Chicago",
+    "closedTitle": "RideSync is closed",
+    "closedMessage": "We're outside our service hours. Check back soon.",
     "windows": {
       "monday": [],
       "tuesday": [

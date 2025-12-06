@@ -972,6 +972,17 @@
       color: #fbbf24;
       margin: 0;
     }
+    #membershipPlanGrid .membership-plan.disabled {
+      opacity: 0.45;
+      pointer-events: none;
+      border-style: dashed;
+      filter: grayscale(0.5);
+    }
+    #membershipPlanGrid .membership-plan.disabled .membership-plan-title,
+    #membershipPlanGrid .membership-plan.disabled .membership-plan-price,
+    #membershipPlanGrid .membership-plan.disabled .membership-plan-desc {
+      color: #94a3b8;
+    }
     .membership-plan-card {
       cursor: pointer;
       transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
@@ -1139,7 +1150,9 @@
     }
     .sync-membership-card.disabled {
       cursor: not-allowed;
-      opacity: 0.6;
+      opacity: 0.45;
+      pointer-events: none;
+      filter: grayscale(0.4);
     }
     .sync-membership-card:disabled {
       cursor: not-allowed;
@@ -3549,6 +3562,16 @@
     const stripeConfig = APP_CONFIG.stripe || {};
     const fareConfig = APP_CONFIG.fares || {};
     const paymentConfig = APP_CONFIG.payments || {};
+    const membershipsConfig = APP_CONFIG.memberships || {};
+    const MEMBERSHIP_UPGRADES_ENABLED = resolveBooleanFlag(
+      membershipsConfig.upgradesEnabled,
+      true
+    );
+    const MEMBERSHIP_UPGRADES_LOCKED = !MEMBERSHIP_UPGRADES_ENABLED;
+    const MEMBERSHIP_COMING_SOON_MESSAGE =
+      (typeof membershipsConfig.comingSoonMessage === "string" &&
+        membershipsConfig.comingSoonMessage.trim()) ||
+      "Unlimited memberships are coming soon.";
     const MIN_RIDE_TIP_CENTS = 0;
     const DEFAULT_MAX_TIP_CENTS = Math.max(
       MIN_RIDE_TIP_CENTS,
@@ -4006,6 +4029,7 @@
     const driverComingSoonOverlay = document.getElementById("driverComingSoonOverlay");
     const driverComingSoonClose = document.getElementById("driverComingSoonClose");
     const availabilityOverlay = document.getElementById("availabilityOverlay");
+    const availabilityTitleEl = document.getElementById("availabilityTitle");
     const availabilityMessageEl = document.getElementById("availabilityMessage");
     const availabilityNextWindowEl = document.getElementById("availabilityNextWindow");
     const availabilityScheduleEl = document.getElementById("availabilityScheduleList");
@@ -5491,6 +5515,31 @@
       }
     }
 
+    function resolveBooleanFlag(value, defaultValue = false) {
+      if (typeof value === "boolean") {
+        return value;
+      }
+      if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (!normalized) {
+          return defaultValue;
+        }
+        if (normalized === "true" || normalized === "1" || normalized === "yes") {
+          return true;
+        }
+        if (normalized === "false" || normalized === "0" || normalized === "no") {
+          return false;
+        }
+      }
+      if (typeof value === "number") {
+        if (Number.isNaN(value)) {
+          return defaultValue;
+        }
+        return value !== 0;
+      }
+      return defaultValue;
+    }
+
     function clampTipAmount(valueCents, minCents = MIN_RIDE_TIP_CENTS, maxCents = DEFAULT_MAX_TIP_CENTS) {
       const normalized = Number.isFinite(valueCents) ? Math.round(valueCents) : 0;
       const safeMin = Math.max(MIN_RIDE_TIP_CENTS, Math.round(minCents));
@@ -5682,8 +5731,21 @@
       });
       const formatter = buildAvailabilityFormatter(timezone);
       const tzName = computeTimezoneShortName(timezone);
+      const forceClosed = resolveBooleanFlag(config.forceClosed, false);
+      const closedTitle =
+        typeof config.closedTitle === "string" && config.closedTitle.trim()
+          ? config.closedTitle.trim()
+          : "";
+      const closedMessage =
+        typeof config.closedMessage === "string" && config.closedMessage.trim()
+          ? config.closedMessage.trim()
+          : "";
+      const overlayEnabled = forceClosed || windowCount > 0;
       return {
-        enabled: windowCount > 0,
+        enabled: overlayEnabled,
+        forceClosed,
+        closedTitle,
+        closedMessage,
         timezone,
         tzName,
         formatter,
@@ -5843,6 +5905,9 @@
     }
 
     function evaluateAvailability(referenceDate = new Date()) {
+      if (availabilitySettings.forceClosed) {
+        return { isOpen: false };
+      }
       if (!availabilitySettings.enabled) {
         return { isOpen: true };
       }
@@ -5878,7 +5943,8 @@
         return;
       }
       const state = stateOverride || evaluateAvailability(new Date());
-      if (state.isOpen) {
+      const forcedClosed = availabilitySettings.forceClosed;
+      if (!forcedClosed && state.isOpen) {
         availabilityOverlay.classList.remove("active");
         availabilityOverlay.setAttribute("aria-hidden", "true");
         appBody?.classList?.remove("app-availability-closed");
@@ -5891,10 +5957,19 @@
       availabilityOverlay.setAttribute("aria-hidden", "false");
       appBody?.classList?.add("app-availability-closed");
       const tzLabel = availabilitySettings.tzName || availabilitySettings.timezone;
+      const overlayTitle =
+        availabilitySettings.closedTitle ||
+        "RideSync is closed right now.";
+      if (availabilityTitleEl) {
+        availabilityTitleEl.textContent = overlayTitle;
+      }
+      const defaultMessage = tzLabel
+        ? `RideSync is offline until our ${tzLabel} service window reopens.`
+        : "RideSync is offline until our service window reopens.";
+      const overlayMessage =
+        availabilitySettings.closedMessage || defaultMessage;
       if (availabilityMessageEl) {
-        availabilityMessageEl.textContent = tzLabel
-          ? `RideSync is offline until our ${tzLabel} service window reopens.`
-          : "RideSync is offline until our service window reopens.";
+        availabilityMessageEl.textContent = overlayMessage;
       }
       if (availabilityNextWindowEl) {
         if (state.nextWindow) {
@@ -5973,9 +6048,57 @@
     }
 
     updateMembershipPrices();
+    lockMembershipPlanCards();
+
+    function lockMembershipPlanCards(profile = currentUserProfile) {
+      if (!membershipPlanCards.length || MEMBERSHIP_UPGRADES_ENABLED) {
+        return;
+      }
+      const profilePlan = normalizePlanKey(
+        profile?.membershipType || profile?.membership || "basic"
+      );
+      membershipPlanCards.forEach((card) => {
+        const planKey = normalizePlanKey(card.dataset.plan);
+        if (!planKey || planKey === "basic") {
+          return;
+        }
+        const shouldLock = planKey !== profilePlan;
+        card.classList.toggle("disabled", shouldLock);
+        if (shouldLock) {
+          card.setAttribute("aria-disabled", "true");
+        } else {
+          card.removeAttribute("aria-disabled");
+        }
+        card.querySelectorAll("[data-plan-action]").forEach((button) => {
+          button.disabled = shouldLock;
+          button.setAttribute("aria-disabled", shouldLock ? "true" : "false");
+        });
+        const noteEl =
+          card.querySelector(".membership-plan-note") ||
+          card.querySelector(".membership-plan-desc:last-of-type");
+        if (!noteEl) {
+          return;
+        }
+        if (!("planNoteOriginal" in noteEl.dataset)) {
+          noteEl.dataset.planNoteOriginal = noteEl.textContent || "";
+        }
+        if (shouldLock) {
+          noteEl.textContent = MEMBERSHIP_COMING_SOON_MESSAGE;
+          noteEl.classList.add("membership-plan-note");
+          return;
+        }
+        noteEl.textContent = noteEl.dataset.planNoteOriginal || "";
+        if (!noteEl.textContent.trim()) {
+          noteEl.classList.remove("membership-plan-note");
+        }
+      });
+    }
 
     function canStartMembershipCheckout(planKey, profile = currentUserProfile) {
       if (!STRIPE_ENABLED || !profile) {
+        return false;
+      }
+      if (areMembershipUpgradesLocked(planKey, profile)) {
         return false;
       }
       const normalized = normalizePlanKey(planKey);
@@ -5993,6 +6116,9 @@
       profile = currentUserProfile
     ) {
       const normalized = normalizePlanKey(planKey);
+      if (areMembershipUpgradesLocked(normalized, profile)) {
+        return MEMBERSHIP_COMING_SOON_MESSAGE;
+      }
       if (!profile) {
         return "Sign in to manage memberships.";
       }
@@ -6045,6 +6171,13 @@
         response.label = "Sign in to activate";
         response.disabled = true;
         response.hint = "Load your RideSync profile to manage memberships.";
+        return response;
+      }
+
+      if (areMembershipUpgradesLocked(normalized, profile)) {
+        response.label = "Coming soon";
+        response.disabled = true;
+        response.hint = MEMBERSHIP_COMING_SOON_MESSAGE;
         return response;
       }
 
@@ -6123,6 +6256,10 @@
 
     function handleMembershipPlanAction(planKey) {
       const normalized = normalizePlanKey(planKey);
+      if (areMembershipUpgradesLocked(normalized)) {
+        setMembershipMessage(MEMBERSHIP_COMING_SOON_MESSAGE);
+        return;
+      }
       if (!STRIPE_ENABLED) {
         setMembershipMessage("Stripe payments are not available right now.");
         return;
@@ -6382,6 +6519,20 @@
       return raw;
     }
 
+    function areMembershipUpgradesLocked(planKey, profile = currentUserProfile) {
+      if (!MEMBERSHIP_UPGRADES_LOCKED) {
+        return false;
+      }
+      const normalized = normalizePlanKey(planKey);
+      if (normalized === "basic") {
+        return false;
+      }
+      const profilePlan = normalizePlanKey(
+        profile?.membershipType || profile?.membership || "basic"
+      );
+      return normalized !== profilePlan;
+    }
+
     function getMembershipPlanMode(planKey) {
       const normalized = normalizePlanKey(planKey);
       const configMode =
@@ -6466,6 +6617,7 @@
       if (membershipCurrentLabel) {
         membershipCurrentLabel.textContent = summaryLabel;
       }
+      lockMembershipPlanCards(profile);
 
       if (membershipStatusBadge) {
         membershipStatusBadge.textContent = statusLabel;
@@ -9443,6 +9595,9 @@
 
     function getPlanLockReason(planKey) {
       const normalized = normalizePlanKey(planKey);
+      if (areMembershipUpgradesLocked(normalized)) {
+        return MEMBERSHIP_COMING_SOON_MESSAGE;
+      }
       if (normalized === "uofa_unlimited") {
         if (!currentUserProfile?.isStudent) {
           return "Only verified U of A students can activate this plan.";
@@ -9494,6 +9649,10 @@
       const planCopy =
         MEMBERSHIP_PLAN_COPY[selectedPlan] || MEMBERSHIP_PLAN_COPY.basic;
       if (selectedPlan === "basic") {
+        if (MEMBERSHIP_UPGRADES_LOCKED) {
+          syncMembershipHint.textContent = MEMBERSHIP_COMING_SOON_MESSAGE;
+          return;
+        }
         const upgradeAvailable =
           canStartMembershipCheckout("uofa_unlimited") ||
           canStartMembershipCheckout("nwa_unlimited");
