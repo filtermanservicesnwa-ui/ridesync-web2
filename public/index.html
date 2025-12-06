@@ -6050,27 +6050,46 @@
     updateMembershipPrices();
     lockMembershipPlanCards();
 
-    function lockMembershipPlanCards() {
+    function lockMembershipPlanCards(profile = currentUserProfile) {
       if (!membershipPlanCards.length || MEMBERSHIP_UPGRADES_ENABLED) {
         return;
       }
+      const profilePlan = normalizePlanKey(
+        profile?.membershipType || profile?.membership || "basic"
+      );
       membershipPlanCards.forEach((card) => {
         const planKey = normalizePlanKey(card.dataset.plan);
         if (!planKey || planKey === "basic") {
           return;
         }
-        card.classList.add("disabled");
-        card.setAttribute("aria-disabled", "true");
+        const shouldLock = planKey !== profilePlan;
+        card.classList.toggle("disabled", shouldLock);
+        if (shouldLock) {
+          card.setAttribute("aria-disabled", "true");
+        } else {
+          card.removeAttribute("aria-disabled");
+        }
         card.querySelectorAll("[data-plan-action]").forEach((button) => {
-          button.disabled = true;
-          button.setAttribute("aria-disabled", "true");
+          button.disabled = shouldLock;
+          button.setAttribute("aria-disabled", shouldLock ? "true" : "false");
         });
         const noteEl =
           card.querySelector(".membership-plan-note") ||
           card.querySelector(".membership-plan-desc:last-of-type");
-        if (noteEl) {
+        if (!noteEl) {
+          return;
+        }
+        if (!("planNoteOriginal" in noteEl.dataset)) {
+          noteEl.dataset.planNoteOriginal = noteEl.textContent || "";
+        }
+        if (shouldLock) {
           noteEl.textContent = MEMBERSHIP_COMING_SOON_MESSAGE;
           noteEl.classList.add("membership-plan-note");
+          return;
+        }
+        noteEl.textContent = noteEl.dataset.planNoteOriginal || "";
+        if (!noteEl.textContent.trim()) {
+          noteEl.classList.remove("membership-plan-note");
         }
       });
     }
@@ -6598,6 +6617,7 @@
       if (membershipCurrentLabel) {
         membershipCurrentLabel.textContent = summaryLabel;
       }
+      lockMembershipPlanCards(profile);
 
       if (membershipStatusBadge) {
         membershipStatusBadge.textContent = statusLabel;
