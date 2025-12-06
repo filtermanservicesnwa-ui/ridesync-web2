@@ -2531,8 +2531,8 @@
       }
       const payout = Number.isFinite(fareInfo.rideSubtotal)
         ? fareInfo.rideSubtotal
-        : Number.isFinite(fareInfo.total)
-        ? fareInfo.total
+        : Number.isFinite(fareInfo.total) && Number.isFinite(fareInfo.processingFee)
+        ? fareInfo.total - fareInfo.processingFee
         : null;
       if (!Number.isFinite(payout) || payout <= 0) {
         driverOfferEarningsRow.style.display = "none";
