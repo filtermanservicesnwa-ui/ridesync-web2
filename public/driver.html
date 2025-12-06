@@ -1921,8 +1921,10 @@
         await updateDoc(ref, payload);
         driverMessage.textContent = "Driver profile updated.";
         driverError.textContent = "";
+        const removedPhotoNeedsDeletion =
+          pendingProfilePhotoRemoved && shouldDeletePreviousPhoto;
         await loadDriverProfile();
-        if (pendingProfilePhotoRemoved && shouldDeletePreviousPhoto) {
+        if (removedPhotoNeedsDeletion) {
           await deleteDriverPhotoFromStorage(previousPhotoPath);
         } else if (
           newPhotoMeta &&
