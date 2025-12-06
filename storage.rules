@@ -18,6 +18,10 @@ service firebase.storage {
       allow read, write: if isOwner(userId);
     }
 
+    match /drivers/{driverId}/{allPaths=**} {
+      allow read, write: if isOwner(driverId);
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

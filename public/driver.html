@@ -1135,7 +1135,9 @@
       signInWithEmailAndPassword,
       signOut,
       setPersistence,
-      browserLocalPersistence
+      browserLocalPersistence,
+      browserSessionPersistence,
+      indexedDBLocalPersistence
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
     import {
       collection,
@@ -1152,6 +1154,13 @@
       serverTimestamp,
       writeBatch
     } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+    import {
+      getStorage,
+      ref,
+      uploadBytes,
+      getDownloadURL,
+      deleteObject
+    } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
     import {
       getMessaging,
       getToken,
@@ -1220,6 +1229,25 @@
       });
 
       return window.__rideSyncMapsPromise;
+    }
+
+    async function ensureDriverAuthPersistence(authInstance) {
+      if (!authInstance) return null;
+      const strategies = [
+        { label: "indexedDb", value: indexedDBLocalPersistence },
+        { label: "localStorage", value: browserLocalPersistence },
+        { label: "session", value: browserSessionPersistence }
+      ];
+      for (const strategy of strategies) {
+        if (!strategy.value) continue;
+        try {
+          await setPersistence(authInstance, strategy.value);
+          return strategy.label;
+        } catch (err) {
+          console.warn(`Failed to set driver auth persistence (${strategy.label})`, err);
+        }
+      }
+      return null;
     }
 
     const APP_CONFIG = await loadAppConfig();
@@ -1305,10 +1333,15 @@
     const PROFILE_PHOTO_MAX_BYTES = 4 * 1024 * 1024;
     const PROFILE_PHOTO_MAX_DIMENSION = 512;
 
+    const driverPersistenceStrategy = await ensureDriverAuthPersistence(auth);
+    if (!driverPersistenceStrategy) {
+      console.warn("Driver auth persistence fallback failed; using Firebase default.");
+    }
+    let storage = null;
     try {
-      await setPersistence(auth, browserLocalPersistence);
+      storage = getStorage(auth.app);
     } catch (err) {
-      console.warn("Failed to set driver auth persistence", err);
+      console.warn("Driver storage init failed", err);
     }
     const messagingPublicVapidKey = messagingConfig.publicVapidKey || "";
     const messaging = (() => {
@@ -1830,6 +1863,7 @@
 
       if (driverProfileEditorError) driverProfileEditorError.textContent = "";
       if (driverProfileEditorMessage) driverProfileEditorMessage.textContent = "";
+      if (driverPhotoError) driverPhotoError.textContent = "";
 
       const fullName = (driverEditNameInput?.value || "").trim();
       if (!fullName) {
@@ -1850,10 +1884,36 @@
         updatedAt: serverTimestamp()
       };
 
+      const previousPhotoPath = currentDriverProfile?.profilePicStoragePath || null;
+      let newPhotoMeta = null;
+      let shouldDeletePreviousPhoto = false;
+
       if (pendingProfilePhotoRemoved) {
         payload.profilePicUrl = null;
+        payload.avatarUrl = null;
+        payload.photoURL = null;
+        payload.profilePicStoragePath = null;
+        payload.profilePicUpdatedAt = serverTimestamp();
+        shouldDeletePreviousPhoto = Boolean(previousPhotoPath);
       } else if (pendingProfilePhotoDataUrl) {
-        payload.profilePicUrl = pendingProfilePhotoDataUrl;
+        try {
+          newPhotoMeta = await uploadDriverPhotoDataUrl(
+            currentUser.uid,
+            pendingProfilePhotoDataUrl
+          );
+          payload.profilePicUrl = newPhotoMeta.downloadUrl;
+          payload.avatarUrl = newPhotoMeta.downloadUrl;
+          payload.photoURL = newPhotoMeta.downloadUrl;
+          payload.profilePicStoragePath = newPhotoMeta.storagePath;
+          payload.profilePicUpdatedAt = serverTimestamp();
+        } catch (err) {
+          console.error("driver profile photo upload failed", err);
+          if (driverPhotoError) {
+            driverPhotoError.textContent =
+              err?.message || "Unable to upload that photo. Try again.";
+          }
+          return;
+        }
       }
 
       try {
@@ -1861,12 +1921,26 @@
         await updateDoc(ref, payload);
         driverMessage.textContent = "Driver profile updated.";
         driverError.textContent = "";
+        const removedPhotoNeedsDeletion =
+          pendingProfilePhotoRemoved && shouldDeletePreviousPhoto;
         await loadDriverProfile();
+        if (removedPhotoNeedsDeletion) {
+          await deleteDriverPhotoFromStorage(previousPhotoPath);
+        } else if (
+          newPhotoMeta &&
+          previousPhotoPath &&
+          previousPhotoPath !== newPhotoMeta.storagePath
+        ) {
+          await deleteDriverPhotoFromStorage(previousPhotoPath);
+        }
         if (driverProfileEditorMessage) {
           driverProfileEditorMessage.textContent = "Profile updated.";
         }
       } catch (err) {
         console.error("saveDriverProfileChanges error", err);
+        if (newPhotoMeta?.storagePath) {
+          await deleteDriverPhotoFromStorage(newPhotoMeta.storagePath);
+        }
         if (driverProfileEditorError) {
           driverProfileEditorError.textContent =
             err.message || "Could not update driver profile.";
@@ -1945,22 +2019,37 @@
         resetDriverAvatarPicker();
         return;
       }
+      let uploadedPhoto = null;
+      const previousPhotoPath = currentDriverProfile?.profilePicStoragePath || null;
       try {
         const dataUrl = await prepareProfilePhoto(file);
+        uploadedPhoto = await uploadDriverPhotoDataUrl(currentUser.uid, dataUrl);
         const ref = doc(db, "drivers", currentUser.uid);
         await updateDoc(ref, {
-          profilePicUrl: dataUrl,
-          avatarUrl: dataUrl,
-          photoURL: dataUrl,
+          profilePicUrl: uploadedPhoto.downloadUrl,
+          avatarUrl: uploadedPhoto.downloadUrl,
+          photoURL: uploadedPhoto.downloadUrl,
+          profilePicStoragePath: uploadedPhoto.storagePath,
+          profilePicUpdatedAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
         driverMessage.textContent = "Profile photo updated.";
         driverError.textContent = "";
         resetDriverAvatarPicker();
+        if (
+          previousPhotoPath &&
+          previousPhotoPath !== uploadedPhoto.storagePath
+        ) {
+          await deleteDriverPhotoFromStorage(previousPhotoPath);
+        }
         await loadDriverProfile();
       } catch (err) {
         console.error("handleDriverAvatarUpload error", err);
-        driverError.textContent = err.message || "Unable to update photo.";
+        driverError.textContent = err?.message || "Unable to update photo.";
+        if (uploadedPhoto?.storagePath) {
+          await deleteDriverPhotoFromStorage(uploadedPhoto.storagePath);
+        }
+        resetDriverAvatarPicker();
       }
     }
 
@@ -1999,6 +2088,58 @@
         img.onerror = () => reject(new Error("Image failed to load."));
         img.src = dataUrl;
       });
+    }
+
+    function buildDriverPhotoStoragePath(uid) {
+      const timestamp = Date.now();
+      return `drivers/${uid}/profile-${timestamp}.jpg`;
+    }
+
+    async function dataUrlToBlob(dataUrl) {
+      if (!dataUrl || typeof dataUrl !== "string") {
+        throw new Error("Invalid image data.");
+      }
+      const commaIndex = dataUrl.indexOf(",");
+      if (commaIndex === -1) {
+        throw new Error("Malformed image data.");
+      }
+      const header = dataUrl.slice(0, commaIndex);
+      const base64 = dataUrl.slice(commaIndex + 1);
+      const mimeMatch = header.match(/data:(.*);base64/);
+      const mimeType = mimeMatch?.[1] || "image/jpeg";
+      const byteString = atob(base64);
+      const buffer = new ArrayBuffer(byteString.length);
+      const view = new Uint8Array(buffer);
+      for (let i = 0; i < byteString.length; i += 1) {
+        view[i] = byteString.charCodeAt(i);
+      }
+      return new Blob([view], { type: mimeType });
+    }
+
+    async function uploadDriverPhotoDataUrl(uid, dataUrl) {
+      if (!storage) {
+        throw new Error("Photo uploads are unavailable right now. Refresh and try again.");
+      }
+      const blob = await dataUrlToBlob(dataUrl);
+      const path = buildDriverPhotoStoragePath(uid);
+      const photoRef = ref(storage, path);
+      await uploadBytes(photoRef, blob, {
+        contentType: blob.type || "image/jpeg",
+        cacheControl: "public,max-age=31536000"
+      });
+      const downloadUrl = await getDownloadURL(photoRef);
+      return { downloadUrl, storagePath: path };
+    }
+
+    async function deleteDriverPhotoFromStorage(path) {
+      if (!storage || !path) return;
+      try {
+        await deleteObject(ref(storage, path));
+      } catch (err) {
+        if (err?.code !== "storage/object-not-found") {
+          console.warn("deleteDriverPhotoFromStorage error", err);
+        }
+      }
     }
 
     function initMap() {
