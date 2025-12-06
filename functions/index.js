@@ -2020,6 +2020,36 @@ function resolveRideTotalCents(ride = {}) {
   return null;
 }
 
+function isRidePaymentReady(ride = {}) {
+  if (!ride || typeof ride !== "object") {
+    return false;
+  }
+  const paymentStatus = (ride.paymentStatus || "").toLowerCase();
+  if (paymentStatus === "paid") {
+    const intentId =
+      typeof ride.stripePaymentIntentId === "string"
+        ? ride.stripePaymentIntentId.trim()
+        : "";
+    return intentId.length > 0;
+  }
+  if (paymentStatus === "included") {
+    const paymentMethod = (ride.paymentMethod || "").toLowerCase();
+    if (paymentMethod === "included") {
+      return true;
+    }
+    const stripeAmountCents = Number(ride.stripeAmountCents);
+    if (Number.isFinite(stripeAmountCents)) {
+      return Math.round(stripeAmountCents) <= 0;
+    }
+    const stripeAmount = Number(ride.stripeAmount);
+    if (Number.isFinite(stripeAmount)) {
+      return Math.round(stripeAmount * 100) <= 0;
+    }
+    return false;
+  }
+  return false;
+}
+
 function resolveRideDurationMinutes(ride = {}) {
   const candidates = [
     ride.estimatedDurationMinutes,
@@ -2570,9 +2600,8 @@ exports.notifyDriverOnNewRide = functions.firestore
         return null;
       }
 
-      const paymentStatus = (ride.paymentStatus || "").toLowerCase();
-      const paymentReadyStatuses = new Set(["paid", "included"]);
-      if (!paymentReadyStatuses.has(paymentStatus)) {
+      const paymentReady = isRidePaymentReady(ride);
+      if (!paymentReady) {
         return null;
       }
 
@@ -2591,13 +2620,12 @@ exports.notifyDriverOnNewRide = functions.firestore
         }
         const freshRide = freshSnap.data() || {};
         const freshStatus = freshRide.status || "pending";
-        const freshPaymentStatus = (freshRide.paymentStatus || "").toLowerCase();
         const freshNotificationStatus = freshRide.driverNotificationStatus || "pending";
         const guardTriggered =
           ["sent", "sending"].includes(freshNotificationStatus) ||
           Boolean(freshRide.driverNotifiedAt);
         const statusStillEligible = notifyStatuses.includes(freshStatus);
-        const paymentStillReady = paymentReadyStatuses.has(freshPaymentStatus);
+        const paymentStillReady = isRidePaymentReady(freshRide);
 
         if (guardTriggered || !statusStillEligible || !paymentStillReady) {
           return false;
@@ -6834,4 +6862,5 @@ exports.__testables = {
   computeReferralDiscountCents,
   evaluateReferralCodeEligibility,
   resolveReservePickupDetails,
+  isRidePaymentReady,
 };

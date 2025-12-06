@@ -62,6 +62,7 @@ const {
   validateTipBounds,
   computeRideHoldAmountCents,
   resolveRidePaymentStatus,
+  isRidePaymentReady,
   computeReferralDiscountCents,
   evaluateReferralCodeEligibility,
   resolveReservePickupDetails,
@@ -207,6 +208,49 @@ describe("ride payment status resolution", () => {
       paymentStatus: "pending_payment",
       paymentMethod: "stripe",
     });
+  });
+});
+
+describe("ride payment readiness", () => {
+  it("requires a payment intent for paid rides", () => {
+    expect(
+      isRidePaymentReady({
+        paymentStatus: "paid",
+        totalCents: 1500,
+      })
+    ).toBe(false);
+    expect(
+      isRidePaymentReady({
+        paymentStatus: "paid",
+        totalCents: 1500,
+        stripePaymentIntentId: "pi_123",
+      })
+    ).toBe(true);
+  });
+
+  it("treats included rides as ready only when marked included", () => {
+    expect(
+      isRidePaymentReady({
+        paymentStatus: "included",
+        paymentMethod: "included",
+        stripeAmountCents: 0,
+      })
+    ).toBe(true);
+    expect(
+      isRidePaymentReady({
+        paymentStatus: "included",
+        paymentMethod: "stripe",
+      })
+    ).toBe(false);
+  });
+
+  it("rejects pending or unknown statuses", () => {
+    expect(
+      isRidePaymentReady({
+        paymentStatus: "pending_payment",
+        stripeAmountCents: 1500,
+      })
+    ).toBe(false);
   });
 });
 
