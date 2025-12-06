@@ -400,6 +400,61 @@
       margin-top: 6px;
       padding: 6px 14px;
     }
+    .sync-qr-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-width: 0;
+    }
+    .sync-qr-trigger::after {
+      content: "";
+      display: inline-block;
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 4px 4px 0 4px;
+      border-color: currentColor transparent transparent transparent;
+      margin-left: auto;
+    }
+    body.host-guest-bypass .sync-qr-trigger::after {
+      border-top-color: #facc15;
+    }
+    body.guest-bypass-active #rideViewTabMembership,
+    body.guest-bypass-active #rideViewTabInfo {
+      display: none;
+    }
+    .guest-contribution-card {
+      border-style: dashed;
+      border-color: rgba(234,179,8,0.5);
+    }
+    .guest-contribution-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .guest-contribution-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .guest-contribution-row input {
+      flex: 1;
+      min-width: 0;
+    }
+    .currency-prefix {
+      font-weight: 600;
+      color: #facc15;
+    }
+    .guest-contribution-summary {
+      font-size: 0.75rem;
+      color: #cbd5f5;
+      min-height: 18px;
+      margin-top: 4px;
+    }
     .sync-riders-modal-card {
       width: min(420px, calc(100% - 40px));
       background: rgba(2,6,23,0.95);
@@ -2022,10 +2077,12 @@
             <button
               id="syncRidersButton"
               type="button"
-              class="btn-secondary btn-small sync-riders-button"
+              class="btn-secondary btn-small sync-riders-button sync-qr-trigger"
               style="display:none;"
+              aria-haspopup="dialog"
+              aria-controls="syncRidersOverlay"
             >
-              Sync Riders
+              Sync QR
             </button>
           </div>
           <div
@@ -2035,7 +2092,7 @@
             aria-expanded="false"
           >
             <div class="small" id="groupQrIntro">
-              Riding with friends? Ask each of them to scan this QR and sign in to join this ride.
+              Tap Sync QR to open the overlay and share the code with friends. We'll track how many riders have joined below.
             </div>
             <div
               id="groupQrPendingMessage"
@@ -2080,6 +2137,57 @@
           <button id="logoutButton" class="btn-secondary">Log out</button>
         </div>
         <div id="driverAvailabilityNotice" class="small"></div>
+      </div>
+      <div
+        id="guestContributionCard"
+        class="fare-box guest-contribution-card"
+        style="display:none;"
+        aria-live="polite"
+      >
+        <div class="guest-contribution-header">
+          <div>
+            <div class="section-title" style="margin:0;border:none;padding:0;">
+              Pitch in for this ride
+            </div>
+            <p id="guestContributionHint" class="small" style="margin-top:2px;">
+              Your host enabled Guest Sync. Skip the account screen and enter your share below.
+            </p>
+          </div>
+          <span class="badge badge-basic" style="font-size:0.7rem;">Guest</span>
+        </div>
+        <label for="guestShareInput">Share the fare</label>
+        <div class="guest-contribution-row">
+          <span class="currency-prefix">$</span>
+          <input
+            id="guestShareInput"
+            type="number"
+            inputmode="decimal"
+            min="0"
+            step="1"
+            placeholder="15"
+            aria-label="Contribution amount in dollars"
+          />
+          <button id="guestShareButton" type="button" class="btn-secondary btn-small">
+            Add
+          </button>
+        </div>
+        <label for="guestTipInput">Tip at dropoff</label>
+        <div class="guest-contribution-row">
+          <span class="currency-prefix">$</span>
+          <input
+            id="guestTipInput"
+            type="number"
+            inputmode="decimal"
+            min="0"
+            step="1"
+            placeholder="5"
+            aria-label="Tip amount in dollars"
+          />
+          <button id="guestTipButton" type="button" class="btn-secondary btn-small">
+            Save
+          </button>
+        </div>
+        <div id="guestContributionSummary" class="guest-contribution-summary"></div>
       </div>
       </div>
 
@@ -3639,6 +3747,7 @@
 
     const urlParams = new URLSearchParams(window.location.search);
     const joinRideIdFromUrl = urlParams.get("join");
+    const joinGuestBypassRequested = urlParams.get("guest") === "1";
     const checkoutReturnState = {
       pendingId:
         urlParams.get("pending_id") ||
@@ -3684,6 +3793,13 @@
 
     let joinMode = false;
     let joinTargetRide = null;
+    let guestBypassEligible = false;
+    let activeRideGuestBypass = false;
+    let joinGuestBypassActive = false;
+    let guestContributionState = {
+      shareCents: 0,
+      tipCents: 0
+    };
 
     const PIN_CHARSET = "0123456789";
     const POOL_GENDER_ALLOWLIST = new Set(["male", "female"]);
@@ -4000,7 +4116,16 @@
     const syncRidersModalOccupancy = document.getElementById("syncRidersModalOccupancy");
     const syncRidersCopyLink = document.getElementById("syncRidersCopyLink");
     const syncRidersCopyFeedback = document.getElementById("syncRidersCopyFeedback");
-    let groupQr = null;
+    const guestContributionCard = document.getElementById("guestContributionCard");
+    const guestContributionHint = document.getElementById("guestContributionHint");
+    const guestShareInput = document.getElementById("guestShareInput");
+    const guestShareButton = document.getElementById("guestShareButton");
+    const guestTipInput = document.getElementById("guestTipInput");
+    const guestTipButton = document.getElementById("guestTipButton");
+    const guestContributionSummary = document.getElementById("guestContributionSummary");
+    const groupQrIntroDefaultCopy =
+      groupQrIntro?.textContent?.trim() ||
+      "Tap Sync QR to open the overlay and share the code with friends. We'll track how many riders have joined below.";
     let syncRidersQr = null;
     let syncRidersJoinUrl = "";
     let syncRidersFlowActive = false;
@@ -4104,6 +4229,9 @@
     const contactDriverBtn = document.getElementById("contactDriverBtn");
     const rideViewTabs = document.querySelectorAll("[data-view-tab]");
     const rideViewPanels = document.querySelectorAll("[data-view-panel]");
+    const rideViewTabDestination = document.getElementById("rideViewTabDestination");
+    const rideViewTabMembership = document.getElementById("rideViewTabMembership");
+    const rideViewTabInfo = document.getElementById("rideViewTabInfo");
 
     const paymentOverlay = document.getElementById("paymentOverlay");
     const paymentOverlayTitle = document.getElementById("paymentOverlayTitle");
@@ -4438,6 +4566,8 @@
         status: rideData.status || null,
         toDestination: destinationLabel,
         isGroupRide: rideData.isGroupRide === true || maxRiders > 1,
+        guestBypassEnabled:
+          rideData.guestBypassEnabled === true || maxRiders >= 3,
         poolType: rideData.poolType || null
       };
       persistProtectedRideState(protectionPayload);
@@ -4523,6 +4653,9 @@
         deactivateWaitlistPanel();
         hideGroupQr();
         activeRideIsGroup = false;
+        activeRideGuestBypass = false;
+        appBody?.classList?.remove("host-guest-bypass");
+        updateGuestBypassCopy();
         refreshGroupQrVisibility();
         updateSyncRidersButtonVisibility();
         updateCancelButtonVisibility();
@@ -4534,6 +4667,7 @@
         syncRidersJoinUrl = "";
         updateSyncRidersOccupancyLabel("");
         closeSyncRidersOverlay();
+        disableJoinGuestBypassUi({ force: true });
       }
 
       function resetJoinModeUi() {
@@ -4545,6 +4679,7 @@
           numRidersEl.disabled = false;
         }
         updateSyncButtonLabel();
+        disableJoinGuestBypassUi({ force: true });
       }
 
       function returnToHomeAfterRide(message = "", isError = false) {
@@ -7330,6 +7465,16 @@
         }
       }
       maybeToggleWaitlistPanel();
+      if (
+        state === RIDER_STATES.RATE_TIP &&
+        joinGuestBypassActive &&
+        guestContributionState.tipCents > 0 &&
+        profileMessage
+      ) {
+        profileMessage.textContent = `Tip reminder: you set aside ${formatCurrencyFromCents(
+          guestContributionState.tipCents
+        )} for your driver. Adjust any time before submitting.`;
+      }
     }
 
     function setOverlayCopy(title, subtitle) {
@@ -8158,7 +8303,7 @@
       if (!rideId || !syncRidersOverlay || !syncRidersModalCanvas) {
         return;
       }
-      const joinUrl = `${window.location.origin}?join=${encodeURIComponent(rideId)}`;
+      const joinUrl = buildJoinUrl(rideId);
       syncRidersJoinUrl = joinUrl;
       if (!syncRidersQr) {
         syncRidersQr = new QRious({
@@ -8222,9 +8367,12 @@
         groupQrIntro.style.display = "block";
       }
       if (groupQrPendingMessage) {
-        groupQrPendingMessage.textContent =
+        const placeholderMessage =
           message ||
-          "Sync your ride to generate a QR your friends can scan to join.";
+          (isGuestBypassEnabled()
+            ? "Guest Sync ready. Sync your ride, then tap Sync QR so friends can skip accounts and chip in."
+            : "Sync your ride first, then tap Sync QR to open the overlay code.");
+        groupQrPendingMessage.textContent = placeholderMessage;
         groupQrPendingMessage.style.display = "block";
       }
       if (groupQrCanvas) {
@@ -8238,37 +8386,177 @@
     }
 
     function showGroupQr(rideId) {
-      if (!groupQrSection || !groupQrCanvas) return;
+      if (!groupQrSection) return;
       if (!rideId) {
         showGroupQrPlaceholder();
         return;
       }
+      setGroupQrVisibility(true);
       if (groupQrIntro) {
         groupQrIntro.style.display = "block";
       }
-      const joinUrl = `${window.location.origin}?join=${encodeURIComponent(rideId)}`;
-      if (!groupQr) {
-        groupQr = new QRious({
-          element: groupQrCanvas,
-          size: 140,
-          value: joinUrl
-        });
-      } else {
-        groupQr.set({ value: joinUrl });
-      }
-      setGroupQrVisibility(true);
-      groupQrCanvas.style.display = "block";
       if (groupQrPendingMessage) {
         groupQrPendingMessage.textContent = "";
         groupQrPendingMessage.style.display = "none";
       }
+      if (groupQrCanvas) {
+        groupQrCanvas.style.display = "none";
+      }
       if (groupOccupancyLabel) {
         groupOccupancyLabel.style.display = "block";
-        updateSyncRidersOccupancyLabel(groupOccupancyLabel.textContent);
       }
+      updateSyncRidersOccupancyLabel(groupOccupancyLabel?.textContent || "");
       activeRideIsGroup = true;
       wantsGroupRide = true;
       startGroupOccupancyWatcher(rideId);
+    }
+
+    function isGuestBypassEnabled() {
+      return Boolean(guestBypassEligible || activeRideGuestBypass);
+    }
+
+    function buildJoinUrl(rideId, options = {}) {
+      if (!rideId) {
+        return window.location.origin;
+      }
+      const { guestOverride = null } = options;
+      const enableGuestParam =
+        typeof guestOverride === "boolean"
+          ? guestOverride
+          : isGuestBypassEnabled();
+      const params = new URLSearchParams({ join: rideId });
+      if (enableGuestParam) {
+        params.set("guest", "1");
+      }
+      return `${window.location.origin}?${params.toString()}`;
+    }
+
+    function updateGuestBypassCopy() {
+      if (!groupQrIntro) return;
+      if (isGuestBypassEnabled()) {
+        groupQrIntro.textContent =
+          "Guest Sync is on: friends skip the account screen, help pay now, and tip together at dropoff.";
+      } else {
+        groupQrIntro.textContent = groupQrIntroDefaultCopy;
+      }
+    }
+
+    function enableJoinGuestBypassUi(hostRide = null) {
+      if (joinGuestBypassActive) {
+        if (guestContributionHint && hostRide?.toDestination) {
+          guestContributionHint.textContent = `Breeze past the account screen. You're joining ${hostRide.toDestination}. Split the fare or tip below.`;
+        }
+        return;
+      }
+      joinGuestBypassActive = true;
+      appBody?.classList?.add("guest-bypass-active");
+      if (guestContributionCard) {
+        guestContributionCard.style.display = "block";
+      }
+      if (guestContributionHint && hostRide?.toDestination) {
+        guestContributionHint.textContent = `You're joining ${hostRide.toDestination}. Split the fare now or line up your tip.`;
+      }
+      if (rideViewTabMembership) {
+        rideViewTabMembership.setAttribute("hidden", "true");
+      }
+      if (rideViewTabInfo) {
+        rideViewTabInfo.setAttribute("hidden", "true");
+      }
+      updateGuestContributionSummary();
+      if (profileMessage || profileError) {
+        if (profileMessage) {
+          profileMessage.textContent =
+            "Guest Sync activated. Add your share or tip whenever you're ready.";
+        }
+        if (profileError) {
+          profileError.textContent = "";
+        }
+      }
+    }
+
+    function disableJoinGuestBypassUi(options = {}) {
+      const { force = false } = options;
+      if (!joinGuestBypassActive && !force) {
+        return;
+      }
+      joinGuestBypassActive = false;
+      appBody?.classList?.remove("guest-bypass-active");
+      if (rideViewTabMembership) {
+        rideViewTabMembership.removeAttribute("hidden");
+      }
+      if (rideViewTabInfo) {
+        rideViewTabInfo.removeAttribute("hidden");
+      }
+      if (guestContributionCard) {
+        guestContributionCard.style.display = "none";
+      }
+      resetGuestContributionState();
+    }
+
+    function applyGuestBypassFromHost(hostRide = null) {
+      const hostAllowsGuestBypass =
+        hostRide?.guestBypassEnabled === true ||
+        Number(hostRide?.maxRiders || 1) >= 3 ||
+        joinGuestBypassRequested;
+      if (hostAllowsGuestBypass) {
+        enableJoinGuestBypassUi(hostRide);
+      } else {
+        disableJoinGuestBypassUi();
+      }
+    }
+
+    function updateGuestContributionSummary() {
+      if (!guestContributionSummary) return;
+      if (!joinGuestBypassActive) {
+        guestContributionSummary.textContent = "";
+        return;
+      }
+      const parts = [];
+      if (guestContributionState.shareCents > 0) {
+        parts.push(`Paying ${formatCurrencyFromCents(guestContributionState.shareCents)}`);
+      }
+      if (guestContributionState.tipCents > 0) {
+        parts.push(`Tip ready: ${formatCurrencyFromCents(guestContributionState.tipCents)}`);
+      }
+      guestContributionSummary.textContent =
+        parts.length > 0
+          ? parts.join(" • ")
+          : "Set how much you want to cover or tip.";
+    }
+
+    function resetGuestContributionState() {
+      guestContributionState = { shareCents: 0, tipCents: 0 };
+      if (guestShareInput) guestShareInput.value = "";
+      if (guestTipInput) guestTipInput.value = "";
+      if (guestContributionSummary) guestContributionSummary.textContent = "";
+    }
+
+    function handleGuestShareSubmit() {
+      if (!joinGuestBypassActive) return;
+      const dollars = Number(guestShareInput?.value || 0);
+      const cents = Math.max(0, dollarsToCents(dollars));
+      guestContributionState.shareCents = cents;
+      updateGuestContributionSummary();
+      if (profileMessage) {
+        profileMessage.textContent =
+          cents > 0
+            ? `Thanks! We'll flag ${formatCurrencyFromCents(cents)} as your share.`
+            : "Contribution cleared.";
+      }
+    }
+
+    function handleGuestTipSubmit() {
+      if (!joinGuestBypassActive) return;
+      const dollars = Number(guestTipInput?.value || 0);
+      const cents = Math.max(0, dollarsToCents(dollars));
+      guestContributionState.tipCents = cents;
+      updateGuestContributionSummary();
+      if (profileMessage) {
+        profileMessage.textContent =
+          cents > 0
+            ? `Tip locked in at ${formatCurrencyFromCents(cents)} for dropoff.`
+            : "Tip amount removed.";
+      }
     }
 
     function updateSyncRidersButtonVisibility() {
@@ -8287,6 +8575,9 @@
       }
       const selectedValue = parseInt(numRidersEl.value || "1", 10);
       wantsGroupRide = selectedValue > 1;
+      guestBypassEligible = selectedValue >= 3;
+      appBody?.classList?.toggle("host-guest-bypass", guestBypassEligible || activeRideGuestBypass);
+      updateGuestBypassCopy();
       refreshGroupQrVisibility();
       updateSyncRidersButtonVisibility();
     }
@@ -8319,6 +8610,17 @@
           groupOccupancyLabel.textContent = `Group: ${cur} of ${max} riders.`;
         }
         updateSyncRidersOccupancyLabel(`Group: ${cur} of ${max} riders.`);
+        const groupFull = max > 0 && cur >= max;
+        if (
+          groupFull &&
+          syncRidersOverlay?.classList?.contains("active")
+        ) {
+          closeSyncRidersOverlay();
+          if (profileMessage) {
+            profileMessage.textContent =
+              "All riders joined. Sync your destination when you're ready.";
+          }
+        }
       });
     }
 
@@ -8393,6 +8695,12 @@
     }
     if (rideCardSubmit) {
       rideCardSubmit.addEventListener("click", handleRideCardSubmit);
+    }
+    if (guestShareButton) {
+      guestShareButton.addEventListener("click", handleGuestShareSubmit);
+    }
+    if (guestTipButton) {
+      guestTipButton.addEventListener("click", handleGuestTipSubmit);
     }
 
     if (membershipPlanGrid) {
@@ -11224,6 +11532,9 @@
     async function activateRideAfterCreation(rideId, ridePayload) {
       currentRideId = rideId;
       activeRideIsGroup = Boolean(ridePayload?.isGroupRide);
+      activeRideGuestBypass = Boolean(ridePayload?.guestBypassEnabled);
+      appBody?.classList?.toggle("host-guest-bypass", guestBypassEligible || activeRideGuestBypass);
+      updateGuestBypassCopy();
       if (activeRideIsGroup) {
         wantsGroupRide = true;
       }
@@ -11790,6 +12101,7 @@
       const rideBase = {
         isGroupRide,
         maxRiders,
+        guestBypassEnabled: guestBypassEligible || activeRideGuestBypass,
         poolType,
         numRiders,
         pickupLocation: pickupLocationLiteral,
@@ -12064,6 +12376,7 @@
         const host = snap.data();
         joinMode = true;
         joinTargetRide = { id: snap.id, ...host };
+        applyGuestBypassFromHost(joinTargetRide);
 
         joinBanner.style.display = "block";
         const cur = host.currentRiderCount || 1;
