@@ -2535,7 +2535,7 @@
           <div id="riderStateDriverEta" class="rider-state">
             <div class="state-text">Driver accepted</div>
             <div class="state-subtext">Track their ETA and vehicle details below.</div>
-            <div class="driver-info-slot" data-slot="driver"></div>
+            <div class="driver-info-slot" data-driver-slot="pickup"></div>
           </div>
 
           <div id="riderStatePickupPin" class="rider-state">
@@ -2545,12 +2545,13 @@
               <div id="riderPickupPinValue" class="pin-value">----</div>
               <div class="pin-hint">We use codes so only verified rides start.</div>
             </div>
+            <div class="driver-info-slot" data-driver-slot="pickup-pin"></div>
           </div>
 
           <div id="riderStateInTrip" class="rider-state">
             <div class="state-text">On the way</div>
             <div id="riderTripEtaText" class="state-subtext"></div>
-            <div class="driver-info-slot" data-slot="driver"></div>
+            <div class="driver-info-slot" data-driver-slot="trip"></div>
           </div>
 
           <div id="riderStateDropoffPin" class="rider-state">
@@ -2560,6 +2561,7 @@
               <div id="riderDropoffPinValue" class="pin-value">----</div>
               <div class="pin-hint">Your driver enters this to finish the ride.</div>
             </div>
+            <div class="driver-info-slot" data-driver-slot="dropoff-pin"></div>
           </div>
 
           <div id="riderStateRateTip" class="rider-state">
@@ -2574,32 +2576,33 @@
             <textarea id="riderFeedbackInput" placeholder="Anything we should know?"></textarea>
             <button id="submitRatingButton" class="btn-primary" type="button">Submit</button>
             <div id="ratingError" class="error"></div>
-          <div id="finalTipSection" class="tip-adjust-card" style="display:none;">
-            <div class="section-title" style="margin-top:0;">Adjust your tip</div>
-            <div class="tip-adjust-row">
-              <button id="finalTipDecrease" type="button" class="btn-secondary btn-small" aria-label="Decrease tip">
-                –
+            <div id="finalTipSection" class="tip-adjust-card" style="display:none;">
+              <div class="section-title" style="margin-top:0;">Adjust your tip</div>
+              <div class="tip-adjust-row">
+                <button id="finalTipDecrease" type="button" class="btn-secondary btn-small" aria-label="Decrease tip">
+                  –
+                </button>
+                <input
+                  id="finalTipInput"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value="0"
+                  aria-label="Tip amount in dollars"
+                />
+                <button id="finalTipIncrease" type="button" class="btn-secondary btn-small" aria-label="Increase tip">
+                  +
+                </button>
+              </div>
+              <p id="finalTipHint" class="tip-hint">
+                Tips are optional. Increase it if you'd like before we finish payment.
+              </p>
+              <button id="finalizeTipButton" class="btn-primary" type="button" style="margin-top:12px;">
+                Confirm tip & finish payment
               </button>
-              <input
-                id="finalTipInput"
-                type="number"
-                min="0"
-                step="1"
-                value="0"
-                aria-label="Tip amount in dollars"
-              />
-              <button id="finalTipIncrease" type="button" class="btn-secondary btn-small" aria-label="Increase tip">
-                +
-              </button>
+              <div id="finalizeTipMessage" class="small"></div>
             </div>
-            <p id="finalTipHint" class="tip-hint">
-              Tips are optional. Increase it if you'd like before we finish payment.
-            </p>
-            <button id="finalizeTipButton" class="btn-primary" type="button" style="margin-top:12px;">
-              Confirm tip & finish payment
-            </button>
-            <div id="finalizeTipMessage" class="small"></div>
-          </div>
+            <div class="driver-info-slot" data-driver-slot="rate-tip"></div>
           </div>
 
           <div id="riderStateThanks" class="rider-state">
@@ -2746,7 +2749,7 @@
             Review trip &amp; payment
           </h3>
           <p id="syncConfirmSubtitle" class="payment-panel-subtitle">
-            Confirm your fare, tip, and membership before syncing.
+            Confirm your fare and membership before syncing. Tips happen after the ride.
           </p>
         </div>
         <button
@@ -2797,7 +2800,7 @@
               value="schedule"
               id="reserveModeSchedule"
             />
-            <span>Schedule pickup (+$5)</span>
+            <span>Schedule pickup</span>
           </label>
         </div>
         <div id="reserveDateTimeRow" class="reserve-datetime-row">
@@ -2811,7 +2814,7 @@
           </div>
         </div>
         <p id="reserveTimeHint" class="small">
-          Scheduling a pickup adds a $5 reserve fee.
+          Schedule ahead to lock in your pickup time—no extra fee.
         </p>
       </div>
 
@@ -2861,26 +2864,8 @@
         <p id="discountCodeMessage" class="small" aria-live="polite"></p>
       </div>
 
-      <div class="section-title" style="margin-top:12px;">Tip your driver</div>
-      <div id="syncTipOptions" class="tip-options">
-        <button class="tip-button" type="button" data-tip="0">No tip</button>
-        <button class="tip-button" type="button" data-tip="2">$2</button>
-        <button class="tip-button" type="button" data-tip="5">$5</button>
-        <button class="tip-button" type="button" data-tip="10">$10</button>
-        <button class="tip-button tip-custom" type="button" data-tip="custom">
-          Custom
-        </button>
-      </div>
-      <input
-        id="syncTipCustomInput"
-        type="number"
-        min="0"
-        step="1"
-        placeholder="Custom tip"
-        style="display:none;"
-      />
-      <p id="syncTipMessage" class="sync-tip-note">
-        Tips go directly to your driver and are charged with your fare.
+      <p class="sync-tip-note">
+        Tips are optional and will be handled after your ride finishes.
       </p>
 
       <div class="section-title" style="margin-top:18px;">Membership</div>
@@ -3577,7 +3562,7 @@
       MIN_RIDE_TIP_CENTS,
       Math.round(paymentConfig.maxTipHoldCents || 1200)
     );
-    const RESERVE_FEE_CENTS = 500;
+    const RESERVE_FEE_CENTS = 0;
     const RESERVATION_MIN_LEAD_MINUTES = 30;
     const RESERVATION_MAX_LEAD_MINUTES = 24 * 60;
 
@@ -4185,9 +4170,6 @@
     const syncMembershipTermsCheckbox = document.getElementById("syncMembershipTermsCheckbox");
     const syncMembershipTermsCustomerName = document.getElementById("syncMembershipTermsCustomerName");
     const syncMembershipTermsPlanLabel = document.getElementById("syncMembershipTermsPlanLabel");
-    const syncTipOptions = document.getElementById("syncTipOptions");
-    const syncTipCustomInput = document.getElementById("syncTipCustomInput");
-    const syncTipMessage = document.getElementById("syncTipMessage");
     const reserveTimeSection = document.getElementById("reserveTimeSection");
     const reserveModeRadios = document.querySelectorAll('input[name="reserveMode"]');
     const reserveDateInput = document.getElementById("reserveDateInput");
@@ -4338,8 +4320,16 @@
       rateTip: document.getElementById("riderStateRateTip"),
       thanks: document.getElementById("riderStateThanks")
     };
-    const driverInfoSlotPickup = riderStateElements.driverEta?.querySelector(".driver-info-slot") || null;
-    const driverInfoSlotTrip = riderStateElements.inTrip?.querySelector(".driver-info-slot") || null;
+    const driverInfoSlotPickup =
+      riderStateElements.driverEta?.querySelector('[data-driver-slot="pickup"]') || null;
+    const driverInfoSlotPickupPin =
+      riderStateElements.pickupPin?.querySelector('[data-driver-slot="pickup-pin"]') || null;
+    const driverInfoSlotTrip =
+      riderStateElements.inTrip?.querySelector('[data-driver-slot="trip"]') || null;
+    const driverInfoSlotDropoff =
+      riderStateElements.dropoffPin?.querySelector('[data-driver-slot="dropoff-pin"]') || null;
+    const driverInfoSlotRateTip =
+      riderStateElements.rateTip?.querySelector('[data-driver-slot="rate-tip"]') || null;
     const riderPickupPinValue = document.getElementById("riderPickupPinValue");
     const riderDropoffPinValue = document.getElementById("riderDropoffPinValue");
     const riderTripEtaText = document.getElementById("riderTripEtaText");
@@ -4530,7 +4520,6 @@
     let rideTipRefreshTimer = null;
     let lastPaymentOverlayOptions = null;
     let isSyncConfirmOpen = false;
-    let syncTipUsesCustom = false;
     let syncSelectedMembershipPlan = "basic";
     let syncMembershipUpgradeMode = false;
     let syncMembershipTermsAccepted = false;
@@ -8187,15 +8176,25 @@
       riderOverlay?.classList.add("active");
 
       if (driverInfoStack) {
-        const needsDriverInfo =
-          state === RIDER_STATES.DRIVER_TO_PICKUP || state === RIDER_STATES.IN_TRIP;
-        if (needsDriverInfo) {
-          const slot =
-            state === RIDER_STATES.DRIVER_TO_PICKUP ? driverInfoSlotPickup : driverInfoSlotTrip;
-          if (slot) {
-            slot.appendChild(driverInfoStack);
-            driverInfoStack.style.display = "flex";
+        const driverInfoSlotByState = {
+          [RIDER_STATES.DRIVER_TO_PICKUP]: driverInfoSlotPickup,
+          [RIDER_STATES.PICKUP_PIN]: driverInfoSlotPickupPin,
+          [RIDER_STATES.IN_TRIP]: driverInfoSlotTrip,
+          [RIDER_STATES.DROPOFF_PIN]: driverInfoSlotDropoff,
+          [RIDER_STATES.RATE_TIP]: driverInfoSlotRateTip
+        };
+        const targetSlot = driverInfoSlotByState[state] || null;
+        if (targetSlot) {
+          targetSlot.appendChild(driverInfoStack);
+          driverInfoStack.style.display = "flex";
+          if (
+            state === RIDER_STATES.DRIVER_TO_PICKUP ||
+            state === RIDER_STATES.IN_TRIP
+          ) {
             refreshDriverMiniMap();
+          } else if (driverMiniMapShell) {
+            driverMiniMapShell.style.display = "none";
+            setDriverMiniMapStatus("");
           }
         } else {
           driverInfoStack.style.display = "none";
@@ -8510,7 +8509,7 @@
       const online = driverAvailability.onlineCount;
       const busy = getBusyOnlineDriverCount();
       const available = online - busy;
-      const shouldShow = waitingOnDrivers && online > 0 && available <= 0;
+      const shouldShow = waitingOnDrivers && (online <= 0 || available <= 0);
       if (shouldShow) {
         updateWaitlistCopy();
         refreshWaitlistEtaEstimate(latestRideForOverlay?.data || null);
@@ -9733,6 +9732,7 @@
         discountCents: 0,
         description: "",
       };
+      ridePreauthState.selectedTipCents = MIN_RIDE_TIP_CENTS;
     }
 
     function getBaseFareCents() {
@@ -9873,7 +9873,7 @@
         syncConfirmState.reserveMode !== "schedule" ||
         !syncConfirmState.reserveTimeIso
       ) {
-        reserveTimeHint.textContent = "Scheduling a pickup adds a $5 reserve fee.";
+        reserveTimeHint.textContent = "Schedule ahead to lock in your pickup time—no extra fee.";
         return;
       }
       const date =
@@ -9882,8 +9882,8 @@
           : new Date(syncConfirmState.reserveTimeIso);
       const label = formatLocalPickupTimeLabel(date);
       reserveTimeHint.textContent = label
-        ? `Scheduled pickup at ${label}. A $5 reserve fee applies.`
-        : "Scheduling a pickup adds a $5 reserve fee.";
+        ? `Scheduled pickup at ${label}. We'll remind your driver at that time.`
+        : "Schedule ahead to lock in your pickup time—no extra fee.";
     }
 
     function updateScheduledReserveState({ showErrors = true } = {}) {
@@ -10228,120 +10228,6 @@
       selectSyncMembershipPlan(card.dataset.plan);
     }
 
-    function isPresetTipValue(cents) {
-      if (!syncTipOptions) return false;
-      const buttons = syncTipOptions.querySelectorAll(".tip-button");
-      for (const button of buttons) {
-        const tipValue = button.dataset?.tip;
-        if (!tipValue || tipValue === "custom") continue;
-        const dollars = Number(tipValue);
-        if (!Number.isFinite(dollars)) continue;
-        if (Math.round(dollars * 100) === cents) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    function updateSyncTipUi() {
-      if (!syncTipOptions) return;
-      const selectedCents = clampTipAmount(
-        ridePreauthState.selectedTipCents || MIN_RIDE_TIP_CENTS,
-        MIN_RIDE_TIP_CENTS,
-        ridePreauthState.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS
-      );
-      ridePreauthState.selectedTipCents = selectedCents;
-      const buttons = Array.from(
-        syncTipOptions.querySelectorAll(".tip-button")
-      );
-      let matchedPreset = false;
-      buttons.forEach((button) => {
-        const value = button.dataset?.tip;
-        if (!value || value === "custom") {
-          return;
-        }
-        const dollars = Number(value);
-        if (!Number.isFinite(dollars)) {
-          button.classList.remove("active");
-          return;
-        }
-        const cents = Math.round(dollars * 100);
-        const isActive = !syncTipUsesCustom && cents === selectedCents;
-        if (isActive) {
-          matchedPreset = true;
-        }
-        button.classList.toggle("active", isActive);
-      });
-      const customButton = syncTipOptions.querySelector(
-        '.tip-button[data-tip="custom"]'
-      );
-      if (customButton) {
-        const highlightCustom = syncTipUsesCustom || !matchedPreset;
-        customButton.classList.toggle("active", highlightCustom);
-      }
-      const shouldShowCustomInput = syncTipUsesCustom || !matchedPreset;
-      if (syncTipCustomInput) {
-        syncTipCustomInput.style.display = shouldShowCustomInput
-          ? "block"
-          : "none";
-        if (shouldShowCustomInput) {
-          syncTipCustomInput.value =
-            selectedCents > 0
-              ? Math.round(selectedCents / 100).toString()
-              : "";
-        } else {
-          syncTipCustomInput.value = "";
-        }
-      }
-      if (syncTipMessage) {
-        if (selectedCents > 0) {
-          syncTipMessage.textContent = `We'll charge your fare plus ${formatCurrencyFromCents(
-            selectedCents,
-            "usd"
-          )} right now. You can change it before confirming payment.`;
-        } else {
-          syncTipMessage.textContent =
-            "No tip selected. Tips are optional and go directly to your driver.";
-        }
-      }
-    }
-
-    function handleSyncTipOptionClick(event) {
-      const target = event.target.closest(".tip-button");
-      if (!target || target.disabled) return;
-      const tipValue = target.dataset?.tip;
-      if (tipValue === "custom") {
-        syncTipUsesCustom = true;
-        if (syncTipCustomInput) {
-          syncTipCustomInput.style.display = "block";
-          syncTipCustomInput.focus();
-          syncTipCustomInput.select();
-        }
-        updateSyncTipUi();
-        return;
-      }
-      const dollars = Number(tipValue);
-      if (!Number.isFinite(dollars)) return;
-      syncTipUsesCustom = false;
-      ridePreauthState.selectedTipCents = clampTipAmount(
-        Math.round(dollars * 100),
-        MIN_RIDE_TIP_CENTS,
-        ridePreauthState.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS
-      );
-      updateSyncTipUi();
-    }
-
-    function handleSyncTipCustomInput() {
-      if (!syncTipCustomInput) return;
-      syncTipUsesCustom = true;
-      const cents = dollarsToCents(syncTipCustomInput.value);
-      ridePreauthState.selectedTipCents = clampTipAmount(
-        cents,
-        MIN_RIDE_TIP_CENTS,
-        ridePreauthState.maxTipAmountCents || DEFAULT_MAX_TIP_CENTS
-      );
-      updateSyncTipUi();
-    }
 
     function closeSyncConfirmOverlay(options = {}) {
       if (!syncConfirmOverlay) return;
@@ -10376,9 +10262,10 @@
         syncConfirmDestination.textContent = destinationSummary;
       }
       if (syncConfirmSubtitle) {
-        syncConfirmSubtitle.textContent = hasOnlineDrivers
+        const subtitleBase = hasOnlineDrivers
           ? "Drivers are online. Confirm these details to sync instantly."
           : "Drivers look offline. We'll notify them as soon as you confirm.";
+        syncConfirmSubtitle.textContent = `${subtitleBase} Tips happen after your ride.`;
       }
       if (syncConfirmTime) {
         const minutes = Number(lastRideMetrics.durationMinutes || 0);
@@ -10412,11 +10299,6 @@
       initializeReserveInputs({ preserveSelection: preserveFareExtras });
       updateSyncConfirmTotalDisplay();
       initializeSyncMembershipSelection({ preserveSelection });
-      const presetMatch = isPresetTipValue(
-        ridePreauthState.selectedTipCents || MIN_RIDE_TIP_CENTS
-      );
-      syncTipUsesCustom = !presetMatch;
-      updateSyncTipUi();
       if (syncConfirmError && !preserveError) {
         syncConfirmError.textContent = "";
       }
@@ -10512,14 +10394,6 @@
           preserveFareExtras: true,
         });
       }
-    }
-
-    if (syncTipOptions) {
-      syncTipOptions.addEventListener("click", handleSyncTipOptionClick);
-    }
-
-    if (syncTipCustomInput) {
-      syncTipCustomInput.addEventListener("input", handleSyncTipCustomInput);
     }
 
     reserveModeRadios?.forEach?.((radio) => {
@@ -11813,10 +11687,10 @@
 
     function updateFinalTipUi() {
       if (!finalTipSection) return;
+      const hasCaptureContext =
+        rideTipCaptureState.rideId && rideTipCaptureState.paymentIntentId;
       const shouldShow =
-        rideTipCaptureState.rideId &&
-        rideTipCaptureState.paymentIntentId &&
-        rideTipCaptureState.baseFareAmountCents > 0;
+        hasCaptureContext && rideTipCaptureState.maxTipAmountCents > 0;
       finalTipSection.style.display = shouldShow ? "block" : "none";
       if (!shouldShow) {
         if (finalizeTipMessage) finalizeTipMessage.textContent = "";

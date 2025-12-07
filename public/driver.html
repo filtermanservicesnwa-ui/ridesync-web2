@@ -1234,8 +1234,8 @@
     async function ensureDriverAuthPersistence(authInstance) {
       if (!authInstance) return null;
       const strategies = [
-        { label: "indexedDb", value: indexedDBLocalPersistence },
         { label: "localStorage", value: browserLocalPersistence },
+        { label: "indexedDb", value: indexedDBLocalPersistence },
         { label: "session", value: browserSessionPersistence }
       ];
       for (const strategy of strategies) {
@@ -1658,6 +1658,22 @@
         .toUpperCase() || "DR";
     }
 
+    function resolveDriverPhotoUrl(profile = currentDriverProfile) {
+      const candidates = [
+        profile?.profilePicUrl,
+        profile?.avatarUrl,
+        profile?.photoURL,
+        currentUser?.photoURL
+      ];
+      for (const candidate of candidates) {
+        const safe = safeImageUrl(candidate);
+        if (safe) {
+          return safe;
+        }
+      }
+      return null;
+    }
+
     function getDriverDisplayName() {
       return currentDriverProfile?.fullName || currentUser?.email || "Driver";
     }
@@ -1713,7 +1729,7 @@
     function getEditorPhotoPreviewUrl() {
       if (pendingProfilePhotoRemoved) return null;
       if (pendingProfilePhotoDataUrl) return pendingProfilePhotoDataUrl;
-      return safeImageUrl(currentDriverProfile?.profilePicUrl) || null;
+      return resolveDriverPhotoUrl(currentDriverProfile);
     }
 
     loginButton.addEventListener("click", async () => {
@@ -1807,7 +1823,7 @@
         driverDetailEl.textContent =
           `${currentDriverProfile.vehicleYear || ""} ${currentDriverProfile.vehicleColor || ""} ${currentDriverProfile.vehicleMake || ""} ${currentDriverProfile.vehicleModel || ""}`.trim();
 
-        renderDriverAvatar(name, currentDriverProfile.profilePicUrl);
+        renderDriverAvatar(name, resolveDriverPhotoUrl(currentDriverProfile));
         resetProfilePhotoDraft();
         populateDriverProfileEditor();
         updateDriverPhotoPreview(name, getEditorPhotoPreviewUrl());
