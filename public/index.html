@@ -4600,6 +4600,8 @@
       etaTargetTimestamp: null,
       etaSource: null
     };
+    const POST_PAYMENT_WAITLIST_MIN_DURATION_MS = 45000;
+    let forcedWaitlistPanelUntil = 0;
     const RIDE_CHAT_ACTIVE_STATUSES = new Set([
       "driver_assigned",
       "driver_arrived",
@@ -4819,6 +4821,7 @@
         }
         teardownRideChat(true);
         deactivateWaitlistPanel();
+        cancelForcedWaitlistPanel();
         hideGroupQr();
         activeRideIsGroup = false;
         activeRideGuestBypass = false;
@@ -8424,6 +8427,30 @@
       }
     }
 
+    function isForcedWaitlistPanelActive() {
+      if (!forcedWaitlistPanelUntil) {
+        return false;
+      }
+      if (Date.now() >= forcedWaitlistPanelUntil) {
+        forcedWaitlistPanelUntil = 0;
+        return false;
+      }
+      return true;
+    }
+
+    function forceWaitlistPanelFor(durationMs = POST_PAYMENT_WAITLIST_MIN_DURATION_MS) {
+      const clamped = Math.max(0, Math.round(durationMs));
+      forcedWaitlistPanelUntil = clamped ? Date.now() + clamped : 0;
+      if (forcedWaitlistPanelUntil) {
+        refreshWaitlistEtaEstimate(latestRideForOverlay?.data || null);
+      }
+      maybeToggleWaitlistPanel();
+    }
+
+    function cancelForcedWaitlistPanel() {
+      forcedWaitlistPanelUntil = 0;
+    }
+
     function refreshWaitlistEtaEstimate(rideData = null) {
       const waitingViewActive =
         waitlistState.active || riderOverlayState === RIDER_STATES.SEARCHING;
@@ -8506,14 +8533,26 @@
       const waitingOnDrivers =
         WAITLIST_RIDE_STATUSES.has(currentRideStatus) ||
         riderOverlayState === RIDER_STATES.SEARCHING;
+      const forceActive = isForcedWaitlistPanelActive();
+      if (!waitingOnDrivers) {
+        if (forceActive) {
+          cancelForcedWaitlistPanel();
+        }
+        if (waitlistState.active) {
+          deactivateWaitlistPanel();
+        }
+        return;
+      }
       const online = driverAvailability.onlineCount;
       const busy = getBusyOnlineDriverCount();
       const available = online - busy;
-      const shouldShow = waitingOnDrivers && (online <= 0 || available <= 0);
+      const shouldShow = forceActive || online <= 0 || available <= 0;
       if (shouldShow) {
         updateWaitlistCopy();
         refreshWaitlistEtaEstimate(latestRideForOverlay?.data || null);
-        activateWaitlistPanel();
+        if (!waitlistState.active) {
+          activateWaitlistPanel();
+        }
       } else if (waitlistState.active) {
         deactivateWaitlistPanel();
       }
@@ -8855,6 +8894,7 @@
       const waitingOnDriver = WAITLIST_RIDE_STATUSES.has(status);
       if (!waitingOnDriver) {
         clearWaitlistEta();
+        cancelForcedWaitlistPanel();
       }
       rememberRideCompletionContext(status, data);
       const destinationLabel =
@@ -12579,6 +12619,7 @@
       });
       profileMessage.textContent = "Payment received. Syncing your ride.";
       profileError.textContent = "";
+      forceWaitlistPanelFor();
       resolveRidePreauthFlow(paymentIntent);
     }
 
@@ -12822,6 +12863,7 @@
         }
         profileError.textContent = err.message || "Could not start this ride.";
         profileMessage.textContent = "";
+        cancelForcedWaitlistPanel();
         syncRidersAwaitingRideActivation = false;
         syncRidersFlowActive = false;
       } finally {

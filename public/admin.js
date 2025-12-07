@@ -7,6 +7,175 @@ const ADMIN_PAGE_PASSWORD = "Aurora-Verdant-4729";
 const ADMIN_PAGE_ACCESS_KEY = "ridesyncAdminPageAccess";
 const ADMIN_PAGE_PASSWORD_HEADER = "X-Admin-Page-Pass";
 const ADMIN_USERS_PAGE_SIZE = 25;
+const AVAILABILITY_DAY_KEYS = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+];
+const AVAILABILITY_DAY_LABELS = {
+  sunday: "Sunday",
+  monday: "Monday",
+  tuesday: "Tuesday",
+  wednesday: "Wednesday",
+  thursday: "Thursday",
+  friday: "Friday",
+  saturday: "Saturday",
+};
+
+function normalizeDayKey(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const key = value.trim().toLowerCase();
+  return AVAILABILITY_DAY_KEYS.includes(key) ? key : null;
+}
+
+function parseTimeStringToMinutes(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const normalized = Math.round(value);
+    return ((normalized % 1440) + 1440) % 1440;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  let trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return null;
+  }
+  let meridiem = null;
+  if (trimmed.endsWith("am") || trimmed.endsWith("pm")) {
+    meridiem = trimmed.endsWith("am") ? "am" : "pm";
+    trimmed = trimmed.slice(0, -2).trim();
+  }
+  const parts = trimmed.split(":");
+  const hours = Number(parts[0]);
+  const minutes = parts[1] !== undefined ? Number(parts[1]) : 0;
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return null;
+  }
+  let normalizedHours = hours;
+  if (meridiem) {
+    normalizedHours = hours % 12;
+    if (meridiem === "pm") {
+      normalizedHours += 12;
+    }
+  }
+  normalizedHours = ((normalizedHours % 24) + 24) % 24;
+  const clampedMinutes = Math.max(0, Math.min(59, Math.round(minutes)));
+  return normalizedHours * 60 + clampedMinutes;
+}
+
+function formatAvailabilityTimeLabel(minutes) {
+  const normalized = ((Number(minutes) % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  const period = hours >= 12 ? "PM" : "AM";
+  const hour12 = hours % 12 || 12;
+  return `${hour12}:${mins.toString().padStart(2, "0")} ${period}`;
+}
+
+function formatAvailabilityRangeLabel(startMinutes, endMinutes) {
+  if (startMinutes === endMinutes) {
+    return "Open 24 hours";
+  }
+  return `${formatAvailabilityTimeLabel(startMinutes)} – ${formatAvailabilityTimeLabel(endMinutes)}`;
+}
+
+function parseAvailabilityWindowEntry(entry) {
+  if (!entry) {
+    return null;
+  }
+  let startMinutes = null;
+  let endMinutes = null;
+  if (typeof entry === "string") {
+    const [startRaw, endRaw] = entry.split("-");
+    startMinutes = parseTimeStringToMinutes(startRaw);
+    endMinutes = parseTimeStringToMinutes(endRaw);
+  } else if (typeof entry === "object") {
+    const startRaw = entry.start ?? entry.from ?? entry.begin ?? entry.open;
+    const endRaw = entry.end ?? entry.to ?? entry.finish ?? entry.close;
+    startMinutes = parseTimeStringToMinutes(startRaw);
+    endMinutes = parseTimeStringToMinutes(endRaw);
+  }
+  if (!Number.isInteger(startMinutes) || !Number.isInteger(endMinutes)) {
+    return null;
+  }
+  const normalizedStart = ((startMinutes % 1440) + 1440) % 1440;
+  const normalizedEnd = ((endMinutes % 1440) + 1440) % 1440;
+  return {
+    start: normalizedStart,
+    end: normalizedEnd,
+    rangeLabel: formatAvailabilityRangeLabel(normalizedStart, normalizedEnd),
+  };
+}
+
+function computeTimezoneShortName(timezone) {
+  if (!timezone) {
+    return "";
+  }
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      timeZoneName: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(new Date());
+    return parts.find((part) => part.type === "timeZoneName")?.value || "";
+  } catch (err) {
+    console.warn("Failed to resolve timezone abbreviation", err);
+    return "";
+  }
+}
+
+function buildAvailabilityDisplay(config = {}) {
+  if (!config || typeof config !== "object") {
+    return null;
+  }
+  const timezone =
+    typeof config.timezone === "string" && config.timezone.trim()
+      ? config.timezone.trim()
+      : "America/Chicago";
+  const windowsSource = config.windows || config.days || config.schedule || config.hours || {};
+  const normalizedSource = {};
+  Object.entries(windowsSource || {}).forEach(([dayKey, value]) => {
+    const normalizedKey = normalizeDayKey(dayKey);
+    if (!normalizedKey) {
+      return;
+    }
+    if (Array.isArray(value)) {
+      normalizedSource[normalizedKey] = value;
+      return;
+    }
+    if (value === null || value === undefined) {
+      normalizedSource[normalizedKey] = [];
+      return;
+    }
+    normalizedSource[normalizedKey] = [value];
+  });
+  const rows = AVAILABILITY_DAY_KEYS.map((dayKey) => {
+    const entries = normalizedSource[dayKey] || [];
+    const parsed = entries.map((entry) => parseAvailabilityWindowEntry(entry)).filter(Boolean);
+    const label = AVAILABILITY_DAY_LABELS[dayKey] || dayKey;
+    if (!parsed.length) {
+      return { dayKey, label, text: "Closed" };
+    }
+    return {
+      dayKey,
+      label,
+      text: parsed.map((win) => win.rangeLabel).join(", "),
+    };
+  });
+  const tzShort = computeTimezoneShortName(timezone);
+  return {
+    timezone,
+    timezoneLabel: tzShort ? `${tzShort} (${timezone})` : timezone,
+    rows,
+  };
+}
 const TIMER_API = typeof window !== "undefined" ? window : globalThis;
 
 const adminState = {
@@ -19,6 +188,7 @@ const adminState = {
   users: [],
   usersPaging: createAdminUsersPagingState(),
   loadingUsers: false,
+  availabilityDisplay: null,
   lastUsersRefreshAt: 0,
   refreshInFlight: false,
   visibilityListenerAttached: false,
@@ -44,6 +214,8 @@ const usersPrevButton = document.getElementById("adminUsersPrevButton");
 const usersNextButton = document.getElementById("adminUsersNextButton");
 const usersRefreshButton = document.getElementById("adminUsersRefreshButton");
 const usersPageStatus = document.getElementById("adminUsersPageStatus");
+const adminHoursList = document.getElementById("adminHoursList");
+const adminHoursTimezone = document.getElementById("adminHoursTimezone");
 let adminAppReady = false;
 let adminAppInitializing = false;
 
@@ -206,6 +378,32 @@ function safeDisplay(value, fallback = "—") {
     return escapeHtml(fallback);
   }
   return escapeHtml(base);
+}
+
+function renderAvailabilitySchedule() {
+  if (!adminHoursList) {
+    return;
+  }
+  const availability = adminState.availabilityDisplay;
+  if (!availability || !availability.rows?.length) {
+    adminHoursList.innerHTML =
+      '<li><span>Schedule</span><span>Not configured</span></li>';
+  } else {
+    adminHoursList.innerHTML = availability.rows
+      .map(
+        (row) =>
+          `<li><span>${escapeHtml(row.label)}</span><span>${escapeHtml(row.text)}</span></li>`
+      )
+      .join("");
+  }
+  if (adminHoursTimezone) {
+    if (availability) {
+      const tzLabel = availability.timezoneLabel || availability.timezone || "--";
+      adminHoursTimezone.textContent = `Timezone: ${tzLabel}`;
+    } else {
+      adminHoursTimezone.textContent = "Timezone: --";
+    }
+  }
 }
 
 function sanitizeHttpUrl(value) {
@@ -823,6 +1021,8 @@ async function initializeAdminApp() {
   try {
     const config = await loadConfig();
     adminState.endpoints = buildAdminEndpoints(config);
+    adminState.availabilityDisplay = buildAvailabilityDisplay(config?.availability || {});
+    renderAvailabilitySchedule();
     ensureAdminRootVisible();
     attachEventListeners();
     if (adminState.pagePassword) {

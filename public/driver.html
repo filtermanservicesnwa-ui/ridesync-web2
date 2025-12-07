@@ -233,6 +233,81 @@
       background: rgba(15,23,42,0.95);
       font-size: 0.8rem;
     }
+    .rider-queue-title {
+      margin-top: 18px;
+    }
+    .rider-queue-container {
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(15,23,42,0.7);
+      padding: 10px;
+      margin-bottom: 8px;
+    }
+    .rider-queue-list {
+      max-height: 260px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .rider-queue-card {
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.45);
+      padding: 10px;
+      background: rgba(2,6,23,0.9);
+    }
+    .rider-queue-card.rider-queue-card-active {
+      border-color: rgba(34,197,94,0.7);
+      box-shadow: 0 0 0 1px rgba(34,197,94,0.35);
+    }
+    .rider-queue-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 2px;
+    }
+    .rider-queue-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #f8fafc;
+    }
+    .rider-queue-position {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #fde68a;
+      white-space: nowrap;
+    }
+    .rider-queue-wait {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+    .rider-queue-route {
+      display: flex;
+      gap: 6px;
+      font-size: 0.78rem;
+      margin-bottom: 2px;
+    }
+    .rider-queue-route-label {
+      font-weight: 600;
+      color: #cbd5f5;
+      min-width: 56px;
+      flex-shrink: 0;
+    }
+    .rider-queue-route-value {
+      color: #e2e8f0;
+      flex: 1 1 auto;
+    }
+    .rider-queue-meta {
+      margin-top: 4px;
+      font-size: 0.75rem;
+      color: #cbd5f5;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
     .ride-header {
       display: flex;
       justify-content: space-between;
@@ -301,6 +376,7 @@
       display: flex;
       gap: 12px;
       align-items: center;
+      flex-wrap: wrap;
     }
     .driver-rider-avatars {
       display: flex;
@@ -339,6 +415,7 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
+      flex: 1 1 auto;
     }
     .driver-rider-names {
       font-size: 1rem;
@@ -352,6 +429,78 @@
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
+    }
+    .driver-chat-launcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.45);
+      background: rgba(15,23,42,0.85);
+      color: #e5e7eb;
+      font-weight: 600;
+      font-size: 0.8rem;
+      padding: 6px 12px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+    }
+    .driver-chat-launcher.is-hidden {
+      display: none;
+    }
+    .driver-chat-launcher.disabled {
+      opacity: 0.4;
+      pointer-events: none;
+    }
+    .driver-chat-launcher.active {
+      border-color: rgba(34,197,94,0.7);
+      color: #bbf7d0;
+    }
+    .driver-chat-launcher::before {
+      content: "💬";
+      font-size: 0.9rem;
+    }
+    .driver-chat-badge {
+      display: none;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: #dc2626;
+      color: #fff;
+      font-size: 0.7rem;
+      align-items: center;
+      justify-content: center;
+      padding: 0 5px;
+    }
+    .driver-chat-badge.visible {
+      display: inline-flex;
+    }
+    .driver-chat-overlay {
+      position: absolute;
+      top: 78px;
+      right: 12px;
+      width: min(360px, calc(100% - 24px));
+      max-height: calc(100% - 140px);
+      display: none;
+      flex-direction: column;
+      z-index: 10;
+    }
+    .driver-chat-overlay.active {
+      display: flex;
+    }
+    .ride-chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .ride-chat-minimize {
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.5);
+      background: transparent;
+      color: #e2e8f0;
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      cursor: pointer;
     }
     .driver-chip {
       padding: 3px 9px;
@@ -861,6 +1010,17 @@
       >
         <div class="section-title">Available rides</div>
         <div id="ridesList"></div>
+        <div class="section-title rider-queue-title">Riders in queue</div>
+        <div
+          id="riderQueueContainer"
+          class="rider-queue-container"
+          role="region"
+          aria-live="polite"
+        >
+          <div id="riderQueueList" class="rider-queue-list">
+            <div class="small">Go online to view queued riders.</div>
+          </div>
+        </div>
         <div class="small" id="ridesHint">
           Rides with no driver and status pending/pooled will appear here while you are online.
         </div>
@@ -962,20 +1122,38 @@
               <div id="driverOverlayMembership" class="driver-rider-membership"></div>
               <div id="driverOverlayChips" class="driver-rider-chips"></div>
             </div>
+            <button
+              id="driverChatLauncher"
+              class="driver-chat-launcher is-hidden"
+              type="button"
+              aria-pressed="false"
+              aria-label="Chat with your rider"
+            >
+              Chat
+              <span id="driverChatBadge" class="driver-chat-badge" aria-live="polite"></span>
+            </button>
           </div>
           <button id="closeActiveRideButton" class="overlay-close" type="button">Hide</button>
         </div>
 
         <div
           id="driverChatCard"
-          class="ride-chat-card"
-          style="display:none;"
+          class="ride-chat-card driver-chat-overlay"
+          aria-hidden="true"
         >
           <div class="ride-chat-header">
             <div class="ride-chat-title">Chat with your rider</div>
-            <div id="driverChatOfflineNote" class="ride-chat-note">
-              Chat is available only while the ride is active.
-            </div>
+            <button
+              id="driverChatMinimizeButton"
+              class="ride-chat-minimize"
+              type="button"
+              aria-label="Minimize chat"
+            >
+              Minimize
+            </button>
+          </div>
+          <div id="driverChatOfflineNote" class="ride-chat-note">
+            Chat is available only while the ride is active.
           </div>
           <div
             id="driverChatMessages"
@@ -1383,6 +1561,7 @@
     const driverMessage = document.getElementById("driverMessage");
     const driverError = document.getElementById("driverError");
     const ridesList = document.getElementById("ridesList");
+    const riderQueueList = document.getElementById("riderQueueList");
     const driverSyncSection = document.getElementById("driverSyncSection");
     const driverProfileSection = document.getElementById("driverProfileSection");
     const driverNavSyncButton = document.getElementById("driverNavSync");
@@ -1423,6 +1602,9 @@
     const driverChatInputEl = document.getElementById("driverChatInput");
     const driverChatSendButton = document.getElementById("driverChatSendButton");
     const driverChatOfflineNote = document.getElementById("driverChatOfflineNote");
+    const driverChatLauncher = document.getElementById("driverChatLauncher");
+    const driverChatBadge = document.getElementById("driverChatBadge");
+    const driverChatMinimizeButton = document.getElementById("driverChatMinimizeButton");
     const driverStateOffer = document.getElementById("driverStateOffer");
     const driverStateNavPickup = document.getElementById("driverStateNavPickup");
     const driverStateEnterPickup = document.getElementById("driverStateEnterPickup");
@@ -1545,57 +1727,45 @@
     let driverChatUnsub = null;
     let driverChatCurrentRideId = null;
     let driverChatLastSendAt = 0;
+    let driverChatOverlayVisible = false;
+    let driverChatAvailable = false;
+    let driverChatUnreadCount = 0;
+    let driverChatLastSeenMillis = 0;
+    let driverChatHasInitialHistory = false;
+    let driverChatLatestDocs = [];
     // Web Audio tone to alert drivers when a new ride offer arrives.
     const rideAlertUnlockEvents = ["pointerdown", "touchstart", "keydown"];
     const AudioContextClass = window.AudioContext || window.webkitAudioContext || null;
     const rideAlertAudioContext =
       typeof AudioContextClass === "function" ? new AudioContextClass() : null;
     let rideAlertAudioUnlocked = !rideAlertAudioContext;
-
-    function handleRideAlertUnlockEvent() {
-      if (!rideAlertAudioContext || rideAlertAudioUnlocked) return;
-      rideAlertAudioContext
-        .resume()
-        .then(() => {
-          rideAlertAudioUnlocked = true;
-          rideAlertUnlockEvents.forEach((evt) =>
-            document.removeEventListener(evt, handleRideAlertUnlockEvent, true)
-          );
-        })
-        .catch(() => {});
-    }
-
-    function registerRideAlertUnlockListeners() {
-      if (!rideAlertAudioContext || rideAlertAudioUnlocked) return;
-      rideAlertUnlockEvents.forEach((evt) => {
-        document.addEventListener(evt, handleRideAlertUnlockEvent, {
-          passive: true,
-          capture: true
-        });
-      });
-    }
-
-    registerRideAlertUnlockListeners();
-
-    function playRideAlertSound() {
-      if (!rideAlertAudioContext || !rideAlertAudioUnlocked) return;
-      if (rideAlertAudioContext.state === "suspended") {
-        rideAlertAudioContext.resume().catch(() => {});
+    const rideAlertFallbackToneSrc =
+      "data:audio/wav;base64,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";
+        oscillator.frequency.setValueAtTime(880, now);
+        oscillator.frequency.setValueAtTime(1320, now + 0.35);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.3, now + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.start(now);
+        oscillator.stop(now + 1.2);
+        return true;
+      } catch (err) {
+        console.warn("ride alert oscillator failed", err);
+        return false;
       }
-      const ctx = rideAlertAudioContext;
-      const now = ctx.currentTime;
-      const oscillator = ctx.createOscillator();
-      const gain = ctx.createGain();
-      oscillator.type = "triangle";
-      oscillator.frequency.setValueAtTime(880, now);
-      oscillator.frequency.setValueAtTime(1320, now + 0.35);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.3, now + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
-      oscillator.connect(gain);
-      gain.connect(ctx.destination);
-      oscillator.start(now);
-      oscillator.stop(now + 1.2);
+    }
+
+    function playRideAlertFallbackTone() {
+      if (!rideAlertFallbackToneSrc) return;
+      try {
+        const audio = new Audio(rideAlertFallbackToneSrc);
+        audio.volume = 0.75;
+        audio.play().catch(() => {});
+      } catch (_) {
+        // Ignore playback errors (autoplay policies, etc.)
+      }
     }
     const EARLY_ASSIGNMENT_MINUTES = 6;
     const RESERVED_DRIVER_RELEASE_MINUTES = 40;
@@ -1764,6 +1934,30 @@
           handleDriverChatSend();
         }
       });
+    }
+    if (driverChatLauncher) {
+      driverChatLauncher.addEventListener("click", () => {
+        if (!driverChatAvailable) return;
+        if (driverChatOverlayVisible) {
+          hideDriverChatOverlay();
+        } else {
+          showDriverChatOverlay();
+        }
+      });
+      driverChatLauncher.addEventListener("keydown", (event) => {
+        if (!driverChatAvailable) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          if (driverChatOverlayVisible) {
+            hideDriverChatOverlay();
+          } else {
+            showDriverChatOverlay();
+          }
+        }
+      });
+    }
+    if (driverChatMinimizeButton) {
+      driverChatMinimizeButton.addEventListener("click", () => hideDriverChatOverlay());
     }
 
     onAuthStateChanged(auth, async (user) => {
@@ -2255,6 +2449,7 @@
     }, RESERVED_VISIBILITY_REFRESH_MS);
 
     toggleOnlineButton.addEventListener("click", async () => {
+      unlockRideAlertAudioContext();
       setOnline(!isOnline);
       driverMessage.textContent = isOnline ? "You are now online." : "You are offline.";
       driverError.textContent = "";
@@ -2520,6 +2715,100 @@
       return rider?.toDestination || rider?.toAddress || rider?.destAddress || "";
     }
 
+    function resolveRiderDisplayName(ride) {
+      return (
+        ride?.riderName ||
+        ride?.rider?.name ||
+        ride?.primaryRiderName ||
+        ride?.hostName ||
+        ride?.displayName ||
+        "Rider"
+      );
+    }
+
+    function resolveRideMembershipText(ride) {
+      const candidates = [
+        ride?.fare?.membershipLabel,
+        ride?.membershipLabel,
+        ride?.membershipType,
+        ride?.membership,
+        ride?.membershipPlan,
+        ride?.membershipTier
+      ];
+      for (const candidate of candidates) {
+        if (!candidate && candidate !== 0) continue;
+        if (typeof candidate === "string" && candidate.includes("Membership:")) {
+          return candidate.replace("Membership: ", "").trim();
+        }
+        const label = membershipLabel(candidate);
+        if (label) {
+          return label.replace("Membership: ", "").trim();
+        }
+      }
+      return "";
+    }
+
+    function resolveRiderCount(ride) {
+      const candidates = [
+        ride?.numRiders,
+        ride?.riderCount,
+        ride?.currentRiderCount,
+        ride?.maxRiders
+      ];
+      for (const candidate of candidates) {
+        const value = Number(candidate);
+        if (Number.isFinite(value) && value > 0) {
+          return value;
+        }
+      }
+      return 1;
+    }
+
+    function resolveRideQueuedTimestamp(ride) {
+      const timestampFields = [
+        ride?.queuedAt,
+        ride?.queued_at,
+        ride?.requestedAt,
+        ride?.requested_at,
+        ride?.createdAt,
+        ride?.created_at,
+        ride?.updatedAt,
+        ride?.updated_at
+      ];
+      for (const field of timestampFields) {
+        const millis = resolveTimestampMillis(field);
+        if (typeof millis === "number") {
+          return millis;
+        }
+      }
+      return null;
+    }
+
+    function formatRideQueueWait(ride) {
+      const queuedAt = resolveRideQueuedTimestamp(ride);
+      if (!queuedAt) return "";
+      const diffMs = Math.max(0, Date.now() - queuedAt);
+      const minutes = diffMs / 60000;
+      if (minutes < 1) return "Waiting <1 min";
+      if (minutes < 60) return `Waiting ${Math.round(minutes)} min`;
+      const hours = minutes / 60;
+      if (hours < 24) return `Waiting ${hours.toFixed(1)} hr`;
+      const days = Math.floor(hours / 24);
+      return `Waiting ${days} day${days === 1 ? "" : "s"}`;
+    }
+
+    function resolveQueueContextLabel(context, position) {
+      if (context === "offer") return "Respond now";
+      if (context === "queued") {
+        if (position === 1) return "Next up";
+        if (typeof position === "number") {
+          return `Queue #${position}`;
+        }
+        return "Queued";
+      }
+      return "Waiting";
+    }
+
     function resolveTimestampMillis(value) {
       if (!value && value !== 0) return null;
       if (typeof value.toMillis === "function") {
@@ -2748,15 +3037,121 @@
     }
 
     function ensureDriverChatCardVisible() {
-      if (driverChatCard) {
-        driverChatCard.style.display = "flex";
-      }
+      setDriverChatAvailability(true);
     }
 
     function hideDriverChatCard() {
-      if (driverChatCard) {
-        driverChatCard.style.display = "none";
+      setDriverChatAvailability(false);
+    }
+
+    function setDriverChatAvailability(available) {
+      driverChatAvailable = !!available;
+      if (driverChatLauncher) {
+        driverChatLauncher.classList.toggle("is-hidden", !available);
+        driverChatLauncher.classList.toggle("disabled", !available);
+        driverChatLauncher.setAttribute("aria-hidden", available ? "false" : "true");
+        driverChatLauncher.setAttribute(
+          "aria-pressed",
+          driverChatOverlayVisible ? "true" : "false"
+        );
+        driverChatLauncher.tabIndex = available ? 0 : -1;
       }
+      if (!available) {
+        hideDriverChatOverlay({ resetUnread: true, force: true });
+        driverChatUnreadCount = 0;
+        updateDriverChatBadge();
+      } else {
+        updateDriverChatBadge();
+      }
+    }
+
+    function showDriverChatOverlay() {
+      if (!driverChatAvailable) return;
+      driverChatOverlayVisible = true;
+      if (driverChatCard) {
+        driverChatCard.classList.add("active");
+        driverChatCard.setAttribute("aria-hidden", "false");
+      }
+      if (driverChatLauncher) {
+        driverChatLauncher.classList.add("active");
+        driverChatLauncher.setAttribute("aria-pressed", "true");
+      }
+      markDriverChatMessagesRead();
+    }
+
+    function hideDriverChatOverlay(options = {}) {
+      const { resetUnread = false, force = false } = options;
+      driverChatOverlayVisible = false;
+      if (driverChatCard) {
+        driverChatCard.classList.remove("active");
+        driverChatCard.setAttribute("aria-hidden", "true");
+      }
+      if (driverChatLauncher) {
+        driverChatLauncher.classList.remove("active");
+        driverChatLauncher.setAttribute("aria-pressed", "false");
+      }
+      if (resetUnread || force) {
+        driverChatUnreadCount = 0;
+        updateDriverChatBadge();
+      }
+    }
+
+    function markDriverChatMessagesRead() {
+      if (!driverChatLatestDocs.length) {
+        driverChatUnreadCount = 0;
+        updateDriverChatBadge();
+        return;
+      }
+      const newest = getNewestDriverChatMillis(driverChatLatestDocs);
+      if (newest) {
+        driverChatLastSeenMillis = newest;
+      }
+      driverChatUnreadCount = 0;
+      updateDriverChatBadge();
+    }
+
+    function updateDriverChatBadge() {
+      if (!driverChatBadge) return;
+      if (driverChatUnreadCount > 0) {
+        const label =
+          driverChatUnreadCount > 99 ? "99+" : String(driverChatUnreadCount);
+        driverChatBadge.textContent = label;
+        driverChatBadge.classList.add("visible");
+        driverChatLauncher?.setAttribute("data-unread", "true");
+      } else {
+        driverChatBadge.textContent = "";
+        driverChatBadge.classList.remove("visible");
+        driverChatLauncher?.removeAttribute("data-unread");
+      }
+    }
+
+    function getNewestDriverChatMillis(docs = []) {
+      let newest = 0;
+      docs.forEach((docSnap) => {
+        const millis =
+          resolveTimestampMillis(docSnap.data()?.createdAt) ||
+          resolveTimestampMillis(docSnap.data()?.updatedAt);
+        if (typeof millis === "number" && millis > newest) {
+          newest = millis;
+        }
+      });
+      return newest || null;
+    }
+
+    function computeDriverChatUnreadCount(docs = []) {
+      if (!docs.length) return 0;
+      const baseline = driverChatLastSeenMillis || 0;
+      let count = 0;
+      docs.forEach((docSnap) => {
+        const millis =
+          resolveTimestampMillis(docSnap.data()?.createdAt) ||
+          resolveTimestampMillis(docSnap.data()?.updatedAt);
+        if (typeof millis !== "number") return;
+        if (!baseline || millis > baseline) {
+          count += 1;
+        }
+      });
+      return count;
     }
 
     function setDriverChatNote(message = "") {
@@ -2777,6 +3172,9 @@
       if (driverChatSendButton) {
         driverChatSendButton.disabled = !enabled;
       }
+      if (driverChatLauncher && driverChatAvailable) {
+        driverChatLauncher.classList.toggle("disabled", !enabled);
+      }
       if (!enabled && noteMessage) {
         setDriverChatNote(noteMessage);
       } else if (enabled) {
@@ -2786,13 +3184,20 @@
 
     function renderDriverChatMessages(docs) {
       if (!driverChatMessagesEl) return;
+      const hasDocs = Array.isArray(docs) && docs.length > 0;
+      driverChatLatestDocs = hasDocs ? docs.slice() : [];
       const atBottom =
         driverChatMessagesEl.scrollHeight -
           driverChatMessagesEl.scrollTop -
           driverChatMessagesEl.clientHeight <
         40;
       driverChatMessagesEl.innerHTML = "";
-      if (!docs?.length) {
+      if (!hasDocs) {
+        if (!driverChatHasInitialHistory) {
+          driverChatHasInitialHistory = true;
+        }
+        driverChatUnreadCount = 0;
+        updateDriverChatBadge();
         const placeholder = document.createElement("div");
         placeholder.className = "ride-chat-placeholder";
         placeholder.textContent = "No messages yet. Keep your rider updated.";
@@ -2823,6 +3228,20 @@
       if (atBottom) {
         driverChatMessagesEl.scrollTop = driverChatMessagesEl.scrollHeight;
       }
+      if (!driverChatHasInitialHistory) {
+        driverChatHasInitialHistory = true;
+        const newest = getNewestDriverChatMillis(driverChatLatestDocs);
+        if (newest) {
+          driverChatLastSeenMillis = newest;
+        }
+        driverChatUnreadCount = 0;
+        updateDriverChatBadge();
+      } else if (driverChatOverlayVisible) {
+        markDriverChatMessagesRead();
+      } else {
+        driverChatUnreadCount = computeDriverChatUnreadCount(driverChatLatestDocs);
+        updateDriverChatBadge();
+      }
     }
 
     function teardownDriverChat(hideCard = false) {
@@ -2835,6 +3254,12 @@
         driverChatMessagesEl.innerHTML = "";
       }
       setDriverChatUiEnabled(false);
+      driverChatHasInitialHistory = false;
+      driverChatLastSeenMillis = 0;
+      driverChatUnreadCount = 0;
+      driverChatLatestDocs = [];
+      driverChatOverlayVisible = false;
+      updateDriverChatBadge();
       if (hideCard) {
         hideDriverChatCard();
       }
@@ -2852,6 +3277,11 @@
       }
       teardownDriverChat();
       driverChatCurrentRideId = rideId;
+      driverChatHasInitialHistory = false;
+      driverChatLastSeenMillis = 0;
+      driverChatUnreadCount = 0;
+      driverChatLatestDocs = [];
+      updateDriverChatBadge();
       ensureDriverChatCardVisible();
       const messagesRef = collection(db, "ride_chats", rideId, "messages");
       const chatQuery = query(messagesRef, orderBy("createdAt", "asc"), limit(DRIVER_CHAT_FETCH_LIMIT));
@@ -3012,6 +3442,7 @@
       updateRidesListMessage(visible, { scheduledPending });
       maybeTriggerEarlyNextRide();
       maybeShowNextRideOffer();
+      renderRiderQueueList(visible);
     }
 
     function updateRidesListMessage(visibleRides, { scheduledPending } = {}) {
@@ -3034,6 +3465,121 @@
           ? `Reviewing ${pendingCount} ride request${pendingCount === 1 ? "" : "s"}…`
           : "Processing latest ride data…"
       }</div>`;
+    }
+
+    function renderRiderQueueList(visibleRides = []) {
+      if (!riderQueueList) return;
+      riderQueueList.innerHTML = "";
+      if (!isOnline) {
+        riderQueueList.innerHTML =
+          '<div class="small">Go online to view queued riders.</div>';
+        return;
+      }
+      const entries = buildRiderQueueEntries(visibleRides);
+      if (!entries.length) {
+        riderQueueList.innerHTML =
+          '<div class="small">No riders waiting for assignment.</div>';
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      entries.forEach((entry, index) => {
+        fragment.appendChild(createRiderQueueCard(entry, index));
+      });
+      riderQueueList.appendChild(fragment);
+    }
+
+    function buildRiderQueueEntries(visibleRides = []) {
+      const entries = [];
+      const seen = new Set();
+      if (pendingRideOffer) {
+        seen.add(pendingRideOffer.id);
+        entries.push({ ride: pendingRideOffer, context: "offer" });
+      }
+      rideOfferQueue.forEach((ride, index) => {
+        if (!ride || seen.has(ride.id)) return;
+        seen.add(ride.id);
+        entries.push({ ride, context: "queued", position: index + 1 });
+      });
+      visibleRides.forEach((ride) => {
+        if (!ride || seen.has(ride.id)) return;
+        seen.add(ride.id);
+        entries.push({ ride, context: "visible" });
+      });
+      return entries;
+    }
+
+    function createRiderQueueCard(entry) {
+      const { ride, context, position } = entry;
+      const card = document.createElement("div");
+      card.className = "rider-queue-card";
+      if (context === "offer") {
+        card.classList.add("rider-queue-card-active");
+      }
+
+      const header = document.createElement("div");
+      header.className = "rider-queue-card-header";
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "rider-queue-name";
+      nameEl.textContent = resolveRiderDisplayName(ride);
+      header.appendChild(nameEl);
+
+      const positionEl = document.createElement("div");
+      positionEl.className = "rider-queue-position";
+      positionEl.textContent = resolveQueueContextLabel(context, position);
+      header.appendChild(positionEl);
+
+      card.appendChild(header);
+
+      const waitLabel = formatRideQueueWait(ride);
+      if (waitLabel) {
+        const waitEl = document.createElement("div");
+        waitEl.className = "rider-queue-wait";
+        waitEl.textContent = waitLabel;
+        card.appendChild(waitEl);
+      }
+
+      const pickupRow = document.createElement("div");
+      pickupRow.className = "rider-queue-route";
+      const pickupLabelEl = document.createElement("span");
+      pickupLabelEl.className = "rider-queue-route-label";
+      pickupLabelEl.textContent = "Pickup";
+      const pickupValueEl = document.createElement("span");
+      pickupValueEl.className = "rider-queue-route-value";
+      pickupValueEl.textContent = pickupLabel(ride) || "Pickup pending";
+      pickupRow.appendChild(pickupLabelEl);
+      pickupRow.appendChild(pickupValueEl);
+      card.appendChild(pickupRow);
+
+      const dropoffRow = document.createElement("div");
+      dropoffRow.className = "rider-queue-route";
+      const dropoffLabelEl = document.createElement("span");
+      dropoffLabelEl.className = "rider-queue-route-label";
+      dropoffLabelEl.textContent = "Dropoff";
+      const dropoffValueEl = document.createElement("span");
+      dropoffValueEl.className = "rider-queue-route-value";
+      dropoffValueEl.textContent = dropoffLabel(ride) || "Dropoff pending";
+      dropoffRow.appendChild(dropoffLabelEl);
+      dropoffRow.appendChild(dropoffValueEl);
+      card.appendChild(dropoffRow);
+
+      const metaParts = [];
+      const riderCount = resolveRiderCount(ride);
+      if (riderCount) {
+        metaParts.push(`${riderCount} rider${riderCount === 1 ? "" : "s"}`);
+      }
+      const membershipText = resolveRideMembershipText(ride);
+      if (membershipText) {
+        metaParts.push(membershipText);
+      }
+      if (metaParts.length) {
+        const metaEl = document.createElement("div");
+        metaEl.className = "rider-queue-meta";
+        metaEl.textContent = metaParts.join(" • ");
+        card.appendChild(metaEl);
+      }
+
+      return card;
     }
 
     function syncRideOfferQueue(visibleRides) {
