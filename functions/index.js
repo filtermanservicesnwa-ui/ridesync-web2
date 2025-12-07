@@ -688,6 +688,34 @@ const db = admin.firestore();
 const FieldValue = admin.firestore.FieldValue;
 const Timestamp = admin.firestore.Timestamp;
 const FieldPath = admin.firestore.FieldPath;
+const AVAILABILITY_DAY_KEYS = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+];
+const DEFAULT_AVAILABILITY_SETTINGS = Object.freeze({
+  timezone: "America/Chicago",
+  closedTitle: "RideSync is closed",
+  closedMessage: "We're outside our service hours. Check back soon.",
+  windows: {
+    monday: [],
+    tuesday: [{ start: "19:00", end: "02:00" }],
+    wednesday: [{ start: "19:00", end: "02:00" }],
+    thursday: [{ start: "19:00", end: "02:00" }],
+    friday: [{ start: "19:00", end: "02:00" }],
+    saturday: [{ start: "07:00", end: "02:00" }],
+    sunday: [{ start: "18:00", end: "07:00" }],
+  },
+});
+const AVAILABILITY_CONFIG_COLLECTION = "config";
+const AVAILABILITY_DOCUMENT_ID = "availability";
+const availabilityDocRef = db
+  .collection(AVAILABILITY_CONFIG_COLLECTION)
+  .doc(AVAILABILITY_DOCUMENT_ID);
 const ADMIN_RIDER_PRESENCE_WINDOW_MINUTES = 5;
 const ADMIN_ACTIVITY_LOOKBACK_HOURS = 48;
 const ADMIN_ACTIVITY_FEED_LIMIT = 40;
@@ -5139,6 +5167,157 @@ function sanitizePhoneNumber(value) {
   return digits.slice(-15);
 }
 
+function normalizeAvailabilityDayKey(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  return AVAILABILITY_DAY_KEYS.includes(normalized) ? normalized : null;
+}
+
+function parseAvailabilityTimeValue(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const normalized = Math.round(value);
+    return ((normalized % 1440) + 1440) % 1440;
+  }
+  if (typeof value !== "string") {
+    return null;
+  }
+  let trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return null;
+  }
+  let meridiem = null;
+  if (trimmed.endsWith("am") || trimmed.endsWith("pm")) {
+    meridiem = trimmed.endsWith("am") ? "am" : "pm";
+    trimmed = trimmed.slice(0, -2).trim();
+  }
+  const parts = trimmed.split(":");
+  const hours = Number(parts[0]);
+  const minutes = parts[1] !== undefined ? Number(parts[1]) : 0;
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return null;
+  }
+  let normalizedHours = hours;
+  if (meridiem) {
+    normalizedHours = hours % 12;
+    if (meridiem === "pm") {
+      normalizedHours += 12;
+    }
+  }
+  normalizedHours = ((normalizedHours % 24) + 24) % 24;
+  const clampedMinutes = Math.max(0, Math.min(59, Math.round(minutes)));
+  return normalizedHours * 60 + clampedMinutes;
+}
+
+function normalizeAvailabilityWindowEntry(entry) {
+  if (!entry) {
+    return null;
+  }
+  let startRaw = null;
+  let endRaw = null;
+  if (typeof entry === "string") {
+    const [startPart, endPart] = entry.split("-");
+    startRaw = startPart;
+    endRaw = endPart;
+  } else if (typeof entry === "object") {
+    startRaw = entry.start ?? entry.from ?? entry.begin ?? entry.open;
+    endRaw = entry.end ?? entry.to ?? entry.finish ?? entry.close;
+  }
+  const start = parseAvailabilityTimeValue(startRaw);
+  const end = parseAvailabilityTimeValue(endRaw);
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    return null;
+  }
+  return { start, end };
+}
+
+function normalizeAvailabilityWindowMap(source = {}) {
+  const normalized = {};
+  AVAILABILITY_DAY_KEYS.forEach((dayKey) => {
+    normalized[dayKey] = [];
+  });
+  if (!source || typeof source !== "object") {
+    return normalized;
+  }
+  Object.entries(source).forEach(([dayKey, value]) => {
+    const normalizedDay = normalizeAvailabilityDayKey(dayKey);
+    if (!normalizedDay) {
+      return;
+    }
+    let entries = [];
+    if (Array.isArray(value)) {
+      entries = value;
+    } else if (value === null || value === undefined) {
+      entries = [];
+    } else {
+      entries = [value];
+    }
+    normalized[normalizedDay] = entries
+      .map((entry) => normalizeAvailabilityWindowEntry(entry))
+      .filter(Boolean);
+  });
+  return normalized;
+}
+
+function normalizeAvailabilityPayload(input = {}) {
+  const timezone =
+    sanitizeProfileString(input.timezone, 120) || DEFAULT_AVAILABILITY_SETTINGS.timezone;
+  const closedTitle =
+    sanitizeProfileString(input.closedTitle, 140) ||
+    DEFAULT_AVAILABILITY_SETTINGS.closedTitle;
+  const closedMessage =
+    sanitizeProfileString(input.closedMessage, 320) ||
+    DEFAULT_AVAILABILITY_SETTINGS.closedMessage;
+  const windowsSource =
+    input.windows || input.days || input.schedule || DEFAULT_AVAILABILITY_SETTINGS.windows || {};
+  const windows = normalizeAvailabilityWindowMap(windowsSource);
+  return {
+    timezone,
+    closedTitle,
+    closedMessage,
+    forceClosed: !!input.forceClosed,
+    windows,
+  };
+}
+
+async function readAvailabilitySettingsFromStore() {
+  try {
+    const snapshot = await availabilityDocRef.get();
+    if (!snapshot.exists) {
+      return normalizeAvailabilityPayload(DEFAULT_AVAILABILITY_SETTINGS);
+    }
+    const data = snapshot.data() || {};
+    const normalized = normalizeAvailabilityPayload(data);
+    normalized.updatedAt = toMillis(data.updatedAt);
+    normalized.updatedBy = data.updatedBy || null;
+    return normalized;
+  } catch (err) {
+    console.warn("[RideSync][availability] read failed", err?.message || err);
+    return normalizeAvailabilityPayload(DEFAULT_AVAILABILITY_SETTINGS);
+  }
+}
+
+async function writeAvailabilitySettingsToStore(payload = {}, actor = "admin") {
+  const normalized = normalizeAvailabilityPayload(payload);
+  await availabilityDocRef.set(
+    {
+      ...normalized,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: actor,
+    },
+    { merge: true }
+  );
+  const snapshot = await availabilityDocRef.get();
+  const stored = snapshot.exists
+    ? normalizeAvailabilityPayload(snapshot.data() || {})
+    : normalized;
+  const storedData = snapshot.data() || {};
+  stored.updatedAt = toMillis(storedData.updatedAt);
+  stored.updatedBy = storedData.updatedBy || actor || null;
+  return stored;
+}
+
 function normalizeBooleanInput(value) {
   if (typeof value === "boolean") {
     return value;
@@ -6196,6 +6375,34 @@ exports.getWeatherTheme = functions
     }
   });
 
+exports.getAvailabilitySettings = functions.https.onRequest(async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "GET") {
+    res.status(405).json({ ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const availability = await readAvailabilitySettingsFromStore();
+    res.set("Cache-Control", "public, max-age=120, s-maxage=120");
+    res.status(200).json({
+      ok: true,
+      availability,
+    });
+  } catch (err) {
+    console.error("[RideSync][getAvailabilitySettings] failed", err?.message || err);
+    res.status(500).json({
+      ok: false,
+      error: "internal_error",
+    });
+  }
+});
+
 // === ADMIN DASHBOARD HELPERS ===
 
 function getStartOfDayTimestamp() {
@@ -6418,6 +6625,12 @@ function serializeUserForAdmin(docSnap) {
     userId: docSnap.id,
     name: data.fullName || data.displayName || null,
     email: data.email || null,
+    phone: data.phone || null,
+    gender: data.gender || null,
+    street: data.street || null,
+    city: data.city || null,
+    state: data.state || null,
+    zip: data.zip || null,
     membershipType: data.membershipType || data.membership || "basic",
     membershipStatus: data.membershipStatus || "none",
     membershipTier: data.membershipTier || data.membership_tier || null,
@@ -6426,7 +6639,131 @@ function serializeUserForAdmin(docSnap) {
     membershipApprovalRequired: !!data.membershipApprovalRequired,
     studentIdImageUrl: extractStudentIdImageUrl(data),
     uofaVerified: !!data.uofaVerified,
+    membershipTermsAccepted: !!data.membershipTermsAccepted,
+    membershipTermsAcceptedAt: toMillis(data.membershipTermsAcceptedAt),
+    updatedAt: toMillis(data.updatedAt),
   };
+}
+
+function parseAdminTimestampInput(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Date.parse(trimmed);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  if (typeof value === "object" && typeof value.seconds === "number") {
+    return value.seconds * 1000;
+  }
+  return null;
+}
+
+function buildAdminUserUpdatePayload(body = {}) {
+  const updates = {};
+  let hasChanges = false;
+  function assign(field, value) {
+    updates[field] = value;
+    hasChanges = true;
+  }
+  const nameProvided =
+    Object.prototype.hasOwnProperty.call(body, "name") ||
+    Object.prototype.hasOwnProperty.call(body, "fullName") ||
+    Object.prototype.hasOwnProperty.call(body, "displayName");
+  if (nameProvided) {
+    const rawName =
+      body.name !== undefined
+        ? body.name
+        : body.fullName !== undefined
+        ? body.fullName
+        : body.displayName;
+    const sanitizedName = sanitizeProfileString(rawName, 80);
+    if (sanitizedName) {
+      assign("fullName", sanitizedName);
+      assign("displayName", sanitizedName);
+      assign("fullNameLower", sanitizedName.toLowerCase());
+    } else {
+      assign("fullName", FieldValue.delete());
+      assign("displayName", FieldValue.delete());
+      assign("fullNameLower", FieldValue.delete());
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "email")) {
+    const sanitizedEmail = sanitizeProfileString(body.email, 120);
+    if (sanitizedEmail) {
+      assign("email", sanitizedEmail);
+      assign("emailLower", sanitizedEmail.toLowerCase());
+    } else {
+      assign("email", FieldValue.delete());
+      assign("emailLower", FieldValue.delete());
+    }
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(body, "phone") ||
+    Object.prototype.hasOwnProperty.call(body, "phoneNumber")
+  ) {
+    const rawPhone = body.phone ?? body.phoneNumber;
+    const sanitizedPhone = sanitizePhoneNumber(rawPhone);
+    if (sanitizedPhone) {
+      assign("phone", sanitizedPhone);
+    } else {
+      assign("phone", FieldValue.delete());
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "gender")) {
+    const normalizedGender = normalizePoolGender(body.gender);
+    if (normalizedGender) {
+      assign("gender", normalizedGender);
+    } else {
+      assign("gender", FieldValue.delete());
+    }
+  }
+  const streetFields = [
+    ["street", 140],
+    ["city", 80],
+    ["state", 40],
+    ["zip", 20],
+  ];
+  streetFields.forEach(([field, maxLen]) => {
+    if (Object.prototype.hasOwnProperty.call(body, field)) {
+      const sanitized = sanitizeProfileString(body[field], maxLen);
+      if (sanitized) {
+        assign(field, sanitized);
+      } else {
+        assign(field, FieldValue.delete());
+      }
+    }
+  });
+  if (Object.prototype.hasOwnProperty.call(body, "membershipStatus")) {
+    const normalizedStatus = String(body.membershipStatus || "")
+      .toLowerCase()
+      .trim();
+    const resolvedStatus = normalizedStatus || "none";
+    assign("membershipStatus", resolvedStatus);
+    assign("membership_status", deriveBinaryMembershipStatus(resolvedStatus));
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "membershipExpiresAt")) {
+    const timestampMs = parseAdminTimestampInput(body.membershipExpiresAt);
+    if (timestampMs && Number.isFinite(timestampMs)) {
+      assign("membershipExpiresAt", Timestamp.fromMillis(timestampMs));
+    } else {
+      assign("membershipExpiresAt", FieldValue.delete());
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "membershipApprovalRequired")) {
+    assign("membershipApprovalRequired", !!body.membershipApprovalRequired);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "uofaVerified")) {
+    assign("uofaVerified", !!body.uofaVerified);
+  }
+  return { updates, hasChanges };
 }
 
 function encodeAdminUsersPageToken(docId) {
@@ -6842,6 +7179,72 @@ exports.adminSetMembershipPlan = functions.https.onRequest(async (req, res) => {
     });
   } catch (err) {
     handleAdminRequestError(res, err, "adminSetMembershipPlan");
+  }
+});
+
+exports.adminUpdateAvailability = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const adminPayload = ensureAdminRequestAuthorized(req);
+    const body = readJsonBody(req);
+    const availabilityInput = body.availability || body;
+    const updated = await writeAvailabilitySettingsToStore(
+      availabilityInput,
+      adminPayload.actor || "admin"
+    );
+    sendAdminJson(res, 200, {
+      ok: true,
+      availability: updated,
+    });
+  } catch (err) {
+    handleAdminRequestError(res, err, "adminUpdateAvailability");
+  }
+});
+
+exports.adminUpdateUserProfile = functions.https.onRequest(async (req, res) => {
+  setAdminCorsHeaders(req, res);
+  if (req.method === "OPTIONS") {
+    res.status(204).send("");
+    return;
+  }
+  if (req.method !== "POST") {
+    sendAdminJson(res, 405, { ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const adminPayload = ensureAdminRequestAuthorized(req);
+    const body = readJsonBody(req);
+    const userId = typeof body.userId === "string" ? body.userId.trim() : "";
+    if (!userId) {
+      throw new AdminHttpError(400, "userId is required");
+    }
+    const userRef = db.collection("users").doc(userId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      throw new AdminHttpError(404, "User not found");
+    }
+    const { updates, hasChanges } = buildAdminUserUpdatePayload(body);
+    if (!hasChanges) {
+      throw new AdminHttpError(400, "No valid fields to update");
+    }
+    updates.adminUpdatedAt = FieldValue.serverTimestamp();
+    updates.adminUpdatedBy = adminPayload.actor || "admin";
+    await userRef.set(updates, { merge: true });
+    const freshSnap = await userRef.get();
+    sendAdminJson(res, 200, {
+      ok: true,
+      user: serializeUserForAdmin(freshSnap),
+    });
+  } catch (err) {
+    handleAdminRequestError(res, err, "adminUpdateUserProfile");
   }
 });
 

@@ -1353,11 +1353,27 @@
       window.__rideSyncConfigPromise = fetch("/app-config.json", {
         cache: "no-store"
       })
-        .then((res) => {
+        .then(async (res) => {
           if (!res.ok) {
             throw new Error(`Failed to load app config: ${res.status}`);
           }
-          return res.json();
+          const config = await res.json();
+          const availabilityUrl =
+            config?.functions?.getAvailabilityUrl || config?.availabilityConfigUrl || "";
+          if (availabilityUrl) {
+            try {
+              const availabilityRes = await fetch(availabilityUrl, { cache: "no-store" });
+              if (availabilityRes.ok) {
+                const availabilityJson = await availabilityRes.json();
+                if (availabilityJson?.availability) {
+                  config.availability = availabilityJson.availability;
+                }
+              }
+            } catch (availabilityErr) {
+              console.warn("Availability override failed", availabilityErr);
+            }
+          }
+          return config;
         })
         .catch((err) => {
           console.error("App config load failed", err);
