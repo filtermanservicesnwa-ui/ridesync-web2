@@ -29,7 +29,7 @@
     "publishableKeyTest": "pk_test_51SKjO4CbEdF7xUZ5y1Uceore88zrCE8Q9ASNO6bVxGVkj9YGPazDPvx9VZwjfriUnzslstmBVa5WEzukGjMkgVz000w5bDBHhi",
     "membershipPlans": {
       "basic": {
-        "priceDisplay": "$0.60/min + $3.00 + 3%",
+        "priceDisplay": "$0.60/min + $0.50 + 3%",
         "mode": "none"
       },
       "uofa_unlimited": {
@@ -60,8 +60,8 @@
   },
   "fares": {
     "basicRatePerMin": 0.6,
-    "basicPlatformFee": 1.5,
-    "basicPerRideFee": 1.5,
+    "basicPlatformFee": 0.5,
+    "basicPerRideFee": 0,
     "basicProcessingFeeRate": 0.03,
     "unlimitedOutRate": 0.35,
     "unlimitedProcessingFeeRate": 0.04
