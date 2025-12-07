@@ -1143,6 +1143,9 @@
         >
           <div class="ride-chat-header">
             <div class="ride-chat-title">Chat with your rider</div>
+            <div class="ride-chat-note">
+              Riders see these messages while they're waiting in the queue or during the ride.
+            </div>
             <button
               id="driverChatMinimizeButton"
               class="ride-chat-minimize"
@@ -1705,7 +1708,14 @@
     const NAV_ROUTE_REFRESH_MS = 15000;
     let lastPickupRouteAt = 0;
     let lastDropoffRouteAt = 0;
+    const DRIVER_WAITLIST_CHAT_STATUSES = new Set([
+      "pending_driver",
+      "pending",
+      "pool_searching",
+      "pooled_pending_driver"
+    ]);
     const DRIVER_CHAT_ACTIVE_STATUSES = new Set([
+      ...DRIVER_WAITLIST_CHAT_STATUSES,
       "driver_assigned",
       "driver_arrived",
       "arrived_at_pickup",
@@ -3297,12 +3307,18 @@
       );
     }
 
-    function updateDriverChatState(rideId, status) {
+    function updateDriverChatState(rideId, status, rideData = null) {
       const normalizedStatus = (status || "").toLowerCase();
+      const isWaitlistStatus = DRIVER_WAITLIST_CHAT_STATUSES.has(normalizedStatus);
       const isActive = rideId && DRIVER_CHAT_ACTIVE_STATUSES.has(normalizedStatus);
       if (isActive) {
         initDriverChat(rideId);
         setDriverChatUiEnabled(true);
+        if (isWaitlistStatus) {
+          setDriverChatNote("Rider is waiting in the queue. Share updates while you finish your current trip.");
+        } else {
+          setDriverChatNote("");
+        }
         return;
       }
       if (!rideId || DRIVER_CHAT_TERMINAL_STATUSES.has(normalizedStatus)) {
@@ -3310,7 +3326,12 @@
         return;
       }
       teardownDriverChat(true);
-      setDriverChatUiEnabled(false, "Chat becomes available once you accept the ride.");
+      setDriverChatUiEnabled(
+        false,
+        isWaitlistStatus
+          ? "Chat opens once this rider is actively queued for you."
+          : "Chat becomes available once you accept the ride."
+      );
     }
 
     async function handleDriverChatSend() {
@@ -4032,7 +4053,7 @@
           setDriverOverlayState(DRIVER_STATES.NAV_PICKUP, { forceReveal: true });
       }
       const rideId = ride?.id || ride?.rideId || null;
-      updateDriverChatState(rideId, status);
+      updateDriverChatState(rideId, status, ride);
     }
 
     function updateNavPickupView(ride) {
