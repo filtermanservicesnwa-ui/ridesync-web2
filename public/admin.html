@@ -216,6 +216,30 @@
       min-height: 20px;
       margin-top: 8px;
     }
+    .admin-hours-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .admin-hours-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 6px 0;
+      border-bottom: 1px dashed rgba(148,163,184,0.2);
+      font-size: 0.95rem;
+    }
+    .admin-hours-list li span:first-child {
+      color: var(--muted);
+      text-transform: capitalize;
+    }
+    .admin-hours-list li span:last-child {
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -256,6 +280,16 @@
           <div class="admin-card-label">Today's rides</div>
           <div class="admin-card-value" id="adminRidesToday">0</div>
         </div>
+      </div>
+
+      <div class="admin-section">
+        <div class="admin-section-header">
+          <h3>Service Hours</h3>
+          <span class="admin-note" id="adminHoursTimezone">Loading hours...</span>
+        </div>
+        <ul id="adminHoursList" class="admin-hours-list">
+          <li><span>Sunday</span><span>—</span></li>
+        </ul>
       </div>
 
       <div class="admin-section">
