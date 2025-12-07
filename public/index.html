@@ -8534,12 +8534,12 @@
         WAITLIST_RIDE_STATUSES.has(currentRideStatus) ||
         riderOverlayState === RIDER_STATES.SEARCHING;
       const forceActive = isForcedWaitlistPanelActive();
-      if (!waitingOnDrivers && !forceActive) {
-        if (waitlistState.active) {
-          deactivateWaitlistPanel();
-        }
+      if (!waitingOnDrivers) {
         if (forceActive) {
           cancelForcedWaitlistPanel();
+        }
+        if (waitlistState.active) {
+          deactivateWaitlistPanel();
         }
         return;
       }
