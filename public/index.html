@@ -3781,7 +3781,7 @@
     const MEMBERSHIP_PLAN_COPY = {
       basic: {
         label: MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.BASIC].label,
-        price: "$0.60/min + $3.00 + 3%",
+        price: "$0.60/min + $0.50 + 3%",
         description: "Standard RideSync coverage. Billed per ride.",
         tier: MEMBERSHIP_TIER_KEYS.BASIC,
         priceCents: 0,
@@ -3871,8 +3871,8 @@
 
     const DEFAULT_FARE_SETTINGS = {
       BASIC_RATE_PER_MIN: 0.6,
-      BASIC_PLATFORM_FEE: 1.5,
-      BASIC_PER_RIDE_FEE: 1.5,
+      BASIC_PLATFORM_FEE: 0.5,
+      BASIC_PER_RIDE_FEE: 0,
       BASIC_PROCESSING_FEE_RATE: 0.03,
       UNLIMITED_OUT_RATE: 0.35,
       UNLIMITED_PROCESSING_FEE_RATE: 0.04
