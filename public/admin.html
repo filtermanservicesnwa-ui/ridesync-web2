@@ -63,6 +63,28 @@
       margin-bottom: 14px;
       font-size: 1rem;
     }
+    textarea,
+    select {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #020617;
+      color: var(--text);
+      padding: 10px 12px;
+      margin-top: 4px;
+      margin-bottom: 14px;
+      font-size: 1rem;
+    }
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+    input[type="checkbox"],
+    input[type="radio"] {
+      width: auto;
+      margin: 0;
+      accent-color: var(--accent-2);
+    }
     button {
       border: none;
       border-radius: 999px;
@@ -75,6 +97,9 @@
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
       color: #fff;
       width: 100%;
+    }
+    .btn-primary.btn-compact {
+      width: auto;
     }
     .btn-secondary {
       background: transparent;
@@ -191,6 +216,32 @@
       flex-direction: column;
       gap: 8px;
     }
+    .admin-user-editor {
+      border: 1px dashed var(--border);
+      margin-top: 16px;
+    }
+    .admin-user-editor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .admin-user-editor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px 16px;
+      width: 100%;
+      margin-bottom: 12px;
+    }
+    .admin-inline-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin: 6px 0;
+    }
     .admin-note {
       color: var(--muted);
       font-size: 0.92rem;
@@ -240,6 +291,54 @@
     .admin-hours-list li span:last-child {
       font-weight: 600;
     }
+    .admin-hours-editor {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .admin-hours-days {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .hours-day-card {
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: rgba(15,23,42,0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .hours-day-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-transform: capitalize;
+    }
+    .hours-windows {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .hours-window-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .hours-window-row input[type="time"] {
+      flex: 1;
+      min-width: 100px;
+    }
+    .admin-hours-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
   </style>
 </head>
 <body>
@@ -285,11 +384,51 @@
       <div class="admin-section">
         <div class="admin-section-header">
           <h3>Service Hours</h3>
-          <span class="admin-note" id="adminHoursTimezone">Loading hours...</span>
+          <div class="admin-users-controls">
+            <span class="admin-note" id="adminHoursTimezone">Loading hours...</span>
+            <button id="adminHoursEditButton" class="btn-secondary btn-compact">Edit hours</button>
+            <button
+              id="adminHoursCancelButton"
+              class="btn-secondary btn-compact"
+              style="display:none;"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
         <ul id="adminHoursList" class="admin-hours-list">
           <li><span>Sunday</span><span>—</span></li>
         </ul>
+        <div id="adminHoursEditor" class="admin-hours-editor">
+          <div class="admin-user-editor-grid">
+            <label>
+              Timezone
+              <input type="text" id="adminHoursTimezoneInput" placeholder="America/Chicago" />
+            </label>
+            <label>
+              Closed title
+              <input type="text" id="adminHoursClosedTitleInput" placeholder="Optional title" />
+            </label>
+            <label>
+              Closed message
+              <textarea
+                id="adminHoursClosedMessageInput"
+                placeholder="Shown when riders visit outside service hours."
+              ></textarea>
+            </label>
+          </div>
+          <label class="admin-inline-checkbox">
+            <input type="checkbox" id="adminHoursForceClosed" />
+            Force closed overlay
+          </label>
+          <div id="adminHoursDaysContainer" class="admin-hours-days"></div>
+          <div class="admin-hours-actions">
+            <button id="adminHoursSaveButton" class="btn-primary btn-compact" disabled>
+              Save hours
+            </button>
+            <p id="adminHoursError" class="error"></p>
+          </div>
+        </div>
       </div>
 
       <div class="admin-section">
@@ -323,6 +462,75 @@
           <button id="adminUserSearchButton" class="btn-secondary">Search</button>
         </div>
         <div id="adminUserDetails"></div>
+        <div id="adminUserEditorPanel" class="admin-user-card admin-user-editor" style="display:none;">
+          <div class="admin-user-editor-header">
+            <h4 id="adminUserEditorTitle">Edit user</h4>
+            <button id="adminUserEditorCloseButton" type="button" class="btn-secondary btn-compact">
+              Close
+            </button>
+          </div>
+          <form id="adminUserEditorForm">
+            <div class="admin-user-editor-grid">
+              <label>
+                Full name
+                <input type="text" data-field="name" placeholder="Full name" />
+              </label>
+              <label>
+                Email
+                <input type="email" data-field="email" placeholder="user@example.com" />
+              </label>
+              <label>
+                Phone
+                <input type="tel" data-field="phone" placeholder="Digits only" />
+              </label>
+              <label>
+                Street
+                <input type="text" data-field="street" placeholder="Street address" />
+              </label>
+              <label>
+                City
+                <input type="text" data-field="city" placeholder="City" />
+              </label>
+              <label>
+                State
+                <input type="text" data-field="state" placeholder="State" />
+              </label>
+              <label>
+                ZIP
+                <input type="text" data-field="zip" placeholder="ZIP" />
+              </label>
+              <label>
+                Membership status
+                <select data-field="membershipStatus" id="adminUserEditorMembershipStatus">
+                  <option value="none">None</option>
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="expired">Expired</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </label>
+              <label>
+                Membership expires
+                <input type="datetime-local" data-field="membershipExpiresAt" />
+              </label>
+            </div>
+            <label class="admin-inline-checkbox">
+              <input type="checkbox" data-field="uofaVerified" />
+              U of A verified
+            </label>
+            <label class="admin-inline-checkbox">
+              <input type="checkbox" data-field="membershipApprovalRequired" />
+              Requires membership approval
+            </label>
+            <div class="admin-action-row">
+              <button type="submit" class="btn-primary">Save changes</button>
+              <button type="button" id="adminUserEditorResetButton" class="btn-secondary">
+                Reset
+              </button>
+            </div>
+            <p id="adminUserEditorError" class="error"></p>
+          </form>
+        </div>
       </div>
 
       <div class="admin-section">

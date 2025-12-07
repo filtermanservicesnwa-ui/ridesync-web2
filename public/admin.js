@@ -25,6 +25,7 @@ const AVAILABILITY_DAY_LABELS = {
   friday: "Friday",
   saturday: "Saturday",
 };
+const ADMIN_USER_MEMBERSHIP_STATUSES = ["none", "pending", "active", "expired", "suspended"];
 
 function normalizeDayKey(value) {
   if (typeof value !== "string") {
@@ -189,9 +190,16 @@ const adminState = {
   usersPaging: createAdminUsersPagingState(),
   loadingUsers: false,
   availabilityDisplay: null,
+  availabilityConfig: null,
   lastUsersRefreshAt: 0,
   refreshInFlight: false,
   visibilityListenerAttached: false,
+  searchResults: [],
+  userEditor: null,
+  availabilityForm: null,
+  availabilityFormError: "",
+  savingAvailability: false,
+  availabilityWindowCounter: 0,
 };
 
 const adminRoot = document.getElementById("adminRoot");
@@ -216,6 +224,22 @@ const usersRefreshButton = document.getElementById("adminUsersRefreshButton");
 const usersPageStatus = document.getElementById("adminUsersPageStatus");
 const adminHoursList = document.getElementById("adminHoursList");
 const adminHoursTimezone = document.getElementById("adminHoursTimezone");
+const adminUserEditorPanel = document.getElementById("adminUserEditorPanel");
+const adminUserEditorForm = document.getElementById("adminUserEditorForm");
+const adminUserEditorError = document.getElementById("adminUserEditorError");
+const adminUserEditorTitle = document.getElementById("adminUserEditorTitle");
+const adminUserEditorCloseButton = document.getElementById("adminUserEditorCloseButton");
+const adminUserEditorResetButton = document.getElementById("adminUserEditorResetButton");
+const adminHoursEditButton = document.getElementById("adminHoursEditButton");
+const adminHoursCancelButton = document.getElementById("adminHoursCancelButton");
+const adminHoursEditor = document.getElementById("adminHoursEditor");
+const adminHoursDaysContainer = document.getElementById("adminHoursDaysContainer");
+const adminHoursTimezoneInput = document.getElementById("adminHoursTimezoneInput");
+const adminHoursClosedTitleInput = document.getElementById("adminHoursClosedTitleInput");
+const adminHoursClosedMessageInput = document.getElementById("adminHoursClosedMessageInput");
+const adminHoursForceClosed = document.getElementById("adminHoursForceClosed");
+const adminHoursSaveButton = document.getElementById("adminHoursSaveButton");
+const adminHoursError = document.getElementById("adminHoursError");
 let adminAppReady = false;
 let adminAppInitializing = false;
 
@@ -239,6 +263,8 @@ function resetAdminUsersListState() {
   adminState.users = [];
   adminState.usersPaging = createAdminUsersPagingState();
   adminState.lastUsersRefreshAt = 0;
+  adminState.searchResults = [];
+  renderUserResults([]);
   renderUsersTable();
   renderUsersPagination();
 }
@@ -406,6 +432,335 @@ function renderAvailabilitySchedule() {
   }
 }
 
+function beginAvailabilityEdit() {
+  const sourceConfig = adminState.availabilityConfig || {};
+  adminState.availabilityForm = buildAvailabilityFormState(sourceConfig);
+  adminState.availabilityFormError = "";
+  renderAvailabilityEditor();
+}
+
+function cancelAvailabilityEdit() {
+  adminState.availabilityForm = null;
+  adminState.availabilityFormError = "";
+  adminState.savingAvailability = false;
+  renderAvailabilityEditor();
+}
+
+function buildAvailabilityFormState(config = {}) {
+  const windows = {};
+  AVAILABILITY_DAY_KEYS.forEach((dayKey) => {
+    const entries = Array.isArray(config.windows?.[dayKey]) ? config.windows[dayKey] : [];
+    windows[dayKey] = entries.map((entry) => {
+      const startValue = entry?.start ?? entry?.from ?? entry;
+      const endValue = entry?.end ?? entry?.to ?? entry;
+      return {
+        id: `aw-${++adminState.availabilityWindowCounter}`,
+        start: parseTimeStringToMinutes(startValue),
+        end: parseTimeStringToMinutes(endValue),
+      };
+    });
+  });
+  return {
+    timezone: config.timezone || "America/Chicago",
+    closedTitle: config.closedTitle || "",
+    closedMessage: config.closedMessage || "",
+    forceClosed: !!config.forceClosed,
+    windows,
+  };
+}
+
+function renderAvailabilityEditor() {
+  if (!adminHoursEditor || !adminHoursEditButton || !adminHoursCancelButton) {
+    return;
+  }
+  const form = adminState.availabilityForm;
+  if (!form) {
+    adminHoursEditor.style.display = "none";
+    adminHoursEditButton.style.display = "inline-flex";
+    adminHoursCancelButton.style.display = "none";
+    if (adminHoursError) {
+      adminHoursError.textContent = "";
+    }
+    return;
+  }
+  adminHoursEditor.style.display = "flex";
+  adminHoursEditButton.style.display = "none";
+  adminHoursCancelButton.style.display = "inline-flex";
+  if (adminHoursTimezoneInput) {
+    adminHoursTimezoneInput.value = form.timezone || "";
+  }
+  if (adminHoursClosedTitleInput) {
+    adminHoursClosedTitleInput.value = form.closedTitle || "";
+  }
+  if (adminHoursClosedMessageInput) {
+    adminHoursClosedMessageInput.value = form.closedMessage || "";
+  }
+  if (adminHoursForceClosed) {
+    adminHoursForceClosed.checked = !!form.forceClosed;
+  }
+  if (adminHoursDaysContainer) {
+    adminHoursDaysContainer.innerHTML = AVAILABILITY_DAY_KEYS.map((dayKey) => {
+      const windows = form.windows?.[dayKey] || [];
+      const windowRows = windows
+        .map((windowEntry) => {
+          const windowId = windowEntry.id;
+          return `<div class="hours-window-row" data-window="${windowId}">
+            <input
+              type="time"
+              data-field="start"
+              data-day="${dayKey}"
+              data-window="${windowId}"
+              value="${timeInputFromMinutes(windowEntry.start)}"
+            />
+            <span>to</span>
+            <input
+              type="time"
+              data-field="end"
+              data-day="${dayKey}"
+              data-window="${windowId}"
+              value="${timeInputFromMinutes(windowEntry.end)}"
+            />
+            <button
+              class="btn-secondary btn-compact"
+              data-action="remove-window"
+              data-day="${dayKey}"
+              data-window="${windowId}"
+              type="button"
+            >
+              Remove
+            </button>
+          </div>`;
+        })
+        .join("");
+      return `<div class="hours-day-card">
+        <div class="hours-day-title">${AVAILABILITY_DAY_LABELS[dayKey] || dayKey}</div>
+        <div class="hours-windows" data-day="${dayKey}">
+          ${windowRows || '<p class="admin-note" style="margin:0;">No windows</p>'}
+        </div>
+        <button
+          class="btn-secondary btn-compact"
+          data-action="add-window"
+          data-day="${dayKey}"
+          type="button"
+        >
+          Add window
+        </button>
+      </div>`;
+    }).join("");
+  }
+  if (adminHoursError) {
+    adminHoursError.textContent = adminState.availabilityFormError || "";
+  }
+  if (adminHoursSaveButton) {
+    adminHoursSaveButton.disabled = !!adminState.savingAvailability;
+    adminHoursSaveButton.textContent = adminState.savingAvailability ? "Saving..." : "Save hours";
+  }
+}
+
+function handleAvailabilityEditorInput(event) {
+  const target = event.target;
+  if (!adminState.availabilityForm) {
+    return;
+  }
+  if (target === adminHoursTimezoneInput) {
+    adminState.availabilityForm.timezone = target.value;
+  } else if (target === adminHoursClosedTitleInput) {
+    adminState.availabilityForm.closedTitle = target.value;
+  } else if (target === adminHoursClosedMessageInput) {
+    adminState.availabilityForm.closedMessage = target.value;
+  } else if (target === adminHoursForceClosed) {
+    adminState.availabilityForm.forceClosed = target.checked;
+  } else if (target.dataset?.day && target.dataset?.window) {
+    updateAvailabilityWindowField(
+      target.dataset.day,
+      target.dataset.window,
+      target.dataset.field === "end" ? "end" : "start",
+      target.value
+    );
+  }
+}
+
+function handleAvailabilityEditorClick(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  const action = target.dataset?.action;
+  if (!action) {
+    return;
+  }
+  const dayKey = target.dataset?.day;
+  if (action === "add-window") {
+    addAvailabilityWindow(dayKey);
+  } else if (action === "remove-window") {
+    removeAvailabilityWindow(dayKey, target.dataset?.window);
+  }
+}
+
+function addAvailabilityWindow(dayKey) {
+  const normalizedDay = normalizeDayKey(dayKey);
+  if (!normalizedDay || !adminState.availabilityForm) {
+    return;
+  }
+  const nextWindows = adminState.availabilityForm.windows?.[normalizedDay] || [];
+  const newWindow = {
+    id: `aw-${++adminState.availabilityWindowCounter}`,
+    start: null,
+    end: null,
+  };
+  adminState.availabilityForm.windows[normalizedDay] = [...nextWindows, newWindow];
+  renderAvailabilityEditor();
+}
+
+function removeAvailabilityWindow(dayKey, windowId) {
+  const normalizedDay = normalizeDayKey(dayKey);
+  if (!normalizedDay || !windowId || !adminState.availabilityForm) {
+    return;
+  }
+  const windows = adminState.availabilityForm.windows?.[normalizedDay] || [];
+  adminState.availabilityForm.windows[normalizedDay] = windows.filter(
+    (entry) => entry.id !== windowId
+  );
+  renderAvailabilityEditor();
+}
+
+function updateAvailabilityWindowField(dayKey, windowId, field, value) {
+  if (!adminState.availabilityForm) {
+    return;
+  }
+  const normalizedDay = normalizeDayKey(dayKey);
+  if (!normalizedDay || !windowId) {
+    return;
+  }
+  const windows = adminState.availabilityForm.windows?.[normalizedDay] || [];
+  const targetWindow = windows.find((entry) => entry.id === windowId);
+  if (!targetWindow) {
+    return;
+  }
+  if (field === "start" || field === "end") {
+    targetWindow[field] = parseTimeStringToMinutes(value);
+    renderAvailabilityEditor();
+  }
+}
+
+function timeInputFromMinutes(minutes) {
+  if (!Number.isInteger(minutes)) {
+    return "";
+  }
+  const normalized = ((minutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+}
+
+function buildAvailabilityPayload(form) {
+  const payload = {
+    timezone: form.timezone,
+    closedTitle: form.closedTitle,
+    closedMessage: form.closedMessage,
+    forceClosed: !!form.forceClosed,
+    windows: {},
+  };
+  AVAILABILITY_DAY_KEYS.forEach((dayKey) => {
+    const entries = form.windows?.[dayKey] || [];
+    payload.windows[dayKey] = entries
+      .map((entry) => {
+        if (!Number.isInteger(entry.start) || !Number.isInteger(entry.end)) {
+          return null;
+        }
+        return {
+          start: entry.start,
+          end: entry.end,
+        };
+      })
+      .filter(Boolean);
+  });
+  return payload;
+}
+
+function validateAvailabilityForm(form) {
+  if (!form.timezone || !form.timezone.trim()) {
+    return { ok: false, error: "Timezone is required." };
+  }
+  for (const dayKey of AVAILABILITY_DAY_KEYS) {
+    const entries = form.windows?.[dayKey] || [];
+    for (const entry of entries) {
+      if (!Number.isInteger(entry.start) || !Number.isInteger(entry.end)) {
+        return { ok: false, error: `Set start and end times for ${AVAILABILITY_DAY_LABELS[dayKey]}.` };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+async function handleAvailabilitySave() {
+  if (!adminState.availabilityForm) {
+    return;
+  }
+  const validation = validateAvailabilityForm(adminState.availabilityForm);
+  if (!validation.ok) {
+    adminState.availabilityFormError = validation.error;
+    renderAvailabilityEditor();
+    return;
+  }
+  if (!adminState.endpoints.availabilityUpdate) {
+    adminState.availabilityFormError = "Missing availability endpoint.";
+    renderAvailabilityEditor();
+    return;
+  }
+  adminState.savingAvailability = true;
+  adminState.availabilityFormError = "";
+  renderAvailabilityEditor();
+  try {
+    const payload = buildAvailabilityPayload(adminState.availabilityForm);
+    const response = await adminFetch("availabilityUpdate", { availability: payload });
+    if (response?.availability) {
+      adminState.availabilityConfig = response.availability;
+      adminState.availabilityDisplay = buildAvailabilityDisplay(response.availability);
+      adminState.availabilityForm = null;
+      renderAvailabilitySchedule();
+    }
+  } catch (err) {
+    if (err.message === "unauthorized") {
+      handleUnauthorizedAccess();
+      return;
+    }
+    adminState.availabilityFormError = err.message || "Unable to save hours.";
+  } finally {
+    adminState.savingAvailability = false;
+    renderAvailabilityEditor();
+  }
+}
+
+async function refreshAvailabilitySettings() {
+  const url = adminState.endpoints?.availabilityGet;
+  if (!url) {
+    if (!adminState.availabilityDisplay && adminState.availabilityConfig) {
+      adminState.availabilityDisplay = buildAvailabilityDisplay(adminState.availabilityConfig);
+      renderAvailabilitySchedule();
+    }
+    return;
+  }
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      throw new Error(`Availability fetch failed ${res.status}`);
+    }
+    const data = await res.json();
+    if (data?.availability) {
+      adminState.availabilityConfig = data.availability;
+      adminState.availabilityDisplay = buildAvailabilityDisplay(data.availability);
+      renderAvailabilitySchedule();
+    }
+  } catch (err) {
+    console.warn("Failed to refresh availability settings", err);
+    if (!adminState.availabilityDisplay && adminState.availabilityConfig) {
+      adminState.availabilityDisplay = buildAvailabilityDisplay(adminState.availabilityConfig);
+      renderAvailabilitySchedule();
+    }
+  }
+}
+
 function sanitizeHttpUrl(value) {
   if (typeof value !== "string") {
     return null;
@@ -493,6 +848,24 @@ function buildAdminEndpoints(config = {}) {
       defaultBase,
       "adminSetMembershipPlan"
     ),
+    updateUser: resolveEndpoint(
+      functionsConfig,
+      "adminUpdateUserUrl",
+      defaultBase,
+      "adminUpdateUserProfile"
+    ),
+    availabilityGet: resolveEndpoint(
+      functionsConfig,
+      "getAvailabilityUrl",
+      defaultBase,
+      "getAvailabilitySettings"
+    ),
+    availabilityUpdate: resolveEndpoint(
+      functionsConfig,
+      "adminUpdateAvailabilityUrl",
+      defaultBase,
+      "adminUpdateAvailability"
+    ),
   };
 }
 
@@ -544,6 +917,8 @@ function handleUnauthorizedAccess(message = "Session expired. Please re-enter th
   adminState.pagePassword = null;
   clearStoredPagePassword();
   resetAdminUsersListState();
+  adminState.userEditor = null;
+  renderUserEditor();
   if (adminDashboard) {
     adminDashboard.style.display = "none";
   }
@@ -718,8 +1093,12 @@ function renderPendingTable() {
     .join("");
 }
 
-function renderUserResults(users = []) {
+function renderUserResults(usersArg = null) {
   if (!userDetailsEl) return;
+  if (Array.isArray(usersArg)) {
+    adminState.searchResults = usersArg;
+  }
+  const users = adminState.searchResults || [];
   if (!users.length) {
     userDetailsEl.innerHTML = '<p style="color: var(--muted); margin-top:12px;">No users found.</p>';
     return;
@@ -734,16 +1113,19 @@ function renderUserResults(users = []) {
         : "—";
       const name = safeDisplay(user.name, "Unknown");
       const email = safeDisplay(user.email, "—");
+      const phone = safeDisplay(user.phone || user.phoneNumber, "—");
       const userIdAttr = escapeHtml(user.userId || "");
       return `<div class="admin-user-card">
         <div><strong>Name</strong><br/>${name}</div>
         <div><strong>Email</strong><br/>${email}</div>
+        <div><strong>Phone</strong><br/>${phone}</div>
         <div><strong>Membership</strong><br/>${membershipLine}</div>
         <div><strong>Expires</strong><br/>${expires}</div>
         <div class="admin-action-row">
           <button class="btn-secondary" data-plan="basic" data-user="${userIdAttr}">Set Basic</button>
           <button class="btn-secondary" data-plan="uofa_unlimited" data-user="${userIdAttr}">Set U of A Unlimited</button>
           <button class="btn-secondary" data-plan="nwa_unlimited" data-user="${userIdAttr}">Set NWA Work Pass</button>
+          <button class="btn-primary" data-edit-user="${userIdAttr}">Edit Details</button>
         </div>
       </div>`;
     })
@@ -787,6 +1169,7 @@ function renderUsersTable() {
             <button class="btn-secondary btn-compact" data-plan="basic" data-user="${userIdAttr}">Basic</button>
             <button class="btn-secondary btn-compact" data-plan="uofa_unlimited" data-user="${userIdAttr}">U of A</button>
             <button class="btn-secondary btn-compact" data-plan="nwa_unlimited" data-user="${userIdAttr}">NWA</button>
+            <button class="btn-primary btn-compact" data-edit-user="${userIdAttr}">Edit</button>
           </div>
         </td>
       </tr>`;
@@ -824,15 +1207,315 @@ function renderUsersPagination() {
   usersPageStatus.textContent = `Showing ${startIndex}-${endIndex} (${count} users)`;
 }
 
+function resolveUserRecord(userId) {
+  if (!userId) {
+    return null;
+  }
+  const fromUsers = adminState.users?.find((user) => user.userId === userId);
+  if (fromUsers) {
+    return fromUsers;
+  }
+  return adminState.searchResults?.find((user) => user.userId === userId) || null;
+}
+
+function buildUserEditorState(user = {}) {
+  return {
+    userId: user.userId || "",
+    name: user.name || "",
+    email: user.email || "",
+    phone: user.phone || user.phoneNumber || "",
+    street: user.street || "",
+    city: user.city || "",
+    state: user.state || "",
+    zip: user.zip || "",
+    membershipStatus: user.membershipStatus || "none",
+    membershipExpiresAt: user.membershipExpiresAt || null,
+    membershipApprovalRequired: !!user.membershipApprovalRequired,
+    uofaVerified: !!user.uofaVerified,
+  };
+}
+
+function openUserEditor(userId) {
+  const record = resolveUserRecord(userId);
+  if (!record) {
+    console.warn("User record not found for editor", userId);
+    return;
+  }
+  adminState.userEditor = {
+    form: buildUserEditorState(record),
+    original: buildUserEditorState(record),
+    saving: false,
+    error: "",
+    success: "",
+  };
+  renderUserEditor();
+}
+
+function closeUserEditor() {
+  adminState.userEditor = null;
+  renderUserEditor();
+}
+
+function resetUserEditorForm() {
+  if (!adminState.userEditor) {
+    return;
+  }
+  adminState.userEditor = {
+    ...adminState.userEditor,
+    form: { ...adminState.userEditor.original },
+    error: "",
+    success: "",
+    saving: false,
+  };
+  renderUserEditor();
+}
+
+function renderUserEditor() {
+  if (!adminUserEditorPanel) {
+    return;
+  }
+  const editor = adminState.userEditor;
+  if (!editor || !editor.form) {
+    adminUserEditorPanel.style.display = "none";
+    if (adminUserEditorError) {
+      adminUserEditorError.textContent = "";
+      adminUserEditorError.style.color = "#fecaca";
+    }
+    return;
+  }
+  adminUserEditorPanel.style.display = "flex";
+  const form = editor.form;
+  if (adminUserEditorTitle) {
+    const labelSource = form.name || form.email || form.userId || "User";
+    adminUserEditorTitle.textContent = `Edit ${labelSource}`;
+  }
+  const inputs = adminUserEditorForm?.querySelectorAll("[data-field]") || [];
+  inputs.forEach((input) => {
+    const field = input.dataset.field;
+    if (!field) {
+      return;
+    }
+    if (field === "uofaVerified" || field === "membershipApprovalRequired") {
+      input.checked = !!form[field];
+      return;
+    }
+    if (field === "membershipExpiresAt") {
+      input.value = formatDateTimeLocal(form.membershipExpiresAt);
+      return;
+    }
+    input.value = form[field] ?? "";
+  });
+  if (adminUserEditorError) {
+    if (editor.error) {
+      adminUserEditorError.textContent = editor.error;
+      adminUserEditorError.style.color = "#fecaca";
+    } else if (editor.success) {
+      adminUserEditorError.textContent = editor.success;
+      adminUserEditorError.style.color = "#bbf7d0";
+    } else {
+      adminUserEditorError.textContent = "";
+      adminUserEditorError.style.color = "#fecaca";
+    }
+  }
+  const saveButton = adminUserEditorForm?.querySelector('button[type="submit"]');
+  if (saveButton) {
+    saveButton.disabled = !!editor.saving;
+    saveButton.textContent = editor.saving ? "Saving..." : "Save changes";
+  }
+}
+
+function handleUserEditorInput(event) {
+  if (!adminState.userEditor) {
+    return;
+  }
+  const target = event.target;
+  if (
+    !(
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement
+    )
+  ) {
+    return;
+  }
+  const field = target.dataset.field;
+  if (!field) {
+    return;
+  }
+  const nextForm = { ...adminState.userEditor.form };
+  if (field === "uofaVerified" || field === "membershipApprovalRequired") {
+    nextForm[field] = target.checked;
+  } else if (field === "membershipExpiresAt") {
+    nextForm.membershipExpiresAt = parseDateTimeLocal(target.value);
+  } else if (field === "membershipStatus") {
+    nextForm.membershipStatus = target.value;
+  } else {
+    nextForm[field] = target.value;
+  }
+  adminState.userEditor = {
+    ...adminState.userEditor,
+    form: nextForm,
+    error: "",
+    success: "",
+  };
+}
+
+function buildUserUpdatePayload(form = {}) {
+  return {
+    userId: form.userId,
+    name: form.name,
+    email: form.email,
+    phone: form.phone,
+    street: form.street,
+    city: form.city,
+    state: form.state,
+    zip: form.zip,
+    membershipStatus: form.membershipStatus,
+    membershipExpiresAt: form.membershipExpiresAt,
+    membershipApprovalRequired: form.membershipApprovalRequired,
+    uofaVerified: form.uofaVerified,
+  };
+}
+
+async function handleUserEditorSubmit() {
+  const editor = adminState.userEditor;
+  if (!editor?.form?.userId) {
+    return;
+  }
+  if (adminState.userEditor) {
+    adminState.userEditor = {
+      ...editor,
+      saving: true,
+      error: "",
+      success: "",
+    };
+  }
+  renderUserEditor();
+  try {
+    const payload = buildUserUpdatePayload(editor.form);
+    const response = await adminFetch("updateUser", payload);
+    const updatedUser = response?.user;
+    if (updatedUser) {
+      updateLocalUserCaches(updatedUser);
+      if (adminState.userEditor) {
+        adminState.userEditor = {
+          ...adminState.userEditor,
+          saving: false,
+          form: buildUserEditorState(updatedUser),
+          original: buildUserEditorState(updatedUser),
+          success: "Changes saved.",
+          error: "",
+        };
+      }
+      renderUsersTable();
+      renderUserResults();
+    } else {
+      if (adminState.userEditor) {
+        adminState.userEditor = {
+          ...adminState.userEditor,
+          saving: false,
+          error: "Changes saved but no user returned.",
+          success: "",
+        };
+      }
+    }
+  } catch (err) {
+    if (err.message === "unauthorized") {
+      handleUnauthorizedAccess();
+      return;
+    }
+    if (adminState.userEditor) {
+      adminState.userEditor = {
+        ...adminState.userEditor,
+        saving: false,
+        error: err.message || "Unable to update user.",
+        success: "",
+      };
+    }
+  }
+  renderUserEditor();
+}
+
+function updateLocalUserCaches(updatedUser) {
+  if (!updatedUser?.userId) {
+    return;
+  }
+  const mergeUser = (user) => {
+    if (!user || user.userId !== updatedUser.userId) {
+      return user;
+    }
+    return { ...user, ...updatedUser };
+  };
+  if (Array.isArray(adminState.users)) {
+    adminState.users = adminState.users.map(mergeUser);
+  }
+  if (Array.isArray(adminState.searchResults)) {
+    adminState.searchResults = adminState.searchResults.map(mergeUser);
+  }
+  if (adminState.userEditor?.form?.userId === updatedUser.userId) {
+    adminState.userEditor = {
+      ...adminState.userEditor,
+      form: buildUserEditorState(updatedUser),
+      original: buildUserEditorState(updatedUser),
+    };
+    renderUserEditor();
+  }
+}
+
+function formatDateTimeLocal(timestampMs) {
+  if (!timestampMs) {
+    return "";
+  }
+  const date = new Date(Number(timestampMs));
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function parseDateTimeLocal(value) {
+  if (!value) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 async function handleUserSearch() {
   const query = userSearchInput?.value?.trim();
   if (!query) {
     renderUserResults([]);
+    if (adminState.userEditor) {
+      adminState.userEditor = {
+        ...adminState.userEditor,
+        form: adminState.userEditor.original,
+      };
+      renderUserEditor();
+    }
     return;
   }
   try {
     const response = await adminFetch("search", { query });
-    renderUserResults(response?.results || []);
+    const results = response?.results || [];
+    renderUserResults(results);
+    if (adminState.userEditor?.form?.userId) {
+      const updatedRecord = results.find(
+        (user) => user.userId === adminState.userEditor?.form?.userId
+      );
+      if (updatedRecord) {
+        adminState.userEditor = {
+          ...adminState.userEditor,
+          form: buildUserEditorState(updatedRecord),
+          original: buildUserEditorState(updatedRecord),
+        };
+        renderUserEditor();
+      }
+    }
   } catch (err) {
     if (err.message === "unauthorized") {
       handleUnauthorizedAccess();
@@ -859,12 +1542,17 @@ async function handlePlanChange(userId, planKey) {
   }
 }
 
-function handleMembershipActionClick(target) {
+function handleUserActionClick(target) {
   if (!(target instanceof HTMLElement)) return;
   const plan = target.dataset.plan;
   const userId = target.dataset.user;
   if (plan && userId) {
     handlePlanChange(userId, plan);
+    return;
+  }
+  const editUserId = target.dataset.editUser;
+  if (editUserId) {
+    openUserEditor(editUserId);
   }
 }
 
@@ -975,10 +1663,10 @@ function attachEventListeners() {
     }
   });
   userDetailsEl?.addEventListener("click", (event) => {
-    handleMembershipActionClick(event.target);
+    handleUserActionClick(event.target);
   });
   usersTableBody?.addEventListener("click", (event) => {
-    handleMembershipActionClick(event.target);
+    handleUserActionClick(event.target);
   });
   pendingBodyEl?.addEventListener("click", (event) => {
     const target = event.target;
@@ -1002,6 +1690,45 @@ function attachEventListeners() {
     const action = adminState.usersPaging?.loaded ? "reload" : "initial";
     loadAdminUsersPage(action);
   });
+  adminUserEditorForm?.addEventListener("input", (event) => {
+    handleUserEditorInput(event);
+  });
+  adminUserEditorForm?.addEventListener("change", (event) => {
+    handleUserEditorInput(event);
+  });
+  adminUserEditorForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    handleUserEditorSubmit();
+  });
+  adminUserEditorResetButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    resetUserEditorForm();
+  });
+  adminUserEditorCloseButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    closeUserEditor();
+  });
+  adminHoursEditButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    beginAvailabilityEdit();
+  });
+  adminHoursCancelButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    cancelAvailabilityEdit();
+  });
+  adminHoursEditor?.addEventListener("input", (event) => {
+    handleAvailabilityEditorInput(event);
+  });
+  adminHoursEditor?.addEventListener("change", (event) => {
+    handleAvailabilityEditorInput(event);
+  });
+  adminHoursEditor?.addEventListener("click", (event) => {
+    handleAvailabilityEditorClick(event);
+  });
+  adminHoursSaveButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    handleAvailabilitySave();
+  });
 }
 
 async function initializeAdminApp() {
@@ -1021,8 +1748,10 @@ async function initializeAdminApp() {
   try {
     const config = await loadConfig();
     adminState.endpoints = buildAdminEndpoints(config);
-    adminState.availabilityDisplay = buildAvailabilityDisplay(config?.availability || {});
+    adminState.availabilityConfig = config?.availability || {};
+    adminState.availabilityDisplay = buildAvailabilityDisplay(adminState.availabilityConfig || {});
     renderAvailabilitySchedule();
+    await refreshAvailabilitySettings();
     ensureAdminRootVisible();
     attachEventListeners();
     if (adminState.pagePassword) {
