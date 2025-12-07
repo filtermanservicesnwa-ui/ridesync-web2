@@ -233,6 +233,81 @@
       background: rgba(15,23,42,0.95);
       font-size: 0.8rem;
     }
+    .rider-queue-title {
+      margin-top: 18px;
+    }
+    .rider-queue-container {
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(15,23,42,0.7);
+      padding: 10px;
+      margin-bottom: 8px;
+    }
+    .rider-queue-list {
+      max-height: 260px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .rider-queue-card {
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.45);
+      padding: 10px;
+      background: rgba(2,6,23,0.9);
+    }
+    .rider-queue-card.rider-queue-card-active {
+      border-color: rgba(34,197,94,0.7);
+      box-shadow: 0 0 0 1px rgba(34,197,94,0.35);
+    }
+    .rider-queue-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 2px;
+    }
+    .rider-queue-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #f8fafc;
+    }
+    .rider-queue-position {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #fde68a;
+      white-space: nowrap;
+    }
+    .rider-queue-wait {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+    .rider-queue-route {
+      display: flex;
+      gap: 6px;
+      font-size: 0.78rem;
+      margin-bottom: 2px;
+    }
+    .rider-queue-route-label {
+      font-weight: 600;
+      color: #cbd5f5;
+      min-width: 56px;
+      flex-shrink: 0;
+    }
+    .rider-queue-route-value {
+      color: #e2e8f0;
+      flex: 1 1 auto;
+    }
+    .rider-queue-meta {
+      margin-top: 4px;
+      font-size: 0.75rem;
+      color: #cbd5f5;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
     .ride-header {
       display: flex;
       justify-content: space-between;
@@ -861,6 +936,17 @@
       >
         <div class="section-title">Available rides</div>
         <div id="ridesList"></div>
+        <div class="section-title rider-queue-title">Riders in queue</div>
+        <div
+          id="riderQueueContainer"
+          class="rider-queue-container"
+          role="region"
+          aria-live="polite"
+        >
+          <div id="riderQueueList" class="rider-queue-list">
+            <div class="small">Go online to view queued riders.</div>
+          </div>
+        </div>
         <div class="small" id="ridesHint">
           Rides with no driver and status pending/pooled will appear here while you are online.
         </div>
@@ -1383,6 +1469,7 @@
     const driverMessage = document.getElementById("driverMessage");
     const driverError = document.getElementById("driverError");
     const ridesList = document.getElementById("ridesList");
+    const riderQueueList = document.getElementById("riderQueueList");
     const driverSyncSection = document.getElementById("driverSyncSection");
     const driverProfileSection = document.getElementById("driverProfileSection");
     const driverNavSyncButton = document.getElementById("driverNavSync");
@@ -2520,6 +2607,100 @@
       return rider?.toDestination || rider?.toAddress || rider?.destAddress || "";
     }
 
+    function resolveRiderDisplayName(ride) {
+      return (
+        ride?.riderName ||
+        ride?.rider?.name ||
+        ride?.primaryRiderName ||
+        ride?.hostName ||
+        ride?.displayName ||
+        "Rider"
+      );
+    }
+
+    function resolveRideMembershipText(ride) {
+      const candidates = [
+        ride?.fare?.membershipLabel,
+        ride?.membershipLabel,
+        ride?.membershipType,
+        ride?.membership,
+        ride?.membershipPlan,
+        ride?.membershipTier
+      ];
+      for (const candidate of candidates) {
+        if (!candidate && candidate !== 0) continue;
+        if (typeof candidate === "string" && candidate.includes("Membership:")) {
+          return candidate.replace("Membership: ", "").trim();
+        }
+        const label = membershipLabel(candidate);
+        if (label) {
+          return label.replace("Membership: ", "").trim();
+        }
+      }
+      return "";
+    }
+
+    function resolveRiderCount(ride) {
+      const candidates = [
+        ride?.numRiders,
+        ride?.riderCount,
+        ride?.currentRiderCount,
+        ride?.maxRiders
+      ];
+      for (const candidate of candidates) {
+        const value = Number(candidate);
+        if (Number.isFinite(value) && value > 0) {
+          return value;
+        }
+      }
+      return 1;
+    }
+
+    function resolveRideQueuedTimestamp(ride) {
+      const timestampFields = [
+        ride?.queuedAt,
+        ride?.queued_at,
+        ride?.requestedAt,
+        ride?.requested_at,
+        ride?.createdAt,
+        ride?.created_at,
+        ride?.updatedAt,
+        ride?.updated_at
+      ];
+      for (const field of timestampFields) {
+        const millis = resolveTimestampMillis(field);
+        if (typeof millis === "number") {
+          return millis;
+        }
+      }
+      return null;
+    }
+
+    function formatRideQueueWait(ride) {
+      const queuedAt = resolveRideQueuedTimestamp(ride);
+      if (!queuedAt) return "";
+      const diffMs = Math.max(0, Date.now() - queuedAt);
+      const minutes = diffMs / 60000;
+      if (minutes < 1) return "Waiting <1 min";
+      if (minutes < 60) return `Waiting ${Math.round(minutes)} min`;
+      const hours = minutes / 60;
+      if (hours < 24) return `Waiting ${hours.toFixed(1)} hr`;
+      const days = Math.floor(hours / 24);
+      return `Waiting ${days} day${days === 1 ? "" : "s"}`;
+    }
+
+    function resolveQueueContextLabel(context, position) {
+      if (context === "offer") return "Respond now";
+      if (context === "queued") {
+        if (position === 1) return "Next up";
+        if (typeof position === "number") {
+          return `Queue #${position}`;
+        }
+        return "Queued";
+      }
+      return "Waiting";
+    }
+
     function resolveTimestampMillis(value) {
       if (!value && value !== 0) return null;
       if (typeof value.toMillis === "function") {
@@ -3012,6 +3193,7 @@
       updateRidesListMessage(visible, { scheduledPending });
       maybeTriggerEarlyNextRide();
       maybeShowNextRideOffer();
+      renderRiderQueueList(visible);
     }
 
     function updateRidesListMessage(visibleRides, { scheduledPending } = {}) {
@@ -3034,6 +3216,121 @@
           ? `Reviewing ${pendingCount} ride request${pendingCount === 1 ? "" : "s"}…`
           : "Processing latest ride data…"
       }</div>`;
+    }
+
+    function renderRiderQueueList(visibleRides = []) {
+      if (!riderQueueList) return;
+      riderQueueList.innerHTML = "";
+      if (!isOnline) {
+        riderQueueList.innerHTML =
+          '<div class="small">Go online to view queued riders.</div>';
+        return;
+      }
+      const entries = buildRiderQueueEntries(visibleRides);
+      if (!entries.length) {
+        riderQueueList.innerHTML =
+          '<div class="small">No riders waiting for assignment.</div>';
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      entries.forEach((entry, index) => {
+        fragment.appendChild(createRiderQueueCard(entry, index));
+      });
+      riderQueueList.appendChild(fragment);
+    }
+
+    function buildRiderQueueEntries(visibleRides = []) {
+      const entries = [];
+      const seen = new Set();
+      if (pendingRideOffer) {
+        seen.add(pendingRideOffer.id);
+        entries.push({ ride: pendingRideOffer, context: "offer" });
+      }
+      rideOfferQueue.forEach((ride, index) => {
+        if (!ride || seen.has(ride.id)) return;
+        seen.add(ride.id);
+        entries.push({ ride, context: "queued", position: index + 1 });
+      });
+      visibleRides.forEach((ride) => {
+        if (!ride || seen.has(ride.id)) return;
+        seen.add(ride.id);
+        entries.push({ ride, context: "visible" });
+      });
+      return entries;
+    }
+
+    function createRiderQueueCard(entry) {
+      const { ride, context, position } = entry;
+      const card = document.createElement("div");
+      card.className = "rider-queue-card";
+      if (context === "offer") {
+        card.classList.add("rider-queue-card-active");
+      }
+
+      const header = document.createElement("div");
+      header.className = "rider-queue-card-header";
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "rider-queue-name";
+      nameEl.textContent = resolveRiderDisplayName(ride);
+      header.appendChild(nameEl);
+
+      const positionEl = document.createElement("div");
+      positionEl.className = "rider-queue-position";
+      positionEl.textContent = resolveQueueContextLabel(context, position);
+      header.appendChild(positionEl);
+
+      card.appendChild(header);
+
+      const waitLabel = formatRideQueueWait(ride);
+      if (waitLabel) {
+        const waitEl = document.createElement("div");
+        waitEl.className = "rider-queue-wait";
+        waitEl.textContent = waitLabel;
+        card.appendChild(waitEl);
+      }
+
+      const pickupRow = document.createElement("div");
+      pickupRow.className = "rider-queue-route";
+      const pickupLabelEl = document.createElement("span");
+      pickupLabelEl.className = "rider-queue-route-label";
+      pickupLabelEl.textContent = "Pickup";
+      const pickupValueEl = document.createElement("span");
+      pickupValueEl.className = "rider-queue-route-value";
+      pickupValueEl.textContent = pickupLabel(ride) || "Pickup pending";
+      pickupRow.appendChild(pickupLabelEl);
+      pickupRow.appendChild(pickupValueEl);
+      card.appendChild(pickupRow);
+
+      const dropoffRow = document.createElement("div");
+      dropoffRow.className = "rider-queue-route";
+      const dropoffLabelEl = document.createElement("span");
+      dropoffLabelEl.className = "rider-queue-route-label";
+      dropoffLabelEl.textContent = "Dropoff";
+      const dropoffValueEl = document.createElement("span");
+      dropoffValueEl.className = "rider-queue-route-value";
+      dropoffValueEl.textContent = dropoffLabel(ride) || "Dropoff pending";
+      dropoffRow.appendChild(dropoffLabelEl);
+      dropoffRow.appendChild(dropoffValueEl);
+      card.appendChild(dropoffRow);
+
+      const metaParts = [];
+      const riderCount = resolveRiderCount(ride);
+      if (riderCount) {
+        metaParts.push(`${riderCount} rider${riderCount === 1 ? "" : "s"}`);
+      }
+      const membershipText = resolveRideMembershipText(ride);
+      if (membershipText) {
+        metaParts.push(membershipText);
+      }
+      if (metaParts.length) {
+        const metaEl = document.createElement("div");
+        metaEl.className = "rider-queue-meta";
+        metaEl.textContent = metaParts.join(" • ");
+        card.appendChild(metaEl);
+      }
+
+      return card;
     }
 
     function syncRideOfferQueue(visibleRides) {
