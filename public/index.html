@@ -3529,6 +3529,7 @@
     };
     const availabilitySettings = buildAvailabilitySettings(availabilityConfig);
     let availabilityIntervalId = null;
+    let availabilityVisibilityListenerAttached = false;
     const DEFAULT_MAPS_API_KEY = "AIzaSyDlYSl5rfovahECuBSbkELw2uyC6-Ucmr0";
     const mapsApiKey = mapsConfig.apiKey || DEFAULT_MAPS_API_KEY;
     const mapsLibraries =
@@ -5982,21 +5983,35 @@
     }
 
     function initializeAvailabilityUi() {
-      if (!availabilitySettings.enabled) {
-        if (availabilityOverlay) {
-          availabilityOverlay.classList.remove("active");
-          availabilityOverlay.setAttribute("aria-hidden", "true");
-        }
-        return;
+      if (availabilityOverlay) {
+        availabilityOverlay.classList.remove("active");
+        availabilityOverlay.setAttribute("aria-hidden", "true");
       }
-      updateAvailabilityUi();
+      appBody?.classList?.remove("app-availability-closed");
+
       if (availabilityIntervalId) {
         clearInterval(availabilityIntervalId);
+        availabilityIntervalId = null;
       }
+      if (availabilityVisibilityListenerAttached) {
+        document.removeEventListener("visibilitychange", handleAvailabilityVisibilityChange);
+        availabilityVisibilityListenerAttached = false;
+      }
+
+      if (!availabilitySettings.enabled) {
+        return;
+      }
+
+      if (!availabilitySettings.forceClosed) {
+        return;
+      }
+
+      updateAvailabilityUi({ isOpen: false });
       availabilityIntervalId = window.setInterval(() => {
         updateAvailabilityUi();
       }, 60_000);
       document.addEventListener("visibilitychange", handleAvailabilityVisibilityChange);
+      availabilityVisibilityListenerAttached = true;
     }
 
     function handleAvailabilityVisibilityChange() {
