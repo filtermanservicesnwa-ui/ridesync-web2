@@ -1382,12 +1382,14 @@ async function handleUserEditorSubmit() {
   if (!editor?.form?.userId) {
     return;
   }
-  adminState.userEditor = {
-    ...editor,
-    saving: true,
-    error: "",
-    success: "",
-  };
+  if (adminState.userEditor) {
+    adminState.userEditor = {
+      ...editor,
+      saving: true,
+      error: "",
+      success: "",
+    };
+  }
   renderUserEditor();
   try {
     const payload = buildUserUpdatePayload(editor.form);
@@ -1395,35 +1397,41 @@ async function handleUserEditorSubmit() {
     const updatedUser = response?.user;
     if (updatedUser) {
       updateLocalUserCaches(updatedUser);
-      adminState.userEditor = {
-        ...adminState.userEditor,
-        saving: false,
-        form: buildUserEditorState(updatedUser),
-        original: buildUserEditorState(updatedUser),
-        success: "Changes saved.",
-        error: "",
-      };
+      if (adminState.userEditor) {
+        adminState.userEditor = {
+          ...adminState.userEditor,
+          saving: false,
+          form: buildUserEditorState(updatedUser),
+          original: buildUserEditorState(updatedUser),
+          success: "Changes saved.",
+          error: "",
+        };
+      }
       renderUsersTable();
       renderUserResults();
     } else {
-      adminState.userEditor = {
-        ...adminState.userEditor,
-        saving: false,
-        error: "Changes saved but no user returned.",
-        success: "",
-      };
+      if (adminState.userEditor) {
+        adminState.userEditor = {
+          ...adminState.userEditor,
+          saving: false,
+          error: "Changes saved but no user returned.",
+          success: "",
+        };
+      }
     }
   } catch (err) {
     if (err.message === "unauthorized") {
       handleUnauthorizedAccess();
       return;
     }
-    adminState.userEditor = {
-      ...adminState.userEditor,
-      saving: false,
-      error: err.message || "Unable to update user.",
-      success: "",
-    };
+    if (adminState.userEditor) {
+      adminState.userEditor = {
+        ...adminState.userEditor,
+        saving: false,
+        error: err.message || "Unable to update user.",
+        success: "",
+      };
+    }
   }
   renderUserEditor();
 }
