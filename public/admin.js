@@ -1,10 +1,13 @@
 const APP_CONFIG_URL = "/app-config.json";
-const REFRESH_INTERVAL_MS = 60_000;
+const ACTIVE_REFRESH_INTERVAL_MS = 5_000;
+const BACKGROUND_REFRESH_INTERVAL_MS = 30_000;
+const USERS_REFRESH_MIN_INTERVAL_MS = 15_000;
 const FIREBASE_PROJECT_ID = "ride-sync-nwa";
 const ADMIN_PAGE_PASSWORD = "Aurora-Verdant-4729";
 const ADMIN_PAGE_ACCESS_KEY = "ridesyncAdminPageAccess";
 const ADMIN_PAGE_PASSWORD_HEADER = "X-Admin-Page-Pass";
 const ADMIN_USERS_PAGE_SIZE = 25;
+const TIMER_API = typeof window !== "undefined" ? window : globalThis;
 
 const adminState = {
   pagePassword: null,
@@ -16,6 +19,9 @@ const adminState = {
   users: [],
   usersPaging: createAdminUsersPagingState(),
   loadingUsers: false,
+  lastUsersRefreshAt: 0,
+  refreshInFlight: false,
+  visibilityListenerAttached: false,
 };
 
 const adminRoot = document.getElementById("adminRoot");
@@ -60,6 +66,7 @@ function createAdminUsersPagingState() {
 function resetAdminUsersListState() {
   adminState.users = [];
   adminState.usersPaging = createAdminUsersPagingState();
+  adminState.lastUsersRefreshAt = 0;
   renderUsersTable();
   renderUsersPagination();
 }
@@ -334,8 +341,8 @@ function showDashboard() {
 }
 
 function handleUnauthorizedAccess(message = "Session expired. Please re-enter the password.") {
-  clearInterval(adminState.refreshTimer);
-  adminState.refreshTimer = null;
+  clearAdminRefreshTimer();
+  adminState.refreshInFlight = false;
   adminState.pagePassword = null;
   clearStoredPagePassword();
   resetAdminUsersListState();
@@ -348,15 +355,71 @@ function handleUnauthorizedAccess(message = "Session expired. Please re-enter th
   showAccessGate();
 }
 
-function scheduleAutoRefresh() {
-  clearInterval(adminState.refreshTimer);
-  if (!adminState.pagePassword) {
+function getRealtimeRefreshDelay() {
+  if (typeof document !== "undefined" && document.hidden) {
+    return BACKGROUND_REFRESH_INTERVAL_MS;
+  }
+  return ACTIVE_REFRESH_INTERVAL_MS;
+}
+
+function clearAdminRefreshTimer() {
+  if (adminState.refreshTimer) {
+    TIMER_API.clearTimeout(adminState.refreshTimer);
     adminState.refreshTimer = null;
+  }
+}
+
+function ensureVisibilityRefreshListener() {
+  if (adminState.visibilityListenerAttached || typeof document === "undefined") {
     return;
   }
-  adminState.refreshTimer = setInterval(() => {
-    refreshAdminDashboard().catch((err) => console.error(err));
-  }, REFRESH_INTERVAL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (!adminState.pagePassword) {
+      return;
+    }
+    scheduleAutoRefresh({ immediate: document.hidden === false });
+  });
+  adminState.visibilityListenerAttached = true;
+}
+
+async function runRealtimeRefreshCycle(options = {}) {
+  if (!adminState.pagePassword || adminState.refreshInFlight) {
+    return;
+  }
+  adminState.refreshInFlight = true;
+  try {
+    await refreshAdminDashboard();
+    const includeUsers = options.includeUsers !== false;
+    const now = Date.now();
+    const elapsedSinceUsers = now - (adminState.lastUsersRefreshAt || 0);
+    const canReloadUsers =
+      includeUsers &&
+      adminState.usersPaging?.loaded &&
+      !adminState.loadingUsers &&
+      elapsedSinceUsers >= USERS_REFRESH_MIN_INTERVAL_MS;
+    if (canReloadUsers) {
+      await loadAdminUsersPage("reload");
+    }
+  } catch (err) {
+    console.error("Realtime refresh failed", err);
+  } finally {
+    adminState.refreshInFlight = false;
+  }
+}
+
+function scheduleAutoRefresh(options = {}) {
+  clearAdminRefreshTimer();
+  if (!adminState.pagePassword) {
+    return;
+  }
+  ensureVisibilityRefreshListener();
+  const immediate = options?.immediate === true;
+  const delay = immediate ? 0 : getRealtimeRefreshDelay();
+  adminState.refreshTimer = TIMER_API.setTimeout(async () => {
+    adminState.refreshTimer = null;
+    await runRealtimeRefreshCycle();
+    scheduleAutoRefresh();
+  }, delay);
 }
 
 async function refreshAdminDashboard() {
@@ -679,6 +742,7 @@ async function loadAdminUsersPage(action = "initial") {
     }
     const response = await adminFetch("listUsers", body);
     adminState.users = response?.users || [];
+    adminState.lastUsersRefreshAt = Date.now();
     paging.currentToken = pageToken || null;
     paging.nextToken = response?.nextPageToken || null;
     paging.loaded = true;
