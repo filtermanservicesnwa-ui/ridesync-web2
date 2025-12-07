@@ -2644,9 +2644,9 @@
               style="display:none;"
             >
               <div class="ride-chat-header">
-                <div class="ride-chat-title">Chat with your driver</div>
+                <div id="rideChatTitle" class="ride-chat-title">Chat with your driver</div>
                 <div id="rideChatOfflineNote" class="ride-chat-note">
-                  Chat is available only while the ride is active.
+                  We'll forward your updates to the next available driver.
                 </div>
               </div>
               <div
@@ -4339,6 +4339,7 @@
     const riderWaitlistBadgeEl = document.getElementById("riderWaitlistBadge");
     const driverInfoStack = document.getElementById("driverInfoStack");
     const rideChatCard = document.getElementById("rideChatCard");
+    const rideChatTitleEl = document.getElementById("rideChatTitle");
     const rideChatMessagesEl = document.getElementById("rideChatMessages");
     const rideChatInputEl = document.getElementById("rideChatInput");
     const rideChatSendButton = document.getElementById("rideChatSendButton");
@@ -4601,6 +4602,7 @@
       etaSource: null
     };
     const RIDE_CHAT_ACTIVE_STATUSES = new Set([
+      ...WAITLIST_RIDE_STATUSES,
       "driver_assigned",
       "driver_arrived",
       "arrived_at_pickup",
@@ -8760,12 +8762,29 @@
       );
     }
 
-    function updateRideChatState(rideId, status) {
+    function updateRideChatState(rideId, status, rideData = null) {
       const normalizedStatus = (status || "").toLowerCase();
+      const isWaitlistStatus = WAITLIST_RIDE_STATUSES.has(normalizedStatus);
+      const driverAssigned =
+        !!(rideData?.driverId || rideData?.assignedDriverId || rideData?.driverEmail);
       const isActive = rideId && RIDE_CHAT_ACTIVE_STATUSES.has(normalizedStatus);
+
+      if (rideChatTitleEl) {
+        if (isWaitlistStatus && !driverAssigned) {
+          rideChatTitleEl.textContent = "Customer service chat";
+        } else {
+          rideChatTitleEl.textContent = "Chat with your driver";
+        }
+      }
+
       if (isActive) {
         initRideChat(rideId);
         setRideChatUiEnabled(true);
+        if (isWaitlistStatus && !driverAssigned) {
+          setRideChatNote("You're in the waiting queue. We'll relay this to the next available driver.");
+        } else {
+          setRideChatNote("");
+        }
         return;
       }
       if (!rideId || RIDE_CHAT_TERMINAL_STATUSES.has(normalizedStatus)) {
@@ -8773,7 +8792,12 @@
         return;
       }
       teardownRideChat(true);
-      setRideChatUiEnabled(false, "Chat becomes available once a driver is on the way.");
+      setRideChatUiEnabled(
+        false,
+        isWaitlistStatus
+          ? "Chat opens once a driver joins your queue."
+          : "Chat becomes available once a driver is on the way."
+      );
     }
 
     async function handleRideChatSend() {
@@ -8931,7 +8955,7 @@
           setOverlayCopy("Ride update", destinationLabel);
           setRiderOverlayState(RIDER_STATES.DRIVER_TO_PICKUP);
       }
-      updateRideChatState(rideId, status);
+      updateRideChatState(rideId, status, data);
       maybeToggleWaitlistPanel();
     }
 
