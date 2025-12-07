@@ -1790,6 +1790,21 @@
       });
     }
 
+    function unlockRideAlertAudioContext() {
+      if (!rideAlertAudioContext || rideAlertAudioUnlocked) {
+        return;
+      }
+      rideAlertAudioContext
+        .resume()
+        .then(() => {
+          rideAlertAudioUnlocked = true;
+        })
+        .catch((err) => {
+          console.warn("ride alert audio unlock failed", err);
+          attachRideAlertUnlockHandlers();
+        });
+    }
+
     function playRideAlertSound() {
       if (!rideAlertAudioContext) {
         playRideAlertFallbackTone();
