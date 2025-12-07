@@ -1601,15 +1601,14 @@
     const driverPhotoRemoveButton = document.getElementById("driverPhotoRemoveButton");
     const driverPhotoError = document.getElementById("driverPhotoError");
 
-    try {
-      await loadGoogleMapsSdk({ apiKey: mapsApiKey, libraries: mapsLibraries });
-    } catch (err) {
+    loadGoogleMapsSdk({ apiKey: mapsApiKey, libraries: mapsLibraries }).catch((err) => {
       googleMapsLoadFailed = true;
       console.error("Google Maps SDK failed to load", err);
       if (driverError) {
-        driverError.textContent = "Unable to load maps. Refresh or update the Maps API key.";
+        driverError.textContent =
+          "Unable to load maps. Refresh or update the Maps API key.";
       }
-    }
+    });
 
     const activeRideOverlay = document.getElementById("activeRideOverlay");
     const driverOverlayAvatarRow = document.getElementById("driverOverlayAvatarRow");
