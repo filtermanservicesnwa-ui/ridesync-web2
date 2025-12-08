@@ -708,7 +708,7 @@ const DEFAULT_AVAILABILITY_SETTINGS = Object.freeze({
     thursday: [{ start: "19:00", end: "02:00" }],
     friday: [{ start: "19:00", end: "02:00" }],
     saturday: [{ start: "07:00", end: "02:00" }],
-    sunday: [{ start: "18:00", end: "07:00" }],
+    sunday: [{ start: "21:00", end: "02:00" }],
   },
 });
 const AVAILABILITY_CONFIG_COLLECTION = "config";
