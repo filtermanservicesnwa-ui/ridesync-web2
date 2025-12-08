@@ -80,7 +80,9 @@
     "closedTitle": "RideSync is closed",
     "closedMessage": "We're outside our service hours. Check back soon.",
     "windows": {
-      "monday": [],
+      "monday": [
+        { "start": "18:00", "end": "02:00" }
+      ],
       "tuesday": [
         { "start": "19:00", "end": "02:00" }
       ],
