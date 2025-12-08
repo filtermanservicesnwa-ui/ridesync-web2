@@ -1761,29 +1761,38 @@
     // Web Audio tone to alert drivers when a new ride offer arrives.
     const rideAlertUnlockEvents = ["pointerdown", "touchstart", "keydown"];
     const AudioContextClass = window.AudioContext || window.webkitAudioContext || null;
-    const rideAlertAudioContext =
-      typeof AudioContextClass === "function" ? new AudioContextClass() : null;
-    let rideAlertAudioUnlocked = !rideAlertAudioContext;
+    let rideAlertAudioContext = null;
+    let rideAlertAudioUnlocked = !AudioContextClass;
     let rideAlertUnlockHandlersAttached = false;
     const rideAlertFallbackToneSrc =
       "data:audio/wav;base64,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";
     function attachRideAlertUnlockHandlers() {
-      if (!rideAlertAudioContext || rideAlertAudioUnlocked || rideAlertUnlockHandlersAttached) {
+      if (!AudioContextClass || rideAlertAudioUnlocked || rideAlertUnlockHandlersAttached) {
         return;
       }
       rideAlertUnlockHandlersAttached = true;
       const handleUnlock = async () => {
+        const ctx = getRideAlertAudioContext({ createIfNeeded: true });
+        if (!ctx) {
+          cleanupUnlockHandlers();
+          return;
+        }
         try {
-          await rideAlertAudioContext.resume();
-          rideAlertAudioUnlocked = true;
+          if (ctx.state === "suspended") {
+            await ctx.resume();
+          }
+          rideAlertAudioUnlocked = ctx.state === "running";
         } catch (err) {
           console.warn("ride alert audio unlock failed", err);
         } finally {
-          rideAlertUnlockEvents.forEach((eventName) => {
-            window.removeEventListener(eventName, handleUnlock);
-          });
-          rideAlertUnlockHandlersAttached = false;
+          cleanupUnlockHandlers();
         }
+      };
+      const cleanupUnlockHandlers = () => {
+        rideAlertUnlockEvents.forEach((eventName) => {
+          window.removeEventListener(eventName, handleUnlock);
+        });
+        rideAlertUnlockHandlersAttached = false;
       };
       rideAlertUnlockEvents.forEach((eventName) => {
         window.addEventListener(eventName, handleUnlock, { once: true, passive: true });
@@ -1791,22 +1800,25 @@
     }
 
     function unlockRideAlertAudioContext() {
-      if (!rideAlertAudioContext || rideAlertAudioUnlocked) {
+      const ctx = getRideAlertAudioContext({ createIfNeeded: true });
+      if (!ctx || rideAlertAudioUnlocked) {
         return;
       }
-      rideAlertAudioContext
+      ctx
         .resume()
         .then(() => {
-          rideAlertAudioUnlocked = true;
+          rideAlertAudioUnlocked = ctx.state === "running";
         })
         .catch((err) => {
           console.warn("ride alert audio unlock failed", err);
+          rideAlertAudioUnlocked = false;
           attachRideAlertUnlockHandlers();
         });
     }
 
     function playRideAlertSound() {
-      if (!rideAlertAudioContext) {
+      const ctx = getRideAlertAudioContext();
+      if (!ctx) {
         playRideAlertFallbackTone();
         return false;
       }
@@ -1816,7 +1828,6 @@
         return false;
       }
       try {
-        const ctx = rideAlertAudioContext;
         const oscillator = ctx.createOscillator();
         const gain = ctx.createGain();
         const now = ctx.currentTime + 0.01;
@@ -1847,6 +1858,24 @@
       } catch (_) {
         // Ignore playback errors (autoplay policies, etc.)
       }
+    }
+
+    function getRideAlertAudioContext(options = {}) {
+      const { createIfNeeded = false } = options;
+      if (rideAlertAudioContext || !createIfNeeded) {
+        return rideAlertAudioContext;
+      }
+      if (typeof AudioContextClass !== "function") {
+        return null;
+      }
+      try {
+        rideAlertAudioContext = new AudioContextClass();
+        rideAlertAudioUnlocked = rideAlertAudioContext.state === "running";
+      } catch (err) {
+        console.warn("ride alert audio context creation failed", err);
+        rideAlertAudioContext = null;
+      }
+      return rideAlertAudioContext;
     }
 
     attachRideAlertUnlockHandlers();
