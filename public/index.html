@@ -56,15 +56,20 @@
       overflow-x: hidden;
       transition: background 0.5s ease;
     }
-    body.landing-active {
+    body.landing-active,
+    body.splash-active {
       overflow: hidden;
     }
     body.landing-active .card,
     body.landing-active .site-footer,
-    body.landing-active .top-right {
+    body.landing-active .top-right,
+    body.splash-active .card,
+    body.splash-active .site-footer,
+    body.splash-active .top-right {
       display: none;
     }
-    body.landing-active #map {
+    body.landing-active #map,
+    body.splash-active #map {
       opacity: 0;
       pointer-events: none;
     }
@@ -86,6 +91,132 @@
     }
     .main-landing.home-screen {
       backdrop-filter: blur(12px);
+    }
+    .splash-screen {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(24px, 6vw, 48px);
+      background:
+        radial-gradient(circle at top, rgba(15,23,42,0.9), rgba(2,6,23,0.95)),
+        var(--weather-bg);
+      z-index: 60;
+    }
+    .splash-screen.active {
+      display: flex;
+    }
+    .splash-card {
+      width: 100%;
+      max-width: 640px;
+      background: rgba(2,6,23,0.94);
+      border: 1px solid rgba(148,163,184,0.45);
+      border-radius: clamp(18px, 4vw, 26px);
+      padding: clamp(20px, 5vw, 40px);
+      box-shadow:
+        0 30px 80px rgba(2,6,23,0.8),
+        0 0 60px rgba(79,70,229,0.35);
+    }
+    .splash-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #c7d2fe;
+      background: rgba(79,70,229,0.12);
+      margin-bottom: 12px;
+    }
+    .splash-title {
+      font-size: clamp(1.8rem, 6vw, 2.6rem);
+      margin: 0 0 12px;
+      text-align: left;
+    }
+    .splash-subtitle {
+      margin: 0 0 20px;
+      color: #cbd5f5;
+      font-size: 1rem;
+      line-height: 1.5;
+    }
+    .splash-pill-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .splash-pill {
+      border-radius: 16px;
+      padding: 14px;
+      border: 1px solid rgba(148,163,184,0.3);
+      background: rgba(15,23,42,0.8);
+    }
+    .splash-pill strong {
+      display: block;
+      font-size: 1.1rem;
+      margin-bottom: 4px;
+      color: #f8fafc;
+    }
+    .splash-pill span {
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+    .splash-benefits {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .splash-benefits li {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      font-size: 0.95rem;
+      line-height: 1.4;
+      color: #e2e8f0;
+    }
+    .splash-benefits li::before {
+      content: "•";
+      color: #22d3ee;
+      font-size: 1.5rem;
+      line-height: 1;
+      margin-top: -2px;
+    }
+    .splash-compare {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    .splash-compare-card {
+      border-radius: 14px;
+      padding: 14px;
+      border: 1px solid rgba(148,163,184,0.3);
+      background: rgba(15,23,42,0.85);
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+    .splash-compare-card strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 1rem;
+    }
+    .splash-cta {
+      width: 100%;
+      margin-top: 8px;
+      padding: 14px 18px;
+      font-size: 1rem;
+    }
+    .splash-secondary-cta {
+      margin: 12px 0 0;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #cbd5f5;
     }
     .main-landing-wordmark {
       display: flex;
@@ -1967,6 +2098,56 @@
   </style>
 </head>
 <body id="appRoot" class="landing-active">
+  <div
+    id="splashPage"
+    class="splash-screen"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="splashTitle"
+    aria-hidden="true"
+  >
+    <div class="splash-card">
+      <div class="splash-eyebrow">RideSync > Rideshare</div>
+      <h1 id="splashTitle" class="splash-title">Built for campus, not surge pricing.</h1>
+      <p class="splash-subtitle">
+        We dispatch vetted local drivers, cap wait times, and publish guaranteed fares—
+        so you get home faster and safer than the big national apps.
+      </p>
+      <div class="splash-pill-grid">
+        <div class="splash-pill">
+          <strong>4 min</strong>
+          <span>average Fayetteville pickup in peak hours</span>
+        </div>
+        <div class="splash-pill">
+          <strong>0%</strong>
+          <span>surge or surprise fees—ever</span>
+        </div>
+        <div class="splash-pill">
+          <strong>Local only</strong>
+          <span>background-checked student &amp; pro drivers</span>
+        </div>
+      </div>
+      <ul class="splash-benefits">
+        <li><strong>Proactive safety.</strong> Live dispatch + verified rider roster keep both sides accountable.</li>
+        <li><strong>Membership-style fares.</strong> Predictable pricing that rewards frequent riders.</li>
+        <li><strong>Community-first.</strong> Every ride supports the campus &amp; NWA ecosystem.</li>
+      </ul>
+      <div class="splash-compare">
+        <div class="splash-compare-card">
+          <strong>RideSync</strong>
+          Guaranteed pickup windows, local support, and direct text access to dispatch.
+        </div>
+        <div class="splash-compare-card">
+          <strong>Big Rideshare</strong>
+          Unpredictable surge, outsourced support queues, and drivers who aren&apos;t nearby.
+        </div>
+      </div>
+      <button id="splashContinueButton" type="button" class="btn-primary splash-cta">
+        Enter RideSync
+      </button>
+      <p class="splash-secondary-cta">Already have an account? Your login form is just below.</p>
+    </div>
+  </div>
   <div
     id="mainLandingPage"
     class="main-landing home-screen active"
@@ -4034,8 +4215,63 @@
     const availabilityNextWindowEl = document.getElementById("availabilityNextWindow");
     const availabilityScheduleEl = document.getElementById("availabilityScheduleList");
     const appBody = document.body;
+    const splashPage = document.getElementById("splashPage");
+    const splashContinueButton = document.getElementById("splashContinueButton");
+    const SPLASH_SEEN_STORAGE_KEY = "ridesync:splash-seen-v1";
     let riderPresenceInterval = null;
     let riderPresenceUserId = null;
+
+    function toggleLandingAccessibility(hidden) {
+      if (!mainLandingPage) return;
+      if (hidden) {
+        mainLandingPage.setAttribute("aria-hidden", "true");
+        mainLandingPage.setAttribute("inert", "");
+      } else {
+        mainLandingPage.setAttribute("aria-hidden", "false");
+        mainLandingPage.removeAttribute("inert");
+        mainLandingPage.classList.add("active");
+      }
+    }
+
+    function rememberSplashDismissed() {
+      try {
+        window.localStorage?.setItem(SPLASH_SEEN_STORAGE_KEY, "1");
+      } catch (err) {
+        console.warn("Unable to store splash preference", err);
+      }
+    }
+
+    function splashHasBeenSeen() {
+      try {
+        return window.localStorage?.getItem(SPLASH_SEEN_STORAGE_KEY) === "1";
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function showSplashPage() {
+      if (!splashPage || !appBody) return;
+      splashPage.classList.add("active");
+      splashPage.removeAttribute("inert");
+      splashPage.setAttribute("aria-hidden", "false");
+      appBody.classList.add("splash-active");
+      toggleLandingAccessibility(true);
+    }
+
+    function dismissSplashPage({ persist = false, focusTarget = true } = {}) {
+      if (!splashPage || !appBody) return;
+      splashPage.classList.remove("active");
+      splashPage.setAttribute("aria-hidden", "true");
+      splashPage.setAttribute("inert", "");
+      appBody.classList.remove("splash-active");
+      toggleLandingAccessibility(false);
+      if (persist) {
+        rememberSplashDismissed();
+      }
+      if (focusTarget) {
+        landingSyncRiderButton?.focus?.();
+      }
+    }
 
     function writeRiderPresenceOnline(uid) {
       if (!uid) return Promise.resolve();
@@ -4142,6 +4378,26 @@
     driverComingSoonOverlay?.addEventListener("click", (event) => {
       if (event.target === driverComingSoonOverlay) {
         hideDriverComingSoonModal();
+      }
+    });
+
+    if (splashPage) {
+      if (splashHasBeenSeen()) {
+        dismissSplashPage({ focusTarget: false });
+      } else {
+        showSplashPage();
+      }
+    } else {
+      toggleLandingAccessibility(false);
+    }
+
+    splashContinueButton?.addEventListener("click", () => {
+      dismissSplashPage({ persist: true });
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && splashPage?.classList.contains("active")) {
+        dismissSplashPage({ persist: true });
       }
     });
 
