@@ -1630,43 +1630,35 @@
       color: #cbd5f5;
     }
     .waitlist-meta {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 12px;
-      flex-wrap: wrap;
+      width: 100%;
     }
-    .waitlist-pill {
-      font-size: 0.78rem;
-      padding: 4px 12px;
-      border-radius: 999px;
-      border: 1px solid rgba(94,234,212,0.4);
-      background: rgba(13,148,136,0.15);
-      color: #5eead4;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .waitlist-pill:empty {
-      display: none;
-    }
-    .waitlist-timer-block {
+    .waitlist-stat-card {
+      border-radius: 12px;
+      border: 1px solid rgba(148,163,184,0.35);
+      padding: 12px 14px;
+      background: rgba(2,6,23,0.6);
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
+      gap: 4px;
+      min-height: 92px;
     }
-    .waitlist-timer-label {
-      font-size: 0.7rem;
+    .waitlist-stat-label {
+      font-size: 0.72rem;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: #94a3b8;
     }
-    .waitlist-timer-value {
-      font-size: 1.5rem;
+    .waitlist-stat-value {
+      font-size: 1.6rem;
       font-weight: 600;
       color: #fef3c7;
+    }
+    .waitlist-stat-subtext {
+      font-size: 0.78rem;
+      color: #cbd5f5;
     }
     @keyframes waitlistPulse {
       0% { transform: scale(1); opacity: 1; }
@@ -1709,6 +1701,20 @@
       border-radius: 18px;
       padding: 16px;
       background: rgba(2,6,23,0.95);
+    }
+    .driver-verified-toggle {
+      margin-top: 12px;
+      align-self: flex-start;
+    }
+    .driver-verified-panel {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+      width: 100%;
+      margin-top: 12px;
+    }
+    .driver-verified-panel.active {
+      display: flex;
     }
     .driver-info-stack > :not(:first-child) {
       border-top: 1px solid rgba(148,163,184,0.25);
@@ -2817,10 +2823,19 @@
                 All drivers are currently finishing trips nearby.
               </div>
               <div class="waitlist-meta">
-                <div id="riderWaitlistBadge" class="waitlist-pill"></div>
-                <div class="waitlist-timer-block">
-                  <div class="waitlist-timer-label">Driver ETA</div>
-                  <div id="riderWaitlistTimer" class="waitlist-timer-value">--:--</div>
+                <div class="waitlist-stat-card">
+                  <div class="waitlist-stat-label">Queue</div>
+                  <div id="riderWaitlistQueueValue" class="waitlist-stat-value">0</div>
+                  <div id="riderWaitlistQueueNote" class="waitlist-stat-subtext">
+                    Checking line…
+                  </div>
+                </div>
+                <div class="waitlist-stat-card">
+                  <div class="waitlist-stat-label">Average wait</div>
+                  <div id="riderWaitlistAvgValue" class="waitlist-stat-value">--:--</div>
+                  <div class="waitlist-stat-subtext">
+                    Your driver ETA <span id="riderWaitlistTimer">--:--</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2930,6 +2945,49 @@
                   Waiting for driver location…
                 </div>
               </div>
+              <button
+                id="driverVerifiedInfoToggle"
+                type="button"
+                class="btn-secondary btn-small driver-verified-toggle"
+                aria-expanded="false"
+              >
+                View verified info
+              </button>
+            </div>
+
+            <div
+              id="driverVerifiedInfoPanel"
+              class="driver-verified-panel"
+              aria-hidden="true"
+            >
+              <div id="driverVehicleSection" class="driver-vehicle-card" style="display:none;">
+                <div class="section-title" style="margin-top:0;">Vehicle</div>
+                <div class="driver-vehicle-body">
+                  <div class="driver-vehicle-photo">
+                    <img id="driverVehiclePhoto" alt="Driver vehicle" />
+                    <div id="driverVehicleFallback" class="avatar-fallback">RS</div>
+                  </div>
+                  <div class="driver-vehicle-details">
+                    <div id="driverVehicleName" class="driver-vehicle-name"></div>
+                    <div id="driverVehiclePlate"></div>
+                    <div id="driverVehicleNote" class="driver-license-meta"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="driverLicenseSection" class="driver-license-card" style="display:none;">
+                <div class="section-title" style="margin-top:0;">License &amp; verification</div>
+                <div class="driver-license-body">
+                  <div class="driver-license-photo">
+                    <img id="driverLicensePhoto" alt="Driver license" />
+                    <div id="driverLicenseFallback" class="avatar-fallback">ID</div>
+                  </div>
+                  <div class="driver-license-details">
+                    <div id="driverLicenseSummary" class="driver-license-summary"></div>
+                    <div id="driverLicenseMeta" class="driver-license-meta"></div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div
@@ -2967,35 +3025,6 @@
                 >
                   Send
                 </button>
-              </div>
-            </div>
-
-            <div id="driverVehicleSection" class="driver-vehicle-card">
-              <div class="section-title" style="margin-top:0;">Vehicle</div>
-              <div class="driver-vehicle-body">
-                <div class="driver-vehicle-photo">
-                  <img id="driverVehiclePhoto" alt="Driver vehicle" />
-                  <div id="driverVehicleFallback" class="avatar-fallback">RS</div>
-                </div>
-                <div class="driver-vehicle-details">
-                  <div id="driverVehicleName" class="driver-vehicle-name"></div>
-                  <div id="driverVehiclePlate"></div>
-                  <div id="driverVehicleNote" class="driver-license-meta"></div>
-                </div>
-              </div>
-            </div>
-
-            <div id="driverLicenseSection" class="driver-license-card">
-              <div class="section-title" style="margin-top:0;">License &amp; verification</div>
-              <div class="driver-license-body">
-                <div class="driver-license-photo">
-                  <img id="driverLicensePhoto" alt="Driver license" />
-                  <div id="driverLicenseFallback" class="avatar-fallback">ID</div>
-                </div>
-                <div class="driver-license-details">
-                  <div id="driverLicenseSummary" class="driver-license-summary"></div>
-                  <div id="driverLicenseMeta" class="driver-license-meta"></div>
-                </div>
               </div>
             </div>
 
@@ -4726,7 +4755,9 @@
     const riderWaitlistPanel = document.getElementById("riderWaitlistPanel");
     const riderWaitlistStatusEl = document.getElementById("riderWaitlistStatus");
     const riderWaitlistTimerEl = document.getElementById("riderWaitlistTimer");
-    const riderWaitlistBadgeEl = document.getElementById("riderWaitlistBadge");
+    const riderWaitlistQueueValueEl = document.getElementById("riderWaitlistQueueValue");
+    const riderWaitlistQueueNoteEl = document.getElementById("riderWaitlistQueueNote");
+    const riderWaitlistAvgValueEl = document.getElementById("riderWaitlistAvgValue");
     const driverInfoStack = document.getElementById("driverInfoStack");
     const rideChatCard = document.getElementById("rideChatCard");
     const rideChatTitleEl = document.getElementById("rideChatTitle");
@@ -4774,6 +4805,16 @@
     const driverLicenseFallbackEl = document.getElementById("driverLicenseFallback");
     const driverLicenseSummaryEl = document.getElementById("driverLicenseSummary");
     const driverLicenseMetaEl = document.getElementById("driverLicenseMeta");
+    const driverVerifiedInfoToggle = document.getElementById("driverVerifiedInfoToggle");
+    const driverVerifiedInfoPanel = document.getElementById("driverVerifiedInfoPanel");
+    let driverVerifiedInfoVisible = false;
+    if (driverVerifiedInfoToggle) {
+      driverVerifiedInfoToggle.addEventListener("click", () => {
+        setDriverVerifiedInfoVisibility(!driverVerifiedInfoVisible);
+      });
+    }
+    setDriverVerifiedInfoVisibility(false);
+    refreshDriverVerifiedInfoToggleVisibility();
 
     const supportPanel = document.getElementById("supportPanel");
     const supportBackButton = document.getElementById("supportBackButton");
@@ -4974,10 +5015,15 @@
     ];
     let driverOnlineUnsub = null;
     let driverBusyUnsub = null;
+    let waitlistQueueUnsub = null;
     const driverAvailability = {
       onlineCount: 0,
       onlineIds: new Set(),
       busyDriverIds: new Set()
+    };
+    const waitlistQueueStats = {
+      count: 0,
+      averageSeconds: null
     };
     const WAITLIST_AVAILABLE_DRIVER_MINUTES = 2;
     const WAITLIST_BUSY_BASE_MINUTES = 3;
@@ -5659,6 +5705,39 @@
       driverLicenseSummaryEl.textContent = licenseSummary || "License verified with RideSync";
       driverLicenseMetaEl.textContent = licenseMeta || "";
       driverLicenseMetaEl.style.display = licenseMeta ? "block" : "none";
+    }
+
+    function setDriverVerifiedInfoVisibility(visible) {
+      driverVerifiedInfoVisible = Boolean(visible);
+      if (driverVerifiedInfoPanel) {
+        driverVerifiedInfoPanel.classList.toggle("active", driverVerifiedInfoVisible);
+        driverVerifiedInfoPanel.setAttribute(
+          "aria-hidden",
+          driverVerifiedInfoVisible ? "false" : "true"
+        );
+      }
+      if (driverVerifiedInfoToggle) {
+        driverVerifiedInfoToggle.setAttribute(
+          "aria-expanded",
+          driverVerifiedInfoVisible ? "true" : "false"
+        );
+        driverVerifiedInfoToggle.textContent = driverVerifiedInfoVisible
+          ? "Hide verified info"
+          : "View verified info";
+      }
+    }
+
+    function refreshDriverVerifiedInfoToggleVisibility() {
+      if (!driverVerifiedInfoToggle) return;
+      const hasVehicleInfo =
+        driverVehicleSection && driverVehicleSection.style.display !== "none";
+      const hasLicenseInfo =
+        driverLicenseSection && driverLicenseSection.style.display !== "none";
+      const shouldShow = hasVehicleInfo || hasLicenseInfo;
+      driverVerifiedInfoToggle.style.display = shouldShow ? "inline-flex" : "none";
+      if (!shouldShow) {
+        setDriverVerifiedInfoVisibility(false);
+      }
     }
 
     function ensureDriverMiniMap() {
@@ -8687,6 +8766,7 @@
         waitlistState.timerId = window.setInterval(tickWaitlistTimer, 1000);
       }
       tickWaitlistTimer();
+      updateWaitlistQueueUi();
     }
 
     function deactivateWaitlistPanel() {
@@ -8703,10 +8783,7 @@
       if (riderWaitlistTimerEl) {
         riderWaitlistTimerEl.textContent = "--:--";
       }
-      if (riderWaitlistBadgeEl) {
-        riderWaitlistBadgeEl.textContent = "";
-        riderWaitlistBadgeEl.style.display = "none";
-      }
+      updateWaitlistQueueUi();
     }
 
     function tickWaitlistTimer() {
@@ -8719,9 +8796,11 @@
           Math.round((waitlistState.etaTargetTimestamp - Date.now()) / 1000)
         );
         riderWaitlistTimerEl.textContent = formatWaitlistClockValue(remainingSeconds);
+        updateWaitlistQueueUi();
         return;
       }
       riderWaitlistTimerEl.textContent = "--:--";
+      updateWaitlistQueueUi();
     }
 
     function formatWaitlistClockValue(totalSeconds) {
@@ -8840,6 +8919,24 @@
       return null;
     }
 
+    function resolveRideQueuedTimestamp(ride = {}) {
+      const timestampFields = [
+        ride.queuedAt,
+        ride.queued_at,
+        ride.requestedAt,
+        ride.requested_at,
+        ride.createdAt,
+        ride.created_at
+      ];
+      for (const candidate of timestampFields) {
+        const millis = parseTimestampMillis(candidate);
+        if (typeof millis === "number") {
+          return millis;
+        }
+      }
+      return null;
+    }
+
     function estimateWaitSecondsFromAvailability() {
       const online = Number(driverAvailability.onlineCount || 0);
       const busy = Math.min(getBusyOnlineDriverCount(), online);
@@ -8875,6 +8972,7 @@
       if (waitlistState.active && riderWaitlistTimerEl) {
         riderWaitlistTimerEl.textContent = "--:--";
       }
+      updateWaitlistQueueUi();
     }
 
     function isForcedWaitlistPanelActive() {
@@ -8965,17 +9063,103 @@
           riderWaitlistStatusEl.textContent = "Checking for online drivers nearby…";
         }
       }
-      if (riderWaitlistBadgeEl) {
-        const online = driverAvailability.onlineCount;
-        const busy = Math.min(getBusyOnlineDriverCount(), online);
-        if (online > 0) {
-          riderWaitlistBadgeEl.textContent = `${busy} / ${online} drivers busy`;
-          riderWaitlistBadgeEl.style.display = "inline-flex";
-        } else {
-          riderWaitlistBadgeEl.textContent = "";
-          riderWaitlistBadgeEl.style.display = "none";
+      updateWaitlistQueueUi();
+    }
+
+    function resolveAverageWaitSeconds() {
+      if (
+        Number.isFinite(waitlistQueueStats.averageSeconds) &&
+        waitlistQueueStats.averageSeconds > 0
+      ) {
+        return waitlistQueueStats.averageSeconds;
+      }
+      if (
+        typeof waitlistState.etaTargetTimestamp === "number" &&
+        waitlistState.etaTargetTimestamp > Date.now()
+      ) {
+        return Math.max(0, (waitlistState.etaTargetTimestamp - Date.now()) / 1000);
+      }
+      const fallback = estimateWaitSecondsFromAvailability();
+      return Number.isFinite(fallback) ? fallback : null;
+    }
+
+    function updateWaitlistQueueUi() {
+      if (riderWaitlistQueueValueEl) {
+        const count = Math.max(0, Number(waitlistQueueStats.count) || 0);
+        riderWaitlistQueueValueEl.textContent = String(count);
+        if (riderWaitlistQueueNoteEl) {
+          if (count === 0) {
+            riderWaitlistQueueNoteEl.textContent = "You're first in line";
+          } else if (count === 1) {
+            riderWaitlistQueueNoteEl.textContent = "1 rider ahead";
+          } else {
+            riderWaitlistQueueNoteEl.textContent = `${count} riders ahead`;
+          }
         }
       }
+      if (riderWaitlistAvgValueEl) {
+        const avgSeconds = resolveAverageWaitSeconds();
+        riderWaitlistAvgValueEl.textContent =
+          Number.isFinite(avgSeconds) && avgSeconds > 0
+            ? formatWaitlistClockValue(avgSeconds)
+            : "--:--";
+      }
+    }
+
+    function handleWaitlistQueueSnapshot(snap) {
+      if (!snap) return;
+      let count = 0;
+      let totalSeconds = 0;
+      let sampleCount = 0;
+      const now = Date.now();
+      snap.forEach((docSnap) => {
+        count += 1;
+        const queuedAt = resolveRideQueuedTimestamp(docSnap.data() || {});
+        if (typeof queuedAt === "number") {
+          const ageSeconds = Math.max(0, (now - queuedAt) / 1000);
+          totalSeconds += ageSeconds;
+          sampleCount += 1;
+        }
+      });
+      waitlistQueueStats.count = count;
+      waitlistQueueStats.averageSeconds =
+        sampleCount > 0 ? Math.max(totalSeconds / sampleCount, 15) : null;
+      updateWaitlistQueueUi();
+    }
+
+    function startWaitlistQueueWatcher() {
+      if (waitlistQueueUnsub) return;
+      try {
+        const queueQuery = query(
+          collection(db, "rideRequests"),
+          where("status", "in", Array.from(WAITLIST_RIDE_STATUSES))
+        );
+        waitlistQueueUnsub = onSnapshot(
+          queueQuery,
+          (snap) => {
+            handleWaitlistQueueSnapshot(snap);
+          },
+          (err) => {
+            console.warn("waitlist queue watcher error", err);
+            waitlistQueueUnsub = null;
+            waitlistQueueStats.count = 0;
+            waitlistQueueStats.averageSeconds = null;
+            updateWaitlistQueueUi();
+          }
+        );
+      } catch (err) {
+        console.warn("waitlist queue watcher init error", err);
+      }
+    }
+
+    function stopWaitlistQueueWatcher() {
+      if (waitlistQueueUnsub) {
+        waitlistQueueUnsub();
+        waitlistQueueUnsub = null;
+      }
+      waitlistQueueStats.count = 0;
+      waitlistQueueStats.averageSeconds = null;
+      updateWaitlistQueueUi();
     }
 
     function maybeToggleWaitlistPanel() {
@@ -9009,62 +9193,67 @@
     }
 
     function startDriverAvailabilityWatchers() {
-      if (driverOnlineUnsub || driverBusyUnsub) return;
-      try {
-        const onlineQuery = query(collection(db, "drivers"), where("isOnline", "==", true));
-        driverOnlineUnsub = onSnapshot(
-          onlineQuery,
-          (snap) => {
-            stopDriverAvailabilityPolling();
-            const ids = new Set();
-            snap.forEach((docSnap) => ids.add(docSnap.id));
-            driverAvailability.onlineIds = ids;
-            driverAvailability.onlineCount = ids.size;
-            updateWaitlistCopy();
-            maybeToggleWaitlistPanel();
-          },
-          (err) => {
-            console.warn("driver availability watcher error", err);
-            driverOnlineUnsub = null;
-            handleDriverAvailabilityPermissionError(err);
-          }
-        );
-      } catch (err) {
-        console.warn("driver availability query error", err);
-        handleDriverAvailabilityPermissionError(err);
+      if (!driverOnlineUnsub) {
+        try {
+          const onlineQuery = query(collection(db, "drivers"), where("isOnline", "==", true));
+          driverOnlineUnsub = onSnapshot(
+            onlineQuery,
+            (snap) => {
+              stopDriverAvailabilityPolling();
+              const ids = new Set();
+              snap.forEach((docSnap) => ids.add(docSnap.id));
+              driverAvailability.onlineIds = ids;
+              driverAvailability.onlineCount = ids.size;
+              updateWaitlistCopy();
+              maybeToggleWaitlistPanel();
+            },
+            (err) => {
+              console.warn("driver availability watcher error", err);
+              driverOnlineUnsub = null;
+              handleDriverAvailabilityPermissionError(err);
+            }
+          );
+        } catch (err) {
+          console.warn("driver availability query error", err);
+          handleDriverAvailabilityPermissionError(err);
+        }
       }
 
-      try {
-        const busyQuery = query(
-          collection(db, "rideRequests"),
-          where("status", "in", DRIVER_BUSY_STATUSES)
-        );
-        driverBusyUnsub = onSnapshot(
-          busyQuery,
-          (snap) => {
-            stopDriverAvailabilityPolling();
-            const ids = new Set();
-            snap.forEach((docSnap) => {
-              const data = docSnap.data();
-              const driverId = data?.driverId || data?.assignedDriverId || null;
-              if (driverId) {
-                ids.add(driverId);
-              }
-            });
-            driverAvailability.busyDriverIds = ids;
-            updateWaitlistCopy();
-            maybeToggleWaitlistPanel();
-          },
-          (err) => {
-            console.warn("driver busy watcher error", err);
-            driverBusyUnsub = null;
-            handleDriverAvailabilityPermissionError(err);
-          }
-        );
-      } catch (err) {
-        console.warn("driver busy query error", err);
-        handleDriverAvailabilityPermissionError(err);
+      if (!driverBusyUnsub) {
+        try {
+          const busyQuery = query(
+            collection(db, "rideRequests"),
+            where("status", "in", DRIVER_BUSY_STATUSES)
+          );
+          driverBusyUnsub = onSnapshot(
+            busyQuery,
+            (snap) => {
+              stopDriverAvailabilityPolling();
+              const ids = new Set();
+              snap.forEach((docSnap) => {
+                const data = docSnap.data();
+                const driverId = data?.driverId || data?.assignedDriverId || null;
+                if (driverId) {
+                  ids.add(driverId);
+                }
+              });
+              driverAvailability.busyDriverIds = ids;
+              updateWaitlistCopy();
+              maybeToggleWaitlistPanel();
+            },
+            (err) => {
+              console.warn("driver busy watcher error", err);
+              driverBusyUnsub = null;
+              handleDriverAvailabilityPermissionError(err);
+            }
+          );
+        } catch (err) {
+          console.warn("driver busy query error", err);
+          handleDriverAvailabilityPermissionError(err);
+        }
       }
+
+      startWaitlistQueueWatcher();
     }
 
     function stopDriverAvailabilityWatchers() {
@@ -9081,6 +9270,7 @@
         driverBusyUnsub();
         driverBusyUnsub = null;
       }
+      stopWaitlistQueueWatcher();
       driverAvailability.onlineCount = 0;
       driverAvailability.onlineIds = new Set();
       driverAvailability.busyDriverIds = new Set();
@@ -9092,6 +9282,8 @@
       renderDriverIdentity(data);
       renderVehicleSection(data);
       renderLicenseSection(data);
+      setDriverVerifiedInfoVisibility(false);
+      refreshDriverVerifiedInfoToggleVisibility();
       updateDriverMiniMap(data);
       supportPanel?.classList.remove("active");
     }
