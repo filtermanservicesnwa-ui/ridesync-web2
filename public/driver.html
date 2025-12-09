@@ -255,10 +255,19 @@
       border: 1px solid rgba(148,163,184,0.45);
       padding: 10px;
       background: rgba(2,6,23,0.9);
+      cursor: pointer;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
     }
     .rider-queue-card.rider-queue-card-active {
       border-color: rgba(34,197,94,0.7);
       box-shadow: 0 0 0 1px rgba(34,197,94,0.35);
+    }
+    .rider-queue-card:hover {
+      border-color: rgba(148,163,184,0.8);
+    }
+    .rider-queue-card:focus-visible {
+      outline: 2px solid rgba(59,130,246,0.7);
+      outline-offset: 2px;
     }
     .rider-queue-card-header {
       display: flex;
@@ -1790,6 +1799,7 @@
     let lastDriverLocationSent = null;
     let driverLocationUpdatePromise = null;
     let rideOfferQueue = [];
+    let autoRideOfferOverlaysEnabled = false;
     const seenRideOfferIds = new Set();
     const NAV_ROUTE_REFRESH_MS = 15000;
     let lastPickupRouteAt = 0;
@@ -3598,6 +3608,7 @@
 
     function openRideOfferOverlay(ride) {
       if (!ride) return;
+      removeRideFromOfferQueue(ride.id);
       pendingRideOffer = ride;
       activeRideError.textContent = "";
       renderDriverTopBar([ride]);
@@ -3651,10 +3662,10 @@
       if (!visibleRides.length && pendingCount === 0) {
         ridesList.innerHTML = pendingScheduled
           ? '<div class="small">Next reserved ride is scheduled for later. We\'ll alert you 40 minutes before pickup.</div>'
-          : '<div class="small">Awaiting new ride requests… they will appear as overlays.</div>';
+          : '<div class="small">Awaiting new ride requests… they will appear in your queue below.</div>';
         return;
       }
-      ridesList.innerHTML = `<div class="small">Ride offers pop up automatically. ${
+      ridesList.innerHTML = `<div class="small">Ride offers appear in the queue below. ${
         pendingCount
           ? `Reviewing ${pendingCount} ride request${pendingCount === 1 ? "" : "s"}…`
           : "Processing latest ride data…"
@@ -3702,10 +3713,55 @@
       return entries;
     }
 
+    function getRideById(rideId) {
+      if (!rideId) return null;
+      if (pendingRideOffer?.id === rideId) {
+        return pendingRideOffer;
+      }
+      const fromQueue = rideOfferQueue.find((ride) => ride?.id === rideId);
+      if (fromQueue) {
+        return fromQueue;
+      }
+      const fromVisible = latestRideSnapshot.find((ride) => ride?.id === rideId);
+      if (fromVisible) {
+        return fromVisible;
+      }
+      return null;
+    }
+
+    function removeRideFromOfferQueue(rideId) {
+      if (!rideId || !rideOfferQueue.length) return;
+      rideOfferQueue = rideOfferQueue.filter((ride) => ride?.id !== rideId);
+    }
+
+    function handleRiderQueueCardSelection(rideId) {
+      if (!rideId) return;
+      const ride = getRideById(rideId);
+      if (!ride) {
+        driverMessage.textContent = "Ride is no longer available. Refreshing queue…";
+        renderRiderQueueList(latestVisiblePendingRides);
+        return;
+      }
+      driverMessage.textContent = "";
+      driverError.textContent = "";
+      openRideOfferOverlay(ride);
+      renderRiderQueueList(latestVisiblePendingRides);
+      updateRidesListMessage(latestVisiblePendingRides, {
+        scheduledPending: hasScheduledPendingRides
+      });
+    }
+
     function createRiderQueueCard(entry) {
       const { ride, context, position } = entry;
       const card = document.createElement("div");
       card.className = "rider-queue-card";
+      const rideId = ride?.id || "";
+      if (rideId) {
+        card.dataset.rideId = rideId;
+      }
+      card.dataset.queueContext = context || "visible";
+      card.setAttribute("role", "button");
+      card.tabIndex = rideId ? 0 : -1;
       if (context === "offer") {
         card.classList.add("rider-queue-card-active");
       }
@@ -3876,6 +3932,7 @@
     }
 
     function maybeShowNextRideOffer() {
+      if (!autoRideOfferOverlaysEnabled) return;
       if (pendingRideOffer) return;
       if (activeRideGroup.length) return;
       if (!rideOfferQueue.length) return;
@@ -4976,6 +5033,21 @@
           event.preventDefault();
           openDriverAvatarPicker();
         }
+      });
+    }
+
+    if (riderQueueList) {
+      const activateQueueCard = (event) => {
+        const card = event.target.closest("[data-ride-id]");
+        if (!card || !card.dataset.rideId) return;
+        if (!riderQueueList.contains(card)) return;
+        event.preventDefault();
+        handleRiderQueueCardSelection(card.dataset.rideId);
+      };
+      riderQueueList.addEventListener("click", activateQueueCard);
+      riderQueueList.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        activateQueueCard(event);
       });
     }
 
