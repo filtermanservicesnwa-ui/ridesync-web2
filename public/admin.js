@@ -1915,7 +1915,8 @@ async function bootstrapAdminPage() {
       await startAdminSession({ forceInitial: true });
     }
   } catch (err) {
-    // Error already surfaced to UI in initializeAdminApp.
+    // Error already surfaced to UI in initializeAdminApp; ensure gate is visible.
+    showAccessGate();
   }
 }
 
