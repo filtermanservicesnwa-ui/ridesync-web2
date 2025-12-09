@@ -1551,12 +1551,83 @@
     })();
     let messagingToken = null;
     let messagingServiceWorkerRegistration = null;
+    const SERVICE_WORKER_AUTO_UPDATE_INTERVAL_MS = 15 * 60 * 1000;
+    let serviceWorkerUpdateIntervalId = null;
+    let serviceWorkerControllerChangeListenerBound = false;
+
+    const requestServiceWorkerActivation = (registration) => {
+      if (!registration || !registration.waiting) {
+        return;
+      }
+      try {
+        registration.waiting.postMessage({ type: "SKIP_WAITING" });
+      } catch (err) {
+        console.warn("Service worker skip waiting message failed", err);
+      }
+    };
+
+    const enableServiceWorkerAutoUpdate = (registration) => {
+      if (!registration) {
+        return;
+      }
+
+      if (!serviceWorkerControllerChangeListenerBound) {
+        serviceWorkerControllerChangeListenerBound = true;
+        let skipNextControllerChangeReload = !navigator.serviceWorker.controller;
+        let reloadTriggered = false;
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (skipNextControllerChangeReload) {
+            skipNextControllerChangeReload = false;
+            return;
+          }
+          if (reloadTriggered) {
+            return;
+          }
+          reloadTriggered = true;
+          // Reload the UI as soon as the refreshed service worker takes control.
+          window.location.reload();
+        });
+      }
+
+      if (registration.waiting) {
+        requestServiceWorkerActivation(registration);
+      }
+
+      registration.addEventListener("updatefound", () => {
+        const installingWorker = registration.installing;
+        if (!installingWorker) {
+          return;
+        }
+        installingWorker.addEventListener("statechange", () => {
+          if (installingWorker.state === "installed") {
+            requestServiceWorkerActivation(registration);
+          }
+        });
+      });
+
+      const runUpdateCheck = () => {
+        registration
+          .update()
+          .catch((err) => console.warn("Service worker update check failed", err));
+      };
+
+      runUpdateCheck();
+
+      if (serviceWorkerUpdateIntervalId) {
+        window.clearInterval(serviceWorkerUpdateIntervalId);
+      }
+      serviceWorkerUpdateIntervalId = window.setInterval(
+        runUpdateCheck,
+        SERVICE_WORKER_AUTO_UPDATE_INTERVAL_MS
+      );
+    };
 
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker
-        .register("/firebase-messaging-sw.js")
+        .register("/firebase-messaging-sw.js", { updateViaCache: "none" })
         .then((registration) => {
           messagingServiceWorkerRegistration = registration;
+          enableServiceWorkerAutoUpdate(registration);
         })
         .catch((err) => console.warn("Service worker registration failed", err));
     }
