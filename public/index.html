@@ -1736,7 +1736,68 @@
       border-radius: 18px;
       padding: 14px;
       background: rgba(2,6,23,0.95);
-      box-shadow: inset 0 0 0 rgba(0,0,0,0);
+      box-shadow: 0 18px 40px rgba(2,6,23,0.7);
+    }
+    .ride-chat-launcher {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.45);
+      background: rgba(15,23,42,0.95);
+      color: #e5e7eb;
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, color 0.2s ease;
+      box-shadow: 0 14px 40px rgba(2,6,23,0.65);
+      z-index: 40;
+    }
+    .ride-chat-launcher.is-hidden {
+      display: none;
+    }
+    .ride-chat-launcher.disabled {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+    .ride-chat-launcher.active {
+      border-color: rgba(34,197,94,0.7);
+      color: #bbf7d0;
+    }
+    .ride-chat-launcher::before {
+      content: "💬";
+      font-size: 1rem;
+    }
+    .ride-chat-overlay {
+      position: fixed;
+      right: 20px;
+      bottom: 96px;
+      width: min(360px, calc(100% - 32px));
+      max-height: calc(100% - 140px);
+      overflow: hidden;
+      display: none;
+      flex-direction: column;
+      z-index: 45;
+    }
+    .ride-chat-overlay.active {
+      display: flex;
+    }
+    .ride-chat-minimize {
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.5);
+      background: transparent;
+      color: #e2e8f0;
+      padding: 4px 10px;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .ride-chat-minimize:hover {
+      color: #fff;
+      border-color: rgba(248,250,252,0.8);
     }
     .ride-chat-header {
       display: flex;
@@ -1828,6 +1889,18 @@
     }
     .ride-chat-send {
       flex: 0 0 auto;
+    }
+    @media (max-width: 640px) {
+      .ride-chat-launcher {
+        right: 16px;
+        bottom: 16px;
+      }
+      .ride-chat-overlay {
+        left: 12px;
+        right: 12px;
+        bottom: 80px;
+        width: auto;
+      }
     }
     .support-panel {
       border: none;
@@ -3025,6 +3098,32 @@
                 >
                   Send
                 </button>
+            <div id="driverVehicleSection" class="driver-vehicle-card">
+              <div class="section-title" style="margin-top:0;">Vehicle</div>
+              <div class="driver-vehicle-body">
+                <div class="driver-vehicle-photo">
+                  <img id="driverVehiclePhoto" alt="Driver vehicle" />
+                  <div id="driverVehicleFallback" class="avatar-fallback">RS</div>
+                </div>
+                <div class="driver-vehicle-details">
+                  <div id="driverVehicleName" class="driver-vehicle-name"></div>
+                  <div id="driverVehiclePlate"></div>
+                  <div id="driverVehicleNote" class="driver-license-meta"></div>
+                </div>
+              </div>
+            </div>
+
+            <div id="driverLicenseSection" class="driver-license-card">
+              <div class="section-title" style="margin-top:0;">License &amp; verification</div>
+              <div class="driver-license-body">
+                <div class="driver-license-photo">
+                  <img id="driverLicensePhoto" alt="Driver license" />
+                  <div id="driverLicenseFallback" class="avatar-fallback">ID</div>
+                </div>
+                <div class="driver-license-details">
+                  <div id="driverLicenseSummary" class="driver-license-summary"></div>
+                  <div id="driverLicenseMeta" class="driver-license-meta"></div>
+                </div>
               </div>
             </div>
 
@@ -3046,6 +3145,63 @@
               </div>
             </div>
           </div>
+
+        <button
+          id="rideChatLauncher"
+          class="ride-chat-launcher is-hidden"
+          type="button"
+          aria-pressed="false"
+          aria-hidden="true"
+          aria-label="Chat with your driver"
+        >
+          Message driver
+        </button>
+
+        <div
+          id="rideChatCard"
+          class="ride-chat-card ride-chat-overlay"
+          aria-hidden="true"
+        >
+          <div class="ride-chat-header">
+            <div id="rideChatTitle" class="ride-chat-title">Chat with your driver</div>
+            <button
+              id="rideChatMinimizeButton"
+              class="ride-chat-minimize"
+              type="button"
+              aria-label="Close chat"
+            >
+              Close
+            </button>
+          </div>
+          <div id="rideChatOfflineNote" class="ride-chat-note">
+            We'll forward your updates to the next available driver.
+          </div>
+          <div
+            id="rideChatMessages"
+            class="ride-chat-messages"
+            role="log"
+            aria-live="polite"
+          ></div>
+          <div class="ride-chat-input-row">
+            <input
+              id="rideChatInput"
+              class="ride-chat-input"
+              type="text"
+              inputmode="text"
+              maxlength="500"
+              autocomplete="off"
+              placeholder="Type a message…"
+              aria-label="Message your driver"
+            />
+            <button
+              id="rideChatSendButton"
+              type="button"
+              class="ride-chat-send btn-primary btn-small"
+            >
+              Send
+            </button>
+          </div>
+        </div>
 
           <div id="riderOverlayError" class="error"></div>
         </div>
@@ -4765,6 +4921,8 @@
     const rideChatInputEl = document.getElementById("rideChatInput");
     const rideChatSendButton = document.getElementById("rideChatSendButton");
     const rideChatOfflineNote = document.getElementById("rideChatOfflineNote");
+    const rideChatLauncher = document.getElementById("rideChatLauncher");
+    const rideChatMinimizeButton = document.getElementById("rideChatMinimizeButton");
     const ratingStarsContainer = document.getElementById("ratingStars");
     const ratingError = document.getElementById("ratingError");
     const rideTipOptions = document.getElementById("rideTipOptions");
@@ -5062,6 +5220,8 @@
     let rideChatUnsub = null;
     let rideChatCurrentRideId = null;
     let rideChatLastSendAt = 0;
+    let rideChatOverlayVisible = false;
+    let rideChatAvailable = false;
 
     let currentRideId = null;
     updateRideFareSyncButtonState();
@@ -9322,16 +9482,54 @@
       }
     }
 
-    function ensureRideChatCardVisible() {
-      if (rideChatCard) {
-        rideChatCard.style.display = "flex";
+    function setRideChatAvailability(available) {
+      rideChatAvailable = !!available;
+      if (rideChatLauncher) {
+        rideChatLauncher.classList.toggle("is-hidden", !rideChatAvailable);
+        rideChatLauncher.classList.toggle("disabled", !rideChatAvailable);
+        rideChatLauncher.setAttribute("aria-hidden", rideChatAvailable ? "false" : "true");
+        rideChatLauncher.tabIndex = rideChatAvailable ? 0 : -1;
+        if (!rideChatAvailable) {
+          rideChatLauncher.setAttribute("aria-pressed", "false");
+          rideChatLauncher.classList.remove("active");
+        }
+      }
+      if (!rideChatAvailable) {
+        hideRideChatOverlay({ force: true });
       }
     }
 
-    function hideRideChatCard() {
-      if (rideChatCard) {
-        rideChatCard.style.display = "none";
+    function showRideChatOverlay() {
+      if (!rideChatAvailable || !rideChatCard) return;
+      rideChatOverlayVisible = true;
+      rideChatCard.classList.add("active");
+      rideChatCard.setAttribute("aria-hidden", "false");
+      if (rideChatLauncher) {
+        rideChatLauncher.classList.add("active");
+        rideChatLauncher.setAttribute("aria-pressed", "true");
       }
+      rideChatInputEl?.focus();
+    }
+
+    function hideRideChatOverlay({ force = false } = {}) {
+      if (!force && !rideChatOverlayVisible) return;
+      rideChatOverlayVisible = false;
+      if (rideChatCard) {
+        rideChatCard.classList.remove("active");
+        rideChatCard.setAttribute("aria-hidden", "true");
+      }
+      if (rideChatLauncher) {
+        rideChatLauncher.classList.remove("active");
+        rideChatLauncher.setAttribute("aria-pressed", "false");
+      }
+    }
+
+    function ensureRideChatCardVisible() {
+      setRideChatAvailability(true);
+    }
+
+    function hideRideChatCard() {
+      setRideChatAvailability(false);
     }
 
     function setRideChatNote(message = "") {
@@ -10101,6 +10299,19 @@
           handleRideChatSend();
         }
       });
+    }
+    if (rideChatLauncher) {
+      rideChatLauncher.addEventListener("click", () => {
+        if (!rideChatAvailable) return;
+        if (rideChatOverlayVisible) {
+          hideRideChatOverlay();
+        } else {
+          showRideChatOverlay();
+        }
+      });
+    }
+    if (rideChatMinimizeButton) {
+      rideChatMinimizeButton.addEventListener("click", () => hideRideChatOverlay());
     }
 
     // Rider overlay buttons
@@ -13776,15 +13987,102 @@
         setTimeout(ensureBackgroundMapReady, 600);
       }
 
-      function trySetupAutocompleteEarly() {
-        if (googleMapsLoadFailed) return;
-        if (!window.google || !google.maps || !google.maps.places) {
-          setTimeout(trySetupAutocompleteEarly, 800);
+    function trySetupAutocompleteEarly() {
+      if (googleMapsLoadFailed) return;
+      if (!window.google || !google.maps || !google.maps.places) {
+        setTimeout(trySetupAutocompleteEarly, 800);
+        return;
+      }
+      setupDestinationAutocomplete();
+      extraStopsState.forEach((stop) => setupExtraStopAutocomplete(stop));
+    }
+
+    const SERVICE_WORKER_SCRIPT_URL = "/firebase-messaging-sw.js";
+    const SERVICE_WORKER_AUTO_UPDATE_INTERVAL_MS = 15 * 60 * 1000;
+    let serviceWorkerUpdateIntervalId = null;
+    let serviceWorkerControllerChangeListenerBound = false;
+
+    function requestServiceWorkerActivation(registration) {
+      if (!registration?.waiting) {
+        return;
+      }
+      try {
+        registration.waiting.postMessage({ type: "SKIP_WAITING" });
+      } catch (err) {
+        console.warn("Service worker skip waiting message failed", err);
+      }
+    }
+
+    function ensureServiceWorkerControllerListener() {
+      if (serviceWorkerControllerChangeListenerBound) {
+        return;
+      }
+      if (!("serviceWorker" in navigator)) {
+        return;
+      }
+      serviceWorkerControllerChangeListenerBound = true;
+      let skipNextControllerChangeReload = !navigator.serviceWorker.controller;
+      let reloadTriggered = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (skipNextControllerChangeReload) {
+          skipNextControllerChangeReload = false;
           return;
         }
-        setupDestinationAutocomplete();
-        extraStopsState.forEach((stop) => setupExtraStopAutocomplete(stop));
+        if (reloadTriggered) {
+          return;
+        }
+        reloadTriggered = true;
+        window.location.reload();
+      });
+    }
+
+    function enableServiceWorkerAutoUpdate(registration) {
+      if (!registration) {
+        return;
       }
+      ensureServiceWorkerControllerListener();
+      if (registration.waiting) {
+        requestServiceWorkerActivation(registration);
+      }
+      registration.addEventListener("updatefound", () => {
+        const installingWorker = registration.installing;
+        if (!installingWorker) {
+          return;
+        }
+        installingWorker.addEventListener("statechange", () => {
+          if (installingWorker.state === "installed") {
+            requestServiceWorkerActivation(registration);
+          }
+        });
+      });
+      const runUpdateCheck = () => {
+        registration
+          .update()
+          .catch((err) => console.warn("Service worker update check failed", err));
+      };
+      runUpdateCheck();
+      if (serviceWorkerUpdateIntervalId) {
+        clearInterval(serviceWorkerUpdateIntervalId);
+      }
+      serviceWorkerUpdateIntervalId = window.setInterval(
+        runUpdateCheck,
+        SERVICE_WORKER_AUTO_UPDATE_INTERVAL_MS
+      );
+    }
+
+    function registerPwaServiceWorker() {
+      if (!("serviceWorker" in navigator)) {
+        return;
+      }
+      navigator.serviceWorker
+        .register(SERVICE_WORKER_SCRIPT_URL, { updateViaCache: "none" })
+        .then((registration) => {
+          enableServiceWorkerAutoUpdate(registration);
+        })
+        .catch((err) => console.warn("Service worker registration failed", err));
+    }
+
+    registerPwaServiceWorker();
 
     let deferredPwaPrompt = null;
     let pwaOverlayTimeoutId = null;
@@ -13968,6 +14266,10 @@
       if (availabilityIntervalId) {
         clearInterval(availabilityIntervalId);
         availabilityIntervalId = null;
+      }
+      if (serviceWorkerUpdateIntervalId) {
+        clearInterval(serviceWorkerUpdateIntervalId);
+        serviceWorkerUpdateIntervalId = null;
       }
     });
 
