@@ -3,9 +3,9 @@ const ACTIVE_REFRESH_INTERVAL_MS = 5_000;
 const BACKGROUND_REFRESH_INTERVAL_MS = 30_000;
 const USERS_REFRESH_MIN_INTERVAL_MS = 15_000;
 const FIREBASE_PROJECT_ID = "ride-sync-nwa";
-const ADMIN_PAGE_PASSWORD = "Aurora-Verdant-4729";
-const ADMIN_PAGE_ACCESS_KEY = "ridesyncAdminPageAccess";
-const ADMIN_PAGE_PASSWORD_HEADER = "X-Admin-Page-Pass";
+const ADMIN_SESSION_STORAGE_KEY = "ridesyncAdminPageAccess";
+const ADMIN_LOGIN_SCREEN_NAME = "Clifton Hill";
+const ADMIN_AUTH_EXPIRY_BUFFER_MS = 15_000;
 const ADMIN_USERS_PAGE_SIZE = 25;
 const AVAILABILITY_DAY_KEYS = [
   "sunday",
@@ -180,7 +180,10 @@ function buildAvailabilityDisplay(config = {}) {
 const TIMER_API = typeof window !== "undefined" ? window : globalThis;
 
 const adminState = {
-  pagePassword: null,
+  authToken: null,
+  authTokenExpiresAt: 0,
+  loginScreenName: ADMIN_LOGIN_SCREEN_NAME,
+  loggingIn: false,
   endpoints: {},
   refreshTimer: null,
   activity: [],
@@ -269,39 +272,24 @@ function resetAdminUsersListState() {
   renderUsersPagination();
 }
 
-function readStoredPagePassword() {
-  try {
-    const rawValue = sessionStorage.getItem(ADMIN_PAGE_ACCESS_KEY);
-    if (!rawValue) {
-      return null;
-    }
-    const parsed = JSON.parse(rawValue);
-    if (parsed && typeof parsed.password === "string" && parsed.password.length) {
-      return parsed.password;
-    }
-  } catch (err) {
-    return null;
-  }
-  return null;
+function applyAdminSession(token, expiresAt) {
+  adminState.authToken = token || null;
+  adminState.authTokenExpiresAt = Number(expiresAt) || 0;
 }
 
-function hasPageAccess() {
-  const storedPassword = readStoredPagePassword();
-  if (storedPassword) {
-    adminState.pagePassword = storedPassword;
-    return true;
+function rememberAdminSession({ token, expiresAt }) {
+  if (!token) {
+    clearStoredAdminSession();
+    return;
   }
-  return false;
-}
-
-function rememberPagePassword(password) {
-  adminState.pagePassword = password;
+  applyAdminSession(token, expiresAt);
   try {
     sessionStorage.setItem(
-      ADMIN_PAGE_ACCESS_KEY,
+      ADMIN_SESSION_STORAGE_KEY,
       JSON.stringify({
-        password,
-        grantedAt: Date.now(),
+        token,
+        expiresAt: adminState.authTokenExpiresAt,
+        storedAt: Date.now(),
       })
     );
   } catch (err) {
@@ -309,12 +297,60 @@ function rememberPagePassword(password) {
   }
 }
 
-function clearStoredPagePassword() {
+function readStoredAdminSession() {
   try {
-    sessionStorage.removeItem(ADMIN_PAGE_ACCESS_KEY);
+    const rawValue = sessionStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+    if (!rawValue) {
+      return null;
+    }
+    const parsed = JSON.parse(rawValue);
+    if (parsed && typeof parsed.token === "string" && parsed.token.length) {
+      return parsed;
+    }
+    if (parsed && typeof parsed.password === "string") {
+      sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+    }
+  } catch (err) {
+    return null;
+  }
+  return null;
+}
+
+function hydrateAdminSessionFromStorage() {
+  const stored = readStoredAdminSession();
+  if (!stored?.token) {
+    return false;
+  }
+  const expiresAt = Number(stored.expiresAt) || 0;
+  if (expiresAt && expiresAt < Date.now() + ADMIN_AUTH_EXPIRY_BUFFER_MS) {
+    clearStoredAdminSession();
+    return false;
+  }
+  applyAdminSession(stored.token, expiresAt);
+  return true;
+}
+
+function clearStoredAdminSession() {
+  applyAdminSession(null, 0);
+  try {
+    sessionStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
   } catch (err) {
     // Ignore storage issues.
   }
+}
+
+function isAdminAuthenticated() {
+  if (!adminState.authToken) {
+    return false;
+  }
+  if (
+    adminState.authTokenExpiresAt &&
+    adminState.authTokenExpiresAt < Date.now() + ADMIN_AUTH_EXPIRY_BUFFER_MS
+  ) {
+    clearStoredAdminSession();
+    return false;
+  }
+  return true;
 }
 
 function showAccessGate() {
@@ -336,26 +372,45 @@ function hideAccessGate() {
   }
 }
 
-function handleAccessUnlock(event) {
+async function handleAccessUnlock(event) {
   event?.preventDefault();
   if (!adminAccessPasswordInput) {
-    initializeAdminApp();
+    await initializeAdminApp();
     return;
   }
   const providedPassword = adminAccessPasswordInput.value?.trim() || "";
-  if (providedPassword !== ADMIN_PAGE_PASSWORD) {
+  if (!providedPassword) {
     if (adminAccessError) {
-      adminAccessError.textContent = "Incorrect page password.";
+      adminAccessError.textContent = "Enter the admin password.";
     }
     return;
   }
-  if (adminAccessError) {
-    adminAccessError.textContent = "";
+  if (adminState.loggingIn) {
+    return;
   }
-  adminAccessPasswordInput.value = "";
-  rememberPagePassword(providedPassword);
-  hideAccessGate();
-  initializeAdminApp();
+  adminState.loggingIn = true;
+  updateAccessButtonState(true);
+  try {
+    if (adminAccessError) {
+      adminAccessError.textContent = "";
+    }
+    await initializeAdminApp();
+    const loginResponse = await requestAdminLogin(providedPassword);
+    adminAccessPasswordInput.value = "";
+    rememberAdminSession({
+      token: loginResponse.token,
+      expiresAt: loginResponse.expiresAt,
+    });
+    hideAccessGate();
+    await startAdminSession({ forceInitial: true });
+  } catch (err) {
+    if (adminAccessError) {
+      adminAccessError.textContent = err?.message || "Unable to unlock admin page.";
+    }
+  } finally {
+    adminState.loggingIn = false;
+    updateAccessButtonState(false);
+  }
 }
 
 function attachAccessGateListeners() {
@@ -367,6 +422,54 @@ function attachAccessGateListeners() {
       handleAccessUnlock(event);
     }
   });
+}
+
+function updateAccessButtonState(isLoading) {
+  if (!adminAccessButton) {
+    return;
+  }
+  if (isLoading) {
+    adminAccessButton.disabled = true;
+    adminAccessButton.textContent = "Unlocking...";
+  } else {
+    adminAccessButton.disabled = false;
+    adminAccessButton.textContent = "Unlock Admin Page";
+  }
+}
+
+async function requestAdminLogin(password) {
+  if (!password) {
+    throw new Error("Password is required.");
+  }
+  const loginUrl = adminState.endpoints?.login;
+  if (!loginUrl) {
+    throw new Error("Login endpoint unavailable.");
+  }
+  const body = {
+    password,
+    screenName: adminState.loginScreenName || ADMIN_LOGIN_SCREEN_NAME,
+  };
+  const res = await fetch(loginUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (err) {
+    data = null;
+  }
+  if (res.status === 401 || data?.error === "Invalid admin credentials") {
+    throw new Error("Incorrect password.");
+  }
+  if (!res.ok || !data?.token) {
+    const message = data?.error || "Unable to sign in.";
+    throw new Error(message);
+  }
+  return data;
 }
 
 function formatCurrency(cents = 0) {
@@ -880,8 +983,8 @@ async function adminFetch(endpointKey, body = null) {
       "Content-Type": "application/json",
     },
   };
-  if (adminState.pagePassword) {
-    options.headers[ADMIN_PAGE_PASSWORD_HEADER] = adminState.pagePassword;
+  if (adminState.authToken) {
+    options.headers.Authorization = `Bearer ${adminState.authToken}`;
   }
   if (body) {
     options.body = JSON.stringify(body);
@@ -914,8 +1017,7 @@ function showDashboard() {
 function handleUnauthorizedAccess(message = "Session expired. Please re-enter the password.") {
   clearAdminRefreshTimer();
   adminState.refreshInFlight = false;
-  adminState.pagePassword = null;
-  clearStoredPagePassword();
+  clearStoredAdminSession();
   resetAdminUsersListState();
   adminState.userEditor = null;
   renderUserEditor();
@@ -947,7 +1049,7 @@ function ensureVisibilityRefreshListener() {
     return;
   }
   document.addEventListener("visibilitychange", () => {
-    if (!adminState.pagePassword) {
+    if (!isAdminAuthenticated()) {
       return;
     }
     scheduleAutoRefresh({ immediate: document.hidden === false });
@@ -956,7 +1058,7 @@ function ensureVisibilityRefreshListener() {
 }
 
 async function runRealtimeRefreshCycle(options = {}) {
-  if (!adminState.pagePassword || adminState.refreshInFlight) {
+  if (!isAdminAuthenticated() || adminState.refreshInFlight) {
     return;
   }
   adminState.refreshInFlight = true;
@@ -982,7 +1084,7 @@ async function runRealtimeRefreshCycle(options = {}) {
 
 function scheduleAutoRefresh(options = {}) {
   clearAdminRefreshTimer();
-  if (!adminState.pagePassword) {
+  if (!isAdminAuthenticated()) {
     return;
   }
   ensureVisibilityRefreshListener();
@@ -996,7 +1098,7 @@ function scheduleAutoRefresh(options = {}) {
 }
 
 async function refreshAdminDashboard() {
-  if (!adminState.pagePassword) {
+  if (!isAdminAuthenticated()) {
     return;
   }
   try {
@@ -1579,7 +1681,7 @@ async function handlePendingAction(action, requestId) {
 }
 
 async function loadAdminUsersPage(action = "initial") {
-  if (!adminState.pagePassword) {
+  if (!isAdminAuthenticated()) {
     return;
   }
   const paging = adminState.usersPaging || createAdminUsersPagingState();
@@ -1731,53 +1833,89 @@ function attachEventListeners() {
   });
 }
 
+let adminAppInitPromise = null;
+
 async function initializeAdminApp() {
   if (adminAppReady) {
-    if (adminState.pagePassword) {
-      showDashboard();
-      const userPageAction = adminState.usersPaging?.loaded ? "reload" : "initial";
-      await Promise.all([refreshAdminDashboard(), loadAdminUsersPage(userPageAction)]);
-      scheduleAutoRefresh();
-    }
     return;
   }
-  if (adminAppInitializing) {
+  if (adminAppInitPromise) {
+    await adminAppInitPromise;
     return;
   }
   adminAppInitializing = true;
+  adminAppInitPromise = (async () => {
+    try {
+      const config = await loadConfig();
+      adminState.endpoints = buildAdminEndpoints(config);
+      adminState.loginScreenName = resolveAdminScreenName(config);
+      adminState.availabilityConfig = config?.availability || {};
+      adminState.availabilityDisplay = buildAvailabilityDisplay(
+        adminState.availabilityConfig || {}
+      );
+      renderAvailabilitySchedule();
+      await refreshAvailabilitySettings();
+      ensureAdminRootVisible();
+      attachEventListeners();
+      adminAppReady = true;
+    } catch (err) {
+      console.error("Failed to initialize admin dashboard", err);
+      if (adminAccessError) {
+        adminAccessError.textContent = "Unable to load admin configuration.";
+      }
+      throw err;
+    } finally {
+      adminAppInitializing = false;
+      adminAppInitPromise = null;
+    }
+  })();
+  await adminAppInitPromise;
+}
+
+function resolveAdminScreenName(config = {}) {
+  if (typeof config.adminScreenName === "string" && config.adminScreenName.trim()) {
+    return config.adminScreenName.trim();
+  }
+  if (config.admin && typeof config.admin === "object") {
+    const nestedName = config.admin.screenName || config.admin.screen_name;
+    if (typeof nestedName === "string" && nestedName.trim()) {
+      return nestedName.trim();
+    }
+  }
+  return ADMIN_LOGIN_SCREEN_NAME;
+}
+
+async function startAdminSession(options = {}) {
+  if (!isAdminAuthenticated()) {
+    return;
+  }
+  await initializeAdminApp();
+  showDashboard();
+  const forceInitial = options.forceInitial === true;
+  const userPageAction =
+    forceInitial || !adminState.usersPaging?.loaded ? "initial" : "reload";
   try {
-    const config = await loadConfig();
-    adminState.endpoints = buildAdminEndpoints(config);
-    adminState.availabilityConfig = config?.availability || {};
-    adminState.availabilityDisplay = buildAvailabilityDisplay(adminState.availabilityConfig || {});
-    renderAvailabilitySchedule();
-    await refreshAvailabilitySettings();
-    ensureAdminRootVisible();
-    attachEventListeners();
-    if (adminState.pagePassword) {
-      showDashboard();
-      await Promise.all([refreshAdminDashboard(), loadAdminUsersPage("initial")]);
-      scheduleAutoRefresh();
-    } else {
-      showAccessGate();
-    }
-    adminAppReady = true;
-  } catch (err) {
-    console.error("Failed to initialize admin dashboard", err);
-    if (adminAccessError) {
-      adminAccessError.textContent = "Unable to load admin configuration.";
-    }
+    await Promise.all([refreshAdminDashboard(), loadAdminUsersPage(userPageAction)]);
   } finally {
-    adminAppInitializing = false;
+    scheduleAutoRefresh({ immediate: options.immediate === true });
   }
 }
 
-function bootstrapAdminPage() {
+async function bootstrapAdminPage() {
   attachAccessGateListeners();
-  if (hasPageAccess()) {
-    hideAccessGate();
-    initializeAdminApp();
-  } else {
+  ensureAdminRootVisible();
+  const hasSession = hydrateAdminSessionFromStorage();
+  if (!hasSession) {
+    showAccessGate();
+  }
+  try {
+    await initializeAdminApp();
+    if (hasSession && isAdminAuthenticated()) {
+      hideAccessGate();
+      await startAdminSession({ forceInitial: true });
+    }
+  } catch (err) {
+    // Error already surfaced to UI in initializeAdminApp; ensure gate is visible.
     showAccessGate();
   }
 }
