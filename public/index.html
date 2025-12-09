@@ -114,7 +114,7 @@
     .splash-card {
       width: 100%;
       max-width: 640px;
-      max-height: calc(100dvh - 56px);
+      max-height: calc(100vh - 56px);
       background: rgba(2,6,23,0.94);
       border: 1px solid rgba(148,163,184,0.45);
       border-radius: clamp(18px, 4vw, 26px);
@@ -124,6 +124,11 @@
         0 0 60px rgba(79,70,229,0.35);
       overflow-y: auto;
       overscroll-behavior: contain;
+    }
+    @supports (height: 100dvh) {
+      .splash-card {
+        max-height: calc(100dvh - 56px);
+      }
     }
     .splash-eyebrow {
       display: inline-flex;
