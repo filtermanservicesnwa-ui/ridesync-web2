@@ -47,7 +47,8 @@
   },
   "memberships": {
     "upgradesEnabled": false,
-    "comingSoonMessage": "Unlimited memberships are coming soon."
+    "comingSoonMessage": "Unlimited memberships are coming soon.",
+    "uofaSignupEnabled": true
   },
   "geo": {
     "nwaCenter": { "lat": 36.334, "lng": -94.118 },
@@ -80,26 +81,23 @@
     "closedTitle": "RideSync is closed",
     "closedMessage": "We're outside our service hours. Check back soon.",
     "windows": {
-      "monday": [
-        { "start": "18:00", "end": "02:00" }
-      ],
-      "tuesday": [
-        { "start": "19:00", "end": "02:00" }
-      ],
-      "wednesday": [
-        { "start": "19:00", "end": "02:00" }
-      ],
+      "monday": [],
+      "tuesday": [],
+      "wednesday": [],
       "thursday": [
         { "start": "19:00", "end": "02:00" }
       ],
       "friday": [
-        { "start": "19:00", "end": "02:00" }
+        { "start": "07:00", "end": "12:00" },
+        { "start": "14:00", "end": "02:00" }
       ],
       "saturday": [
-        { "start": "07:00", "end": "02:00" }
+        { "start": "07:00", "end": "12:00" },
+        { "start": "14:00", "end": "02:00" }
       ],
       "sunday": [
-        { "start": "21:00", "end": "02:00" }
+        { "start": "07:00", "end": "12:00" },
+        { "start": "14:00", "end": "21:00" }
       ]
     }
   }
