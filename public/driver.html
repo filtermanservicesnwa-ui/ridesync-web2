@@ -439,7 +439,7 @@
       flex-wrap: wrap;
       gap: 6px;
     }
-    .driver-chat-launcher {
+    .driver-flyout-launcher {
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -453,19 +453,23 @@
       cursor: pointer;
       transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
     }
-    .driver-chat-launcher.is-hidden {
+    .driver-flyout-launcher.is-hidden {
       display: none;
     }
-    .driver-chat-launcher.disabled {
+    .driver-flyout-launcher.disabled {
       opacity: 0.4;
       pointer-events: none;
     }
-    .driver-chat-launcher.active {
+    .driver-flyout-launcher.active {
       border-color: rgba(34,197,94,0.7);
       color: #bbf7d0;
     }
     .driver-chat-launcher::before {
       content: "💬";
+      font-size: 0.9rem;
+    }
+    .driver-rider-launcher::before {
+      content: "🧍";
       font-size: 0.9rem;
     }
     .driver-chat-badge {
@@ -483,18 +487,30 @@
     .driver-chat-badge.visible {
       display: inline-flex;
     }
-    .driver-chat-overlay {
+    .driver-floating-stack {
       position: absolute;
       top: 78px;
       right: 12px;
       width: min(360px, calc(100% - 24px));
       max-height: calc(100% - 140px);
-      display: none;
+      display: flex;
       flex-direction: column;
+      gap: 12px;
       z-index: 10;
     }
-    .driver-chat-overlay.active {
+    .driver-floating-panel {
+      width: 100%;
+      max-height: 100%;
+      flex-direction: column;
+    }
+    .driver-floating-panel:not(.active) {
+      display: none;
+    }
+    .driver-floating-panel.active {
       display: flex;
+    }
+    .driver-chat-overlay {
+      max-height: 100%;
     }
     .ride-chat-header {
       display: flex;
@@ -741,6 +757,40 @@
       border-radius:12px;
       border:1px solid rgba(148,163,184,0.45);
       background:rgba(2,6,23,0.9);
+    }
+    .driver-info-panel {
+      gap:12px;
+    }
+    .driver-panel-header {
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .driver-rider-meta-block {
+      border-top:1px solid rgba(148,163,184,0.25);
+      padding-top:8px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .driver-rider-meta-row {
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      font-size:0.8rem;
+      color:#cbd5f5;
+    }
+    .driver-rider-meta-label {
+      text-transform:uppercase;
+      font-size:0.7rem;
+      color:#94a3af;
+      letter-spacing:0.06em;
+    }
+    .driver-rider-meta-value {
+      font-weight:600;
+      text-align:right;
+      color:#f8fafc;
     }
     .driver-rider-avatar {
       width:54px;
@@ -1132,8 +1182,17 @@
               <div id="driverOverlayChips" class="driver-rider-chips"></div>
             </div>
             <button
+              id="driverRiderLauncher"
+              class="driver-flyout-launcher driver-rider-launcher is-hidden"
+              type="button"
+              aria-pressed="false"
+              aria-label="Show rider card"
+            >
+              Rider card
+            </button>
+            <button
               id="driverChatLauncher"
-              class="driver-chat-launcher is-hidden"
+              class="driver-flyout-launcher driver-chat-launcher is-hidden"
               type="button"
               aria-pressed="false"
               aria-label="Chat with your rider"
@@ -1145,52 +1204,95 @@
           <button id="closeActiveRideButton" class="overlay-close" type="button">Hide</button>
         </div>
 
-        <div
-          id="driverChatCard"
-          class="ride-chat-card driver-chat-overlay"
-          aria-hidden="true"
-        >
-          <div class="ride-chat-header">
-            <div class="ride-chat-title">Chat with your rider</div>
-            <div class="ride-chat-note">
-              Riders see these messages while they're waiting in the queue or during the ride.
-            </div>
-            <button
-              id="driverChatMinimizeButton"
-              class="ride-chat-minimize"
-              type="button"
-              aria-label="Minimize chat"
-            >
-              Minimize
-            </button>
-          </div>
-          <div id="driverChatOfflineNote" class="ride-chat-note">
-            Chat is available only while the ride is active.
-          </div>
+        <div id="driverFloatingPanels" class="driver-floating-stack" aria-live="polite">
           <div
-            id="driverChatMessages"
-            class="ride-chat-messages"
-            role="log"
-            aria-live="polite"
-          ></div>
-          <div class="ride-chat-input-row">
-            <input
-              id="driverChatInput"
-              class="ride-chat-input"
-              type="text"
-              inputmode="text"
-              maxlength="500"
-              autocomplete="off"
-              placeholder="Type a message…"
-              aria-label="Message your rider"
-            />
-            <button
-              id="driverChatSendButton"
-              type="button"
-              class="ride-chat-send btn-primary btn-small"
-            >
-              Send
-            </button>
+            id="driverRiderCard"
+            class="ride-chat-card driver-info-panel driver-floating-panel"
+            aria-hidden="true"
+            role="region"
+            aria-label="Current rider details"
+          >
+            <div class="driver-panel-header">
+              <div>
+                <div class="driver-rider-label">Rider card</div>
+                <div id="driverRiderCardTitle" class="driver-rider-name">Awaiting rider</div>
+                <div id="driverRiderCardStatus" class="driver-rider-line">
+                  We'll show rider details once a trip is assigned.
+                </div>
+              </div>
+              <button
+                id="driverRiderMinimizeButton"
+                class="ride-chat-minimize"
+                type="button"
+                aria-label="Hide rider card"
+              >
+                Hide
+              </button>
+            </div>
+            <div id="driverRiderCardList" class="driver-riders-container"></div>
+            <div class="driver-rider-meta-block">
+              <div class="driver-rider-meta-row">
+                <span class="driver-rider-meta-label">Pickup</span>
+                <span id="driverRiderPickupValue" class="driver-rider-meta-value">—</span>
+              </div>
+              <div class="driver-rider-meta-row">
+                <span class="driver-rider-meta-label">Dropoff</span>
+                <span id="driverRiderDropoffValue" class="driver-rider-meta-value">—</span>
+              </div>
+              <div class="driver-rider-meta-row">
+                <span class="driver-rider-meta-label">Queue</span>
+                <span id="driverRiderQueueValue" class="driver-rider-meta-value">Matching…</span>
+              </div>
+            </div>
+          </div>
+
+          <div
+            id="driverChatCard"
+            class="ride-chat-card driver-chat-overlay driver-floating-panel"
+            aria-hidden="true"
+          >
+            <div class="ride-chat-header">
+              <div class="ride-chat-title">Chat with your rider</div>
+              <div class="ride-chat-note">
+                Riders see these messages while they're waiting in the queue or during the ride.
+              </div>
+              <button
+                id="driverChatMinimizeButton"
+                class="ride-chat-minimize"
+                type="button"
+                aria-label="Minimize chat"
+              >
+                Minimize
+              </button>
+            </div>
+            <div id="driverChatOfflineNote" class="ride-chat-note">
+              Chat is available only while the ride is active.
+            </div>
+            <div
+              id="driverChatMessages"
+              class="ride-chat-messages"
+              role="log"
+              aria-live="polite"
+            ></div>
+            <div class="ride-chat-input-row">
+              <input
+                id="driverChatInput"
+                class="ride-chat-input"
+                type="text"
+                inputmode="text"
+                maxlength="500"
+                autocomplete="off"
+                placeholder="Type a message…"
+                aria-label="Message your rider"
+              />
+              <button
+                id="driverChatSendButton"
+                type="button"
+                class="ride-chat-send btn-primary btn-small"
+              >
+                Send
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1695,6 +1797,15 @@
     const driverOverlayRiderNames = document.getElementById("driverOverlayRiderNames");
     const driverOverlayMembership = document.getElementById("driverOverlayMembership");
     const driverOverlayChips = document.getElementById("driverOverlayChips");
+    const driverRiderCard = document.getElementById("driverRiderCard");
+    const driverRiderLauncher = document.getElementById("driverRiderLauncher");
+    const driverRiderMinimizeButton = document.getElementById("driverRiderMinimizeButton");
+    const driverRiderCardList = document.getElementById("driverRiderCardList");
+    const driverRiderCardTitle = document.getElementById("driverRiderCardTitle");
+    const driverRiderCardStatus = document.getElementById("driverRiderCardStatus");
+    const driverRiderPickupValue = document.getElementById("driverRiderPickupValue");
+    const driverRiderDropoffValue = document.getElementById("driverRiderDropoffValue");
+    const driverRiderQueueValue = document.getElementById("driverRiderQueueValue");
     const driverChatCard = document.getElementById("driverChatCard");
     const driverChatMessagesEl = document.getElementById("driverChatMessages");
     const driverChatInputEl = document.getElementById("driverChatInput");
@@ -1835,10 +1946,14 @@
     let driverChatLastSendAt = 0;
     let driverChatOverlayVisible = false;
     let driverChatAvailable = false;
+    let driverRiderCardVisible = false;
+    let driverRiderCardAvailable = false;
     let driverChatUnreadCount = 0;
     let driverChatLastSeenMillis = 0;
     let driverChatHasInitialHistory = false;
     let driverChatLatestDocs = [];
+    renderDriverRiderCard([]);
+    setDriverRiderCardAvailability(false);
     // Web Audio tone to alert drivers when a new ride offer arrives.
     const rideAlertUnlockEvents = ["pointerdown", "touchstart", "keydown"];
     const AudioContextClass = window.AudioContext || window.webkitAudioContext || null;
@@ -2117,6 +2232,19 @@
       }
     });
 
+    if (driverRiderLauncher) {
+      driverRiderLauncher.addEventListener("click", () => {
+        if (!driverRiderCardAvailable) return;
+        if (driverRiderCardVisible) {
+          hideDriverRiderCard();
+        } else {
+          showDriverRiderCard();
+        }
+      });
+    }
+    if (driverRiderMinimizeButton) {
+      driverRiderMinimizeButton.addEventListener("click", () => hideDriverRiderCard());
+    }
     if (driverChatSendButton) {
       driverChatSendButton.addEventListener("click", handleDriverChatSend);
     }
@@ -3229,6 +3357,171 @@
       }
     }
 
+    function showDriverRiderCard() {
+      if (!driverRiderCardAvailable || !driverRiderCard) return;
+      driverRiderCardVisible = true;
+      driverRiderCard.classList.add("active");
+      driverRiderCard.setAttribute("aria-hidden", "false");
+      if (driverRiderLauncher) {
+        driverRiderLauncher.classList.add("active");
+        driverRiderLauncher.setAttribute("aria-pressed", "true");
+      }
+    }
+
+    function hideDriverRiderCard(options = {}) {
+      const { force = false } = options;
+      driverRiderCardVisible = false;
+      if (driverRiderCard) {
+        driverRiderCard.classList.remove("active");
+        driverRiderCard.setAttribute("aria-hidden", "true");
+      }
+      if (driverRiderLauncher) {
+        driverRiderLauncher.classList.remove("active");
+        driverRiderLauncher.setAttribute("aria-pressed", "false");
+        if (force && typeof driverRiderLauncher.blur === "function") {
+          driverRiderLauncher.blur();
+        }
+      }
+    }
+
+    function setDriverRiderCardAvailability(available) {
+      driverRiderCardAvailable = !!available;
+      if (driverRiderLauncher) {
+        driverRiderLauncher.classList.toggle("is-hidden", !driverRiderCardAvailable);
+        driverRiderLauncher.classList.toggle("disabled", !driverRiderCardAvailable);
+        driverRiderLauncher.setAttribute(
+          "aria-hidden",
+          driverRiderCardAvailable ? "false" : "true"
+        );
+        driverRiderLauncher.setAttribute(
+          "aria-pressed",
+          driverRiderCardVisible && driverRiderCardAvailable ? "true" : "false"
+        );
+        driverRiderLauncher.tabIndex = driverRiderCardAvailable ? 0 : -1;
+      }
+      if (!driverRiderCardAvailable) {
+        hideDriverRiderCard({ force: true });
+      }
+    }
+
+    function renderDriverRiderCard(riders = []) {
+      if (
+        !driverRiderCardList ||
+        !driverRiderCardTitle ||
+        !driverRiderCardStatus ||
+        !driverRiderPickupValue ||
+        !driverRiderDropoffValue ||
+        !driverRiderQueueValue
+      ) {
+        return;
+      }
+      const list = Array.isArray(riders) ? riders.filter(Boolean) : [];
+      driverRiderCardList.innerHTML = "";
+      if (!list.length) {
+        const placeholder = document.createElement("div");
+        placeholder.className = "driver-rider-line";
+        placeholder.textContent = "Rider details will appear here once assigned.";
+        driverRiderCardList.appendChild(placeholder);
+        driverRiderCardTitle.textContent = "Awaiting rider";
+        driverRiderCardStatus.textContent = "We'll show rider info once a trip is assigned.";
+        driverRiderPickupValue.textContent = "—";
+        driverRiderDropoffValue.textContent = "—";
+        driverRiderQueueValue.textContent = "Syncing…";
+        return;
+      }
+      list.forEach((ride, index) => {
+        driverRiderCardList.appendChild(createDriverRiderListItem(ride, index));
+      });
+      const primary = list[0];
+      driverRiderCardTitle.textContent = resolveRiderDisplayName(primary);
+      const metaParts = [];
+      const riderCount = resolveRiderCount(primary);
+      if (riderCount) {
+        metaParts.push(`${riderCount} rider${riderCount === 1 ? "" : "s"}`);
+      }
+      const membershipText = resolveRideMembershipText(primary);
+      if (membershipText) {
+        metaParts.push(membershipText);
+      }
+      driverRiderCardStatus.textContent = metaParts.length
+        ? metaParts.join(" • ")
+        : "Ride reserved.";
+      driverRiderPickupValue.textContent = pickupLabel(primary) || "Pickup pending";
+      driverRiderDropoffValue.textContent = dropoffLabel(primary) || "Destination pending";
+      const waitLabel = formatRideQueueWait(primary);
+      driverRiderQueueValue.textContent = waitLabel || "Matching now…";
+    }
+
+    function createDriverRiderListItem(ride, index) {
+      const card = document.createElement("div");
+      card.className = "driver-rider-card";
+      const avatar = document.createElement("div");
+      avatar.className = "driver-rider-avatar";
+      const fallback = document.createElement("div");
+      fallback.className = "avatar-initials";
+      const displayName = resolveRiderDisplayName(ride);
+      fallback.textContent = riderInitials(displayName);
+      const photoUrl =
+        safeImageUrl(ride?.riderProfilePicUrl) ||
+        safeImageUrl(ride?.riderPhotoUrl) ||
+        safeImageUrl(ride?.riderAvatarUrl) ||
+        safeImageUrl(ride?.riderImageUrl) ||
+        null;
+      if (photoUrl) {
+        const img = document.createElement("img");
+        img.src = photoUrl;
+        img.alt = displayName;
+        img.addEventListener("error", () => {
+          avatar.classList.remove("has-photo");
+          img.remove();
+        });
+        avatar.classList.add("has-photo");
+        avatar.appendChild(img);
+      }
+      avatar.appendChild(fallback);
+      card.appendChild(avatar);
+
+      const body = document.createElement("div");
+      body.className = "driver-rider-body";
+
+      const label = document.createElement("div");
+      label.className = "driver-rider-label";
+      label.textContent = `Rider ${index + 1}`;
+      const nameEl = document.createElement("div");
+      nameEl.className = "driver-rider-name";
+      nameEl.textContent = displayName;
+      const pickupEl = document.createElement("div");
+      pickupEl.className = "driver-rider-line";
+      pickupEl.textContent = pickupLabel(ride) || "Pickup pending";
+      const dropoffEl = document.createElement("div");
+      dropoffEl.className = "driver-rider-line";
+      dropoffEl.textContent = dropoffLabel(ride) || "Dropoff pending";
+
+      body.appendChild(label);
+      body.appendChild(nameEl);
+      body.appendChild(pickupEl);
+      body.appendChild(dropoffEl);
+
+      const metaParts = [];
+      const membershipText = resolveRideMembershipText(ride);
+      if (membershipText) {
+        metaParts.push(membershipText);
+      }
+      const waitText = formatRideQueueWait(ride);
+      if (waitText) {
+        metaParts.push(waitText);
+      }
+      if (metaParts.length) {
+        const metaEl = document.createElement("div");
+        metaEl.className = "driver-rider-line";
+        metaEl.textContent = metaParts.join(" • ");
+        body.appendChild(metaEl);
+      }
+
+      card.appendChild(body);
+      return card;
+    }
+
     function ensureDriverChatCardVisible() {
       setDriverChatAvailability(true);
     }
@@ -4183,7 +4476,9 @@
 
     function subscribeToActiveRideGroup(group) {
       clearActiveRideWatchers();
-      activeRideGroup = group.slice();
+      activeRideGroup = Array.isArray(group) ? group.slice() : [];
+      renderDriverRiderCard(activeRideGroup);
+      setDriverRiderCardAvailability(activeRideGroup.length > 0);
       if (!activeRideGroup.length) {
         setDriverOverlayState(DRIVER_STATES.HIDDEN);
         return;
@@ -4197,6 +4492,7 @@
           const data = { id: snap.id, ...snap.data() };
           activeRideGroup[index] = data;
           renderDriverTopBar(activeRideGroup);
+          renderDriverRiderCard(activeRideGroup);
           if (index === 0) {
             updateDriverStateFromRide(data);
           }
@@ -4208,6 +4504,8 @@
       const { skipQueuedRideStart = false } = options;
       clearActiveRideWatchers();
       activeRideGroup = [];
+      renderDriverRiderCard([]);
+      setDriverRiderCardAvailability(false);
       activePickupLocation = null;
       activeDropoffLocation = null;
       lastPickupRouteAt = 0;
