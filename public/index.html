@@ -99,10 +99,14 @@
       align-items: center;
       justify-content: center;
       padding: clamp(24px, 6vw, 48px);
+      padding-top: calc(var(--safe-top) + clamp(18px, 5vw, 32px));
+      padding-bottom: calc(var(--safe-bottom) + clamp(18px, 6vw, 32px));
       background:
         radial-gradient(circle at top, rgba(15,23,42,0.9), rgba(2,6,23,0.95)),
         var(--weather-bg);
       z-index: 60;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
     .splash-screen.active {
       display: flex;
@@ -110,6 +114,7 @@
     .splash-card {
       width: 100%;
       max-width: 640px;
+      max-height: calc(100dvh - 56px);
       background: rgba(2,6,23,0.94);
       border: 1px solid rgba(148,163,184,0.45);
       border-radius: clamp(18px, 4vw, 26px);
@@ -117,6 +122,8 @@
       box-shadow:
         0 30px 80px rgba(2,6,23,0.8),
         0 0 60px rgba(79,70,229,0.35);
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .splash-eyebrow {
       display: inline-flex;
@@ -314,6 +321,24 @@
     .site-footer p {
       margin: 0;
       color: inherit;
+    }
+    @media (max-width: 540px) {
+      .splash-screen {
+        align-items: flex-start;
+        justify-content: flex-start;
+      }
+      .splash-card {
+        padding: 18px 16px 22px;
+      }
+      .splash-pill-grid,
+      .splash-compare {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .landing-button {
+        width: clamp(120px, 36vw, 160px);
+        height: clamp(120px, 36vw, 160px);
+        font-size: 0.95rem;
+      }
     }
     @supports (height: 100dvh) {
       body {
