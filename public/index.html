@@ -6166,7 +6166,9 @@
     }
 
     function ensureAvailabilityOpen() {
-      if (!availabilitySettings.enabled) {
+      const shouldMonitorAvailability =
+        availabilitySettings.enabled || availabilitySettings.forceClosed;
+      if (!shouldMonitorAvailability) {
         return true;
       }
       const state = evaluateAvailability(new Date());
