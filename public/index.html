@@ -552,6 +552,74 @@
       font-size: 0.8rem;
       color: #cbd5f5;
     }
+    .availability-banner {
+      margin: 12px 0 16px;
+      border: 1px solid rgba(148,163,184,0.45);
+      border-radius: 12px;
+      background: rgba(15,23,42,0.9);
+      padding: 0;
+      color: #e5e7eb;
+    }
+    .availability-banner summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 14px 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .availability-banner summary::-webkit-details-marker {
+      display: none;
+    }
+    .availability-banner summary::after {
+      content: "v";
+      font-size: 0.9rem;
+      color: currentColor;
+      transition: transform 0.15s ease;
+    }
+    .availability-banner[open] summary::after {
+      transform: rotate(180deg);
+    }
+    .availability-banner-body {
+      padding: 0 16px 14px;
+      font-size: 0.85rem;
+      color: #cbd5f5;
+      border-top: 1px solid rgba(148,163,184,0.25);
+    }
+    .availability-banner.availability-open {
+      border-color: rgba(34,197,94,0.5);
+      background: rgba(34,197,94,0.08);
+    }
+    .availability-banner.availability-open summary {
+      color: #22c55e;
+    }
+    .availability-banner.availability-closed {
+      border-color: rgba(248,113,113,0.65);
+      background: rgba(248,113,113,0.08);
+    }
+    .availability-banner.availability-closed summary {
+      color: #fca5a5;
+    }
+    #syncButton {
+      transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease,
+        transform 0.2s ease;
+    }
+    #syncButton.sync-button-open {
+      background: #22c55e;
+      border-color: rgba(34,197,94,0.55);
+      color: #022c22;
+    }
+    #syncButton.sync-button-closed {
+      background: #dc2626;
+      border-color: rgba(248,113,113,0.8);
+      color: #fff;
+      cursor: not-allowed;
+    }
+    #syncButton.sync-button-closed:disabled {
+      opacity: 1;
+    }
     body.app-availability-closed {
       overflow: hidden;
     }
@@ -2259,6 +2327,21 @@
 
     <!-- RIDE VIEW -->
     <div id="rideView">
+      <details
+        id="availabilityBanner"
+        class="availability-banner"
+        aria-live="polite"
+      >
+        <summary id="availabilityBannerSummary">
+          Checking RideSync hours…
+        </summary>
+        <div class="availability-banner-body">
+          <p id="availabilityBannerMessage">
+            Hang tight while we confirm whether RideSync is open.
+          </p>
+          <p id="availabilityBannerNext" class="small" style="display:none;"></p>
+        </div>
+      </details>
       <div class="ride-view-tabs" role="tablist" aria-label="Rider sections">
         <button
           type="button"
@@ -4214,6 +4297,12 @@
     const availabilityMessageEl = document.getElementById("availabilityMessage");
     const availabilityNextWindowEl = document.getElementById("availabilityNextWindow");
     const availabilityScheduleEl = document.getElementById("availabilityScheduleList");
+    const availabilityBannerEl = document.getElementById("availabilityBanner");
+    const availabilityBannerSummaryEl =
+      document.getElementById("availabilityBannerSummary");
+    const availabilityBannerMessageEl =
+      document.getElementById("availabilityBannerMessage");
+    const availabilityBannerNextEl = document.getElementById("availabilityBannerNext");
     const appBody = document.body;
     const splashPage = document.getElementById("splashPage");
     const splashContinueButton = document.getElementById("splashContinueButton");
@@ -6137,36 +6226,76 @@
       return AVAILABILITY_DAY_LABELS[dayKey] || dayKey || "";
     }
 
-    function renderAvailabilitySchedule(options = {}) {
-      if (!availabilityScheduleEl) return;
-      availabilityScheduleEl.innerHTML = "";
-      if (!availabilitySettings.summaryLines?.length) {
+    function updateAvailabilityBanner(state = {}) {
+      if (!availabilityBannerEl) {
         return;
       }
-      const { highlightDayKey = null } = options;
+      const availabilityActive =
+        availabilitySettings.enabled || availabilitySettings.forceClosed;
+      availabilityBannerEl.hidden = !availabilityActive;
+      if (!availabilityActive) {
+        return;
+      }
+      const isOpen = !!state.isOpen;
+      availabilityBannerEl.classList.toggle("availability-open", isOpen);
+      availabilityBannerEl.classList.toggle("availability-closed", !isOpen);
       const tzLabel = availabilitySettings.tzName || availabilitySettings.timezone || "";
-      const heading = document.createElement("div");
-      heading.className = "availability-hours-heading";
-      heading.textContent = tzLabel ? `Hours (${tzLabel})` : "Hours";
-      availabilityScheduleEl.appendChild(heading);
-      AVAILABILITY_DAY_KEYS.forEach((dayKey) => {
-        const detailsEl = document.createElement("details");
-        detailsEl.className = "availability-day";
-        if (highlightDayKey && highlightDayKey === dayKey) {
-          detailsEl.open = true;
+      const summaryText = isOpen ? "RideSync is OPEN" : "RideSync is CLOSED";
+      if (availabilityBannerSummaryEl) {
+        availabilityBannerSummaryEl.textContent = tzLabel
+          ? `${summaryText} (${tzLabel})`
+          : summaryText;
+      }
+      const openMessage =
+        availabilitySettings.openMessage || "We're syncing destinations right now.";
+      const defaultClosedMessage = tzLabel
+        ? `We're offline until our ${tzLabel} service window reopens.`
+        : "We're offline until the next service window.";
+      const closedMessage = availabilitySettings.closedMessage || defaultClosedMessage;
+      if (availabilityBannerMessageEl) {
+        availabilityBannerMessageEl.textContent = isOpen ? openMessage : closedMessage;
+      }
+      if (availabilityBannerNextEl) {
+        if (!isOpen) {
+          if (state.nextWindow) {
+            const dayLabel = formatDayLabel(state.nextWindow.dayKey);
+            const tzSuffix = tzLabel ? ` (${tzLabel})` : "";
+            availabilityBannerNextEl.textContent = `Next window: ${dayLabel} ${state.nextWindow.rangeLabel}${tzSuffix}`;
+          } else {
+            availabilityBannerNextEl.textContent = "Next window: Coming soon";
+          }
+          availabilityBannerNextEl.style.display = "";
+        } else {
+          availabilityBannerNextEl.textContent = "";
+          availabilityBannerNextEl.style.display = "none";
         }
-        const summaryEl = document.createElement("summary");
-        summaryEl.textContent = formatDayLabel(dayKey);
-        detailsEl.appendChild(summaryEl);
-        const bodyEl = document.createElement("div");
-        bodyEl.className = "availability-day-body";
-        const windows = availabilitySettings.windowsByDay?.[dayKey] || [];
-        bodyEl.textContent = windows.length
-          ? windows.map((entry) => entry.rangeLabel).join(", ")
-          : "Closed";
-        detailsEl.appendChild(bodyEl);
-        availabilityScheduleEl.appendChild(detailsEl);
-      });
+      }
+    }
+
+    function setSyncButtonAvailability(isOpen) {
+      if (!syncButton) {
+        return;
+      }
+      syncButton.classList.toggle("sync-button-open", isOpen);
+      syncButton.classList.toggle("sync-button-closed", !isOpen);
+      if (!isOpen) {
+        if (!syncButton.dataset.availabilityPrevDisabled) {
+          syncButton.dataset.availabilityPrevDisabled = syncButton.disabled ? "true" : "false";
+        }
+        syncButton.disabled = true;
+        syncButton.setAttribute("aria-disabled", "true");
+        syncButton.title = "RideSync is closed right now.";
+        return;
+      }
+      syncButton.title = "";
+      if (syncButton.dataset.availabilityPrevDisabled) {
+        const wasDisabled = syncButton.dataset.availabilityPrevDisabled === "true";
+        if (!wasDisabled) {
+          syncButton.disabled = false;
+          syncButton.removeAttribute("aria-disabled");
+        }
+        delete syncButton.dataset.availabilityPrevDisabled;
+      }
     }
 
     function evaluateAvailability(referenceDate = new Date()) {
@@ -6204,12 +6333,19 @@
     }
 
     function updateAvailabilityUi(stateOverride) {
-      if (!availabilitySettings.enabled || !availabilityOverlay) {
+      const shouldMonitorAvailability =
+        availabilitySettings.enabled || availabilitySettings.forceClosed;
+      const state = shouldMonitorAvailability
+        ? stateOverride || evaluateAvailability(new Date())
+        : { isOpen: true };
+      const isOpen = shouldMonitorAvailability ? state.isOpen : true;
+      updateAvailabilityBanner({ ...state, isOpen });
+      setSyncButtonAvailability(isOpen);
+      if (!availabilityOverlay) {
         return;
       }
-      const state = stateOverride || evaluateAvailability(new Date());
-      const forcedClosed = availabilitySettings.forceClosed;
-      if (!forcedClosed && state.isOpen) {
+      const shouldShowOverlay = availabilitySettings.forceClosed && !isOpen;
+      if (!shouldShowOverlay) {
         availabilityOverlay.classList.remove("active");
         availabilityOverlay.setAttribute("aria-hidden", "true");
         appBody?.classList?.remove("app-availability-closed");
@@ -6245,9 +6381,7 @@
           availabilityNextWindowEl.textContent = "Next window: Coming soon";
         }
       }
-      if (availabilitySettings.summaryLines?.length) {
-        renderAvailabilitySchedule({ highlightDayKey: state.nextWindow?.dayKey || null });
-      } else if (availabilityScheduleEl) {
+      if (availabilityScheduleEl) {
         availabilityScheduleEl.innerHTML = "";
       }
     }
@@ -6268,15 +6402,12 @@
         availabilityVisibilityListenerAttached = false;
       }
 
-      if (!availabilitySettings.enabled) {
+      updateAvailabilityUi();
+      const shouldMonitorAvailability =
+        availabilitySettings.enabled || availabilitySettings.forceClosed;
+      if (!shouldMonitorAvailability) {
         return;
       }
-
-      if (!availabilitySettings.forceClosed) {
-        return;
-      }
-
-      updateAvailabilityUi({ isOpen: false });
       availabilityIntervalId = window.setInterval(() => {
         updateAvailabilityUi();
       }, 60_000);
@@ -6291,7 +6422,9 @@
     }
 
     function ensureAvailabilityOpen() {
-      if (!availabilitySettings.enabled) {
+      const shouldMonitorAvailability =
+        availabilitySettings.enabled || availabilitySettings.forceClosed;
+      if (!shouldMonitorAvailability) {
         return true;
       }
       const state = evaluateAvailability(new Date());
