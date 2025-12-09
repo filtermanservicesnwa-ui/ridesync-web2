@@ -13731,15 +13731,102 @@
         setTimeout(ensureBackgroundMapReady, 600);
       }
 
-      function trySetupAutocompleteEarly() {
-        if (googleMapsLoadFailed) return;
-        if (!window.google || !google.maps || !google.maps.places) {
-          setTimeout(trySetupAutocompleteEarly, 800);
+    function trySetupAutocompleteEarly() {
+      if (googleMapsLoadFailed) return;
+      if (!window.google || !google.maps || !google.maps.places) {
+        setTimeout(trySetupAutocompleteEarly, 800);
+        return;
+      }
+      setupDestinationAutocomplete();
+      extraStopsState.forEach((stop) => setupExtraStopAutocomplete(stop));
+    }
+
+    const SERVICE_WORKER_SCRIPT_URL = "/firebase-messaging-sw.js";
+    const SERVICE_WORKER_AUTO_UPDATE_INTERVAL_MS = 15 * 60 * 1000;
+    let serviceWorkerUpdateIntervalId = null;
+    let serviceWorkerControllerChangeListenerBound = false;
+
+    function requestServiceWorkerActivation(registration) {
+      if (!registration?.waiting) {
+        return;
+      }
+      try {
+        registration.waiting.postMessage({ type: "SKIP_WAITING" });
+      } catch (err) {
+        console.warn("Service worker skip waiting message failed", err);
+      }
+    }
+
+    function ensureServiceWorkerControllerListener() {
+      if (serviceWorkerControllerChangeListenerBound) {
+        return;
+      }
+      if (!("serviceWorker" in navigator)) {
+        return;
+      }
+      serviceWorkerControllerChangeListenerBound = true;
+      let skipNextControllerChangeReload = !navigator.serviceWorker.controller;
+      let reloadTriggered = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (skipNextControllerChangeReload) {
+          skipNextControllerChangeReload = false;
           return;
         }
-        setupDestinationAutocomplete();
-        extraStopsState.forEach((stop) => setupExtraStopAutocomplete(stop));
+        if (reloadTriggered) {
+          return;
+        }
+        reloadTriggered = true;
+        window.location.reload();
+      });
+    }
+
+    function enableServiceWorkerAutoUpdate(registration) {
+      if (!registration) {
+        return;
       }
+      ensureServiceWorkerControllerListener();
+      if (registration.waiting) {
+        requestServiceWorkerActivation(registration);
+      }
+      registration.addEventListener("updatefound", () => {
+        const installingWorker = registration.installing;
+        if (!installingWorker) {
+          return;
+        }
+        installingWorker.addEventListener("statechange", () => {
+          if (installingWorker.state === "installed") {
+            requestServiceWorkerActivation(registration);
+          }
+        });
+      });
+      const runUpdateCheck = () => {
+        registration
+          .update()
+          .catch((err) => console.warn("Service worker update check failed", err));
+      };
+      runUpdateCheck();
+      if (serviceWorkerUpdateIntervalId) {
+        clearInterval(serviceWorkerUpdateIntervalId);
+      }
+      serviceWorkerUpdateIntervalId = window.setInterval(
+        runUpdateCheck,
+        SERVICE_WORKER_AUTO_UPDATE_INTERVAL_MS
+      );
+    }
+
+    function registerPwaServiceWorker() {
+      if (!("serviceWorker" in navigator)) {
+        return;
+      }
+      navigator.serviceWorker
+        .register(SERVICE_WORKER_SCRIPT_URL, { updateViaCache: "none" })
+        .then((registration) => {
+          enableServiceWorkerAutoUpdate(registration);
+        })
+        .catch((err) => console.warn("Service worker registration failed", err));
+    }
+
+    registerPwaServiceWorker();
 
     let deferredPwaPrompt = null;
     let pwaOverlayTimeoutId = null;
@@ -13923,6 +14010,10 @@
       if (availabilityIntervalId) {
         clearInterval(availabilityIntervalId);
         availabilityIntervalId = null;
+      }
+      if (serviceWorkerUpdateIntervalId) {
+        clearInterval(serviceWorkerUpdateIntervalId);
+        serviceWorkerUpdateIntervalId = null;
       }
     });
 
