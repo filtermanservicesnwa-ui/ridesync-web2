@@ -82,8 +82,12 @@
     "closedMessage": "We're outside our service hours. Check back soon.",
     "windows": {
       "monday": [],
-      "tuesday": [],
-      "wednesday": [],
+      "tuesday": [
+        { "start": "19:00", "end": "02:00" }
+      ],
+      "wednesday": [
+        { "start": "19:00", "end": "02:00" }
+      ],
       "thursday": [
         { "start": "19:00", "end": "02:00" }
       ],
