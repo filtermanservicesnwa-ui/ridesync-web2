@@ -1247,6 +1247,56 @@
     .membership-terms-footer label {
       margin: 0;
     }
+    .membership-legal-section {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .legal-card {
+      border-radius: 14px;
+      border: 1px solid rgba(148,163,184,0.35);
+      background: rgba(2,6,23,0.9);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .legal-card h3 {
+      margin: 0;
+      font-size: 1rem;
+    }
+    .legal-card p {
+      margin: 0;
+    }
+    .legal-scroll {
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(148,163,184,0.25);
+      background: rgba(15,23,42,0.75);
+      padding: 10px 12px;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+    .legal-scroll ol {
+      padding-left: 18px;
+      margin: 0;
+    }
+    .legal-scroll ul {
+      padding-left: 18px;
+      margin: 6px 0 12px;
+    }
+    .legal-checkbox-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 0.9rem;
+      line-height: 1.3;
+    }
+    .legal-checkbox-row input[type="checkbox"] {
+      margin-top: 3px;
+    }
 
     .payment-overlay {
       position: fixed;
@@ -2751,14 +2801,14 @@
                 $80 / month
               </div>
               <p class="membership-plan-desc">
-                Unlimited Fayetteville rides with a 30-min cooldown (60 during surge). Only pay the tip after each trip.
+            Unlimited Fayetteville rides Thu–Sun during RideSync hours (Thu 7pm–2am; Fri–Sat 7am–noon & 2pm–2am; Sun 7am–noon & 2pm–9pm). Bring up to 3 guests—only pay the tip after each trip.
               </p>
               <p
                 class="membership-plan-desc membership-plan-hint"
                 data-plan-hint="uofa_unlimited"
               ></p>
               <p class="membership-plan-desc membership-plan-note">
-                Coming soon.
+                Requires verified U of A student ID.
               </p>
             </div>
             <div class="membership-plan" data-plan="nwa_unlimited">
@@ -3380,55 +3430,209 @@
       <div id="syncMembershipTermsContainer" style="display:none;">
         <div class="section-title" style="margin-top:10px;">Membership terms</div>
         <div class="membership-terms-content" id="syncMembershipTermsContent">
-          <p><strong>Effective Date:</strong> January 1st</p>
-          <p><strong>Customer Name:</strong> <span id="syncMembershipTermsCustomerName">RideSync Member</span></p>
-          <p><strong>Membership Type:</strong> <span id="syncMembershipTermsPlanLabel">—</span></p>
+          <div id="uofaMembershipLegal" class="membership-legal-section" hidden>
+            <div class="legal-card" id="uofaPrivacyCard">
+              <h3>RideSync Privacy Policy – U of A Unlimited</h3>
+              <p><strong>Effective Date:</strong> January 1, 2025</p>
+              <p><strong>Between:</strong> RideSync (“we”, “us”) and you, the Rider (“you”).</p>
+              <div class="legal-scroll">
+                <p>RideSync respects your privacy and only collects the information we need to provide safe, reliable transportation.</p>
+                <ol>
+                  <li>
+                    <strong>Information We Collect</strong>
+                    <ul>
+                      <li>Your name, student status, and contact information</li>
+                      <li>Your U of A Unlimited membership details</li>
+                      <li>Your ride history (pick-up/drop-off areas, times, and dates)</li>
+                      <li>Payment information processed securely by our payment provider</li>
+                      <li>Basic device information for security and performance</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>How We Use Your Information</strong>
+                    <p>We use your information to:</p>
+                    <ul>
+                      <li>Verify that you are eligible for the U of A Unlimited plan</li>
+                      <li>Schedule and complete your rides</li>
+                      <li>Prevent fraud and account sharing</li>
+                      <li>Improve our service and keep riders and drivers safe</li>
+                    </ul>
+                    <p>We do NOT sell your personal information to third parties.</p>
+                  </li>
+                  <li>
+                    <strong>Location &amp; Ride Data</strong>
+                    <p>We may store approximate pick-up and drop-off locations and ride times so that we can:</p>
+                    <ul>
+                      <li>Confirm your rides were completed</li>
+                      <li>Enforce our unlimited ride time-window rules</li>
+                      <li>Handle support questions and disputes</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Sharing Your Information</strong>
+                    <p>We may share limited information only with:</p>
+                    <ul>
+                      <li>Drivers who are picking you up (first name and pick-up location)</li>
+                      <li>Service providers that help us process payments, send notifications, or host our systems</li>
+                    </ul>
+                    <p>We do not share your personal information for marketing by unrelated companies.</p>
+                  </li>
+                  <li>
+                    <strong>Account Security &amp; Misuse</strong>
+                    <p>We monitor for suspicious activity and account sharing. If we detect misuse or fraud, your account and membership may be suspended or terminated.</p>
+                  </li>
+                  <li>
+                    <strong>Your Choices</strong>
+                    <p>You may request to review or delete certain information where allowed by law. Deleting core account data may make it impossible for us to provide service.</p>
+                  </li>
+                </ol>
+                <p>By using RideSync and the U of A Unlimited membership, you agree to this Privacy Policy.</p>
+              </div>
+              <label class="legal-checkbox-row">
+                <input type="checkbox" id="uofaPrivacyAgree" />
+                <span>I have read and agree to the RideSync Privacy Policy.</span>
+              </label>
+            </div>
 
-          <h3>1. General Membership Rules</h3>
-          <p>All customers must have at minimum a Basic Membership to request rides. Your profile information (name, phone, license, student ID, or employer verification) must remain accurate and up to date at all times.</p>
-          <p><strong>Auto-Renewal:</strong> All paid memberships renew every 30 days. If you do not cancel at least 3 days before renewal, you will be charged automatically. No exceptions. Failure to cancel on time is your responsibility.</p>
-          <p><strong>No Refund Policy:</strong> Once billed, the membership payment is non-refundable. Canceling early does not result in a prorated refund.</p>
-          <p><strong>Bug / Error Reporting:</strong> If you find ANY bug, exploit, or system issue, you MUST report it immediately. Failure to report issues, intentionally exploiting bugs, or sharing them with others will result in immediate membership cancellation without refund. RideSync may pursue legal action for damages or abuse.</p>
-          <p><strong>Geofence Requirements:</strong> All unlimited rides must remain inside the official RideSync geofence. Leaving the geofence intentionally is a violation of this Agreement and may result in cancellation without refund.</p>
+            <div class="legal-card" id="uofaTermsCard">
+              <h3>RideSync U of A Unlimited – Terms &amp; Conditions</h3>
+              <p><strong>Effective Date:</strong> January 1, 2025</p>
+              <p><strong>Between:</strong> RideSync and you, the Rider.</p>
+              <div class="legal-scroll">
+                <ol>
+                  <li>
+                    <strong>Membership &amp; Eligibility</strong>
+                    <ul>
+                      <li>This U of A Unlimited membership is ONLY for active U of A students.</li>
+                      <li>You must have a valid student status and maintain a RideSync account in good standing.</li>
+                      <li>This Agreement is between RideSync and you, the Rider.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Service Days &amp; Hours</strong>
+                    <ul>
+                      <li>RideSync is CLOSED on Mondays, Tuesdays, and Wednesdays.</li>
+                      <li>RideSync is OPEN on Thursdays, Fridays, Saturdays, and Sundays during the posted operating hours shown in the app (for example, evening and late-night hours).</li>
+                      <li>Your unlimited rides benefit only applies during our open hours and within the allowed service area.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Unlimited Rides – U of A Plan</strong>
+                    <ul>
+                      <li>The U of A Unlimited membership includes unlimited rides during our open days and times as listed above.</li>
+                      <li>Unlimited rides apply only within the RideSync service zone defined for U of A students.</li>
+                      <li>We remain cheaper than major corporate rideshare options, but exact savings may vary per trip and time.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Guests &amp; Vehicle Capacity</strong>
+                    <ul>
+                      <li>You may bring up to three (3) guests with you on a ride, for a total of four passengers per car including you.</li>
+                      <li>You are responsible for the behavior of your guests while using RideSync.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>No Account Sharing</strong>
+                    <ul>
+                      <li>You are NOT allowed to share your RideSync account or U of A Unlimited membership with other people.</li>
+                      <li>You must not give your login, PIN, or membership access to anyone else.</li>
+                      <li>If we detect account sharing, you may be automatically banned from RideSync and lose your membership without refund.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Conduct &amp; Safety</strong>
+                    <ul>
+                      <li>You and your guests must behave respectfully and safely at all times.</li>
+                      <li>Abuse, threats, harassment, or unsafe behavior may result in immediate suspension or permanent banning from RideSync.</li>
+                      <li>Drivers may end a ride early if they feel unsafe or if rules are being violated.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Pricing &amp; Changes</strong>
+                    <ul>
+                      <li>The U of A Unlimited membership price and benefits may change in the future, but we will try to provide notice in the app or through email when terms are updated.</li>
+                      <li>RideSync remains committed to offering a cheaper and more local alternative to large corporate rideshare companies.</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <strong>Termination</strong>
+                    <p>RideSync may suspend or terminate your membership if:</p>
+                    <ul>
+                      <li>You violate these Terms &amp; Conditions</li>
+                      <li>You share your account</li>
+                      <li>You misuse unlimited rides or abuse the service</li>
+                    </ul>
+                    <p>Termination for cause may result in loss of access without refund.</p>
+                  </li>
+                  <li>
+                    <strong>Agreement</strong>
+                    <p>By checking the box and continuing, you agree that:</p>
+                    <ul>
+                      <li>You have read and understood these Terms &amp; Conditions.</li>
+                      <li>You understand this Agreement is between RideSync and you, the Rider.</li>
+                      <li>You agree to follow the membership rules, service hours, and account-sharing policies described above.</li>
+                    </ul>
+                  </li>
+                </ol>
+              </div>
+              <label class="legal-checkbox-row">
+                <input type="checkbox" id="uofaTermsAgree" />
+                <span>I have read and agree to the RideSync U of A Unlimited Terms &amp; Conditions.</span>
+              </label>
+            </div>
+          </div>
 
-          <hr>
+          <div id="generalMembershipTerms">
+            <p><strong>Effective Date:</strong> January 1st</p>
+            <p><strong>Customer Name:</strong> <span id="syncMembershipTermsCustomerName">RideSync Member</span></p>
+            <p><strong>Membership Type:</strong> <span id="syncMembershipTermsPlanLabel">—</span></p>
 
-          <h3>2. U of A Unlimited Membership</h3>
-          <p>Eligibility requires an active U of A student ID that RideSync can verify at any time.</p>
-          <p><strong>Unlimited Rides Policy:</strong> Unlimited rides apply only inside the U of A service geofence. You cannot bring additional riders under your unlimited plan unless:</p>
-          <ul>
-            <li>They pay the normal Basic fare, OR</li>
-            <li>They also upgrade to their own unlimited membership.</li>
-          </ul>
-          <p>Sharing or attempting to share your membership results in immediate cancellation without refund and may include legal action for fraudulent use.</p>
-          <p><strong>Coverage Area:</strong> If your pickup or destination is outside the U of A zone, the ride converts into a Basic priced ride.</p>
+            <h3>1. General Membership Rules</h3>
+            <p>All customers must have at minimum a Basic Membership to request rides. Your profile information (name, phone, license, student ID, or employer verification) must remain accurate and up to date at all times.</p>
+            <p><strong>Auto-Renewal:</strong> All paid memberships renew every 30 days. If you do not cancel at least 3 days before renewal, you will be charged automatically. No exceptions. Failure to cancel on time is your responsibility.</p>
+            <p><strong>No Refund Policy:</strong> Once billed, the membership payment is non-refundable. Canceling early does not result in a prorated refund.</p>
+            <p><strong>Bug / Error Reporting:</strong> If you find ANY bug, exploit, or system issue, you MUST report it immediately. Failure to report issues, intentionally exploiting bugs, or sharing them with others will result in immediate membership cancellation without refund. RideSync may pursue legal action for damages or abuse.</p>
+            <p><strong>Geofence Requirements:</strong> All unlimited rides must remain inside the official RideSync geofence. Leaving the geofence intentionally is a violation of this Agreement and may result in cancellation without refund.</p>
 
-          <hr>
+            <hr>
 
-          <h3>3. Northwest Arkansas Work Pass – Unlimited</h3>
-          <p>The Work Pass is NOT general unlimited transportation. It is ONLY for commuting to and from work within a 30-mile radius.</p>
-          <p><strong>Work-Only Travel:</strong> You receive one ride to work and one ride home each day, at no additional cost.</p>
-          <p>You cannot use the Work Pass for personal trips, store runs, entertainment, visiting friends, or any non-work purpose. Misuse results in cancellation without refund.</p>
-          <p><strong>Additional Riders:</strong> Only YOU are covered. Additional riders must pay Basic fare or have their own unlimited membership.</p>
+            <h3>2. U of A Unlimited Membership</h3>
+            <p>Eligibility requires an active U of A student ID that RideSync can verify at any time.</p>
+            <p><strong>Unlimited Rides Policy:</strong> Unlimited rides apply only inside the U of A service geofence. You cannot bring additional riders under your unlimited plan unless:</p>
+            <ul>
+              <li>They pay the normal Basic fare, OR</li>
+              <li>They also upgrade to their own unlimited membership.</li>
+            </ul>
+            <p>Sharing or attempting to share your membership results in immediate cancellation without refund and may include legal action for fraudulent use.</p>
+            <p><strong>Coverage Area:</strong> If your pickup or destination is outside the U of A zone, the ride converts into a Basic priced ride.</p>
 
-          <hr>
+            <hr>
 
-          <h3>4. Behavior, Conduct, and Safety</h3>
-          <p>Any harassment, threats, unsafe behavior, intoxication, or abusive conduct may result in immediate suspension or permanent ban without refund.</p>
-          <p>You agree that all personal information you provide is accurate. If false data is discovered, RideSync may cancel your membership without refund.</p>
+            <h3>3. Northwest Arkansas Work Pass – Unlimited</h3>
+            <p>The Work Pass is NOT general unlimited transportation. It is ONLY for commuting to and from work within a 30-mile radius.</p>
+            <p><strong>Work-Only Travel:</strong> You receive one ride to work and one ride home each day, at no additional cost.</p>
+            <p>You cannot use the Work Pass for personal trips, store runs, entertainment, visiting friends, or any non-work purpose. Misuse results in cancellation without refund.</p>
+            <p><strong>Additional Riders:</strong> Only YOU are covered. Additional riders must pay Basic fare or have their own unlimited membership.</p>
 
-          <hr>
+            <hr>
 
-          <h3>5. Acceptance of Agreement</h3>
-          <p>By checking the box below and continuing to checkout, you agree:</p>
-          <ul>
-            <li>You understand and accept all terms above</li>
-            <li>You authorize RideSync to automatically bill your payment method</li>
-            <li>You acknowledge geofence and usage limitations</li>
-            <li>You understand that violating terms may result in cancellation without refund</li>
-          </ul>
+            <h3>4. Behavior, Conduct, and Safety</h3>
+            <p>Any harassment, threats, unsafe behavior, intoxication, or abusive conduct may result in immediate suspension or permanent ban without refund.</p>
+            <p>You agree that all personal information you provide is accurate. If false data is discovered, RideSync may cancel your membership without refund.</p>
+
+            <hr>
+
+            <h3>5. Acceptance of Agreement</h3>
+            <p>By checking the box below and continuing to checkout, you agree:</p>
+            <ul>
+              <li>You understand and accept all terms above</li>
+              <li>You authorize RideSync to automatically bill your payment method</li>
+              <li>You acknowledge geofence and usage limitations</li>
+              <li>You understand that violating terms may result in cancellation without refund</li>
+            </ul>
+          </div>
         </div>
-        <div class="membership-terms-footer">
+        <div class="membership-terms-footer" id="syncMembershipTermsFooter">
           <label>
             <input type="checkbox" id="syncMembershipTermsCheckbox" />
             I have read and agree to the RideSync Membership Terms &amp; Conditions.
@@ -4077,6 +4281,12 @@
       (typeof membershipsConfig.comingSoonMessage === "string" &&
         membershipsConfig.comingSoonMessage.trim()) ||
       "Unlimited memberships are coming soon.";
+    const UOFA_MEMBERSHIP_SIGNUP_ENABLED = resolveBooleanFlag(
+      membershipsConfig.uofaSignupEnabled ??
+        membershipsConfig.enableUofaSignup ??
+        membershipsConfig.enableUofaUnlimited,
+      false
+    );
     const MIN_RIDE_TIP_CENTS = 0;
     const DEFAULT_MAX_TIP_CENTS = Math.max(
       MIN_RIDE_TIP_CENTS,
@@ -4269,12 +4479,12 @@
     const MEMBERSHIP_TIER_DETAILS = {
       [MEMBERSHIP_TIER_KEYS.BASIC]: {
         label: "BASIC (default)",
-        summary: "Pay per ride inside the standard RideSync coverage area.",
+        summary: "Pay per ride inside the Fayetteville service zone during RideSync hours.",
         badgeTag: "Pay per ride",
       },
       [MEMBERSHIP_TIER_KEYS.UOFA]: {
         label: "U OF A STUDENT — UNLIMITED",
-        summary: "Unlimited Fayetteville rides. Only pay tip. 30-min cooldown (60 during surge).",
+        summary: "Unlimited Fayetteville rides Thu–Sun during posted hours. Bring up to 3 guests.",
         badgeTag: "Fayetteville radius",
       },
       [MEMBERSHIP_TIER_KEYS.NWA]: {
@@ -4287,14 +4497,14 @@
       basic: {
         label: MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.BASIC].label,
         price: "$0.60/min + $0.50 + 3%",
-        description: "Standard RideSync coverage. Billed per ride.",
+        description: "Standard Fayetteville coverage during RideSync service hours. Billed per ride.",
         tier: MEMBERSHIP_TIER_KEYS.BASIC,
         priceCents: 0,
       },
       uofa_unlimited: {
         label: MEMBERSHIP_TIER_DETAILS[MEMBERSHIP_TIER_KEYS.UOFA].label,
         price: "$80 / month",
-        description: "Unlimited Fayetteville rides with a 30-min cooldown (60-min during surge).",
+        description: "Unlimited Fayetteville rides Thu–Sun (Thu 7pm–2am; Fri–Sat 7am–noon & 2pm–2am; Sun 7am–noon & 2pm–9pm) with up to 3 guests included.",
         tier: MEMBERSHIP_TIER_KEYS.UOFA,
         priceCents: 8000,
       },
@@ -4771,6 +4981,11 @@
     const syncMembershipTermsCheckbox = document.getElementById("syncMembershipTermsCheckbox");
     const syncMembershipTermsCustomerName = document.getElementById("syncMembershipTermsCustomerName");
     const syncMembershipTermsPlanLabel = document.getElementById("syncMembershipTermsPlanLabel");
+    const uofaMembershipLegalSection = document.getElementById("uofaMembershipLegal");
+    const generalMembershipTerms = document.getElementById("generalMembershipTerms");
+    const syncMembershipTermsFooter = document.getElementById("syncMembershipTermsFooter");
+    const uofaPrivacyAgreeCheckbox = document.getElementById("uofaPrivacyAgree");
+    const uofaTermsAgreeCheckbox = document.getElementById("uofaTermsAgree");
     const reserveTimeSection = document.getElementById("reserveTimeSection");
     const reserveModeRadios = document.querySelectorAll('input[name="reserveMode"]');
     const reserveDateInput = document.getElementById("reserveDateInput");
@@ -6762,7 +6977,7 @@
     lockMembershipPlanCards();
 
     function lockMembershipPlanCards(profile = currentUserProfile) {
-      if (!membershipPlanCards.length || MEMBERSHIP_UPGRADES_ENABLED) {
+      if (!membershipPlanCards.length) {
         return;
       }
       const profilePlan = normalizePlanKey(
@@ -6773,7 +6988,11 @@
         if (!planKey || planKey === "basic") {
           return;
         }
-        const shouldLock = planKey !== profilePlan;
+        const planUnlocked =
+          !MEMBERSHIP_UPGRADES_LOCKED ||
+          planKey === profilePlan ||
+          (planKey === "uofa_unlimited" && UOFA_MEMBERSHIP_SIGNUP_ENABLED);
+        const shouldLock = !planUnlocked;
         card.classList.toggle("disabled", shouldLock);
         if (shouldLock) {
           card.setAttribute("aria-disabled", "true");
@@ -7231,11 +7450,17 @@
     }
 
     function areMembershipUpgradesLocked(planKey, profile = currentUserProfile) {
-      if (!MEMBERSHIP_UPGRADES_LOCKED) {
-        return false;
-      }
       const normalized = normalizePlanKey(planKey);
       if (normalized === "basic") {
+        return false;
+      }
+      if (
+        normalized === "uofa_unlimited" &&
+        UOFA_MEMBERSHIP_SIGNUP_ENABLED
+      ) {
+        return false;
+      }
+      if (!MEMBERSHIP_UPGRADES_LOCKED) {
         return false;
       }
       const profilePlan = normalizePlanKey(
@@ -8233,6 +8458,45 @@
       );
     }
 
+    function isWithinFayettevilleZone(literal) {
+      if (!isLatLngLiteral(literal)) {
+        return false;
+      }
+      return (
+        haversineDistanceMiles(
+          FAYETTEVILLE_CENTER.lat,
+          FAYETTEVILLE_CENTER.lng,
+          literal.lat,
+          literal.lng
+        ) <= FAYETTEVILLE_RADIUS_MILES
+      );
+    }
+
+    function enforceBasicFayettevilleRoute() {
+      const plan = getProfilePlanKey();
+      if (plan !== "basic") {
+        return { allowed: true };
+      }
+      const pickupLiteral = latLngToLiteral(currentLocation);
+      const destinationLiteral =
+        latLngToLiteral(destinationLatLng) ||
+        latLngToLiteral(lastDestinationPlace?.geometry?.location || null);
+      if (!pickupLiteral || !destinationLiteral) {
+        return { allowed: true };
+      }
+      const pickupCovered = isWithinFayettevilleZone(pickupLiteral);
+      const destinationCovered =
+        isWithinFayettevilleZone(destinationLiteral) || lastDestinationIsFayetteville;
+      if (!pickupCovered || !destinationCovered) {
+        return {
+          allowed: false,
+          message:
+            "Basic rides currently stay inside Fayetteville city limits during posted hours. Update your pickup and destination.",
+        };
+      }
+      return { allowed: true };
+    }
+
     function ensureDestinationPreviewMap() {
       if (googleMapsLoadFailed) return;
       if (!destinationPreviewMapEl || destinationPreviewMap) return;
@@ -8567,6 +8831,13 @@
           }
           return false;
         }
+      }
+      const basicRestriction = enforceBasicFayettevilleRoute();
+      if (!basicRestriction.allowed) {
+        if (profileError) {
+          profileError.textContent = basicRestriction.message;
+        }
+        return false;
       }
       return true;
     }
@@ -10615,6 +10886,7 @@
       if (syncMembershipTermsCheckbox) {
         syncMembershipTermsCheckbox.checked = false;
       }
+      resetUofaLegalAgreements();
       renderSyncMembershipOptions();
       updateSyncMembershipState();
     }
@@ -11110,18 +11382,71 @@
       }
     }
 
+    function isUofaMembershipSelection(planKey = syncSelectedMembershipPlan) {
+      return normalizePlanKey(planKey || "basic") === "uofa_unlimited";
+    }
+
+    function resetUofaLegalAgreements() {
+      if (uofaPrivacyAgreeCheckbox) {
+        uofaPrivacyAgreeCheckbox.checked = false;
+      }
+      if (uofaTermsAgreeCheckbox) {
+        uofaTermsAgreeCheckbox.checked = false;
+      }
+    }
+
+    function updateUofaLegalAgreementState() {
+      if (!isUofaMembershipSelection()) {
+        return;
+      }
+      const privacyOk = !!uofaPrivacyAgreeCheckbox?.checked;
+      const termsOk = !!uofaTermsAgreeCheckbox?.checked;
+      syncMembershipTermsAccepted = privacyOk && termsOk;
+      updateSyncConfirmButtonState();
+    }
+
     function updateSyncMembershipTermsVisibility() {
       if (!syncMembershipTermsContainer) return;
       if (syncMembershipUpgradeMode) {
         syncMembershipTermsContainer.style.display = "block";
         updateSyncMembershipTermsDetails(syncSelectedMembershipPlan);
+        const isUofaSelected = isUofaMembershipSelection();
+        if (uofaMembershipLegalSection) {
+          uofaMembershipLegalSection.hidden = !isUofaSelected;
+        }
+        if (generalMembershipTerms) {
+          generalMembershipTerms.hidden = isUofaSelected;
+        }
+        if (syncMembershipTermsFooter) {
+          syncMembershipTermsFooter.hidden = isUofaSelected;
+        }
+        if (isUofaSelected) {
+          if (syncMembershipTermsCheckbox) {
+            syncMembershipTermsCheckbox.checked = false;
+          }
+          updateUofaLegalAgreementState();
+        } else {
+          resetUofaLegalAgreements();
+          syncMembershipTermsAccepted = !!syncMembershipTermsCheckbox?.checked;
+        }
       } else {
         syncMembershipTermsContainer.style.display = "none";
         syncMembershipTermsAccepted = false;
         if (syncMembershipTermsCheckbox) {
           syncMembershipTermsCheckbox.checked = false;
         }
+        resetUofaLegalAgreements();
+        if (uofaMembershipLegalSection) {
+          uofaMembershipLegalSection.hidden = true;
+        }
+        if (generalMembershipTerms) {
+          generalMembershipTerms.hidden = false;
+        }
+        if (syncMembershipTermsFooter) {
+          syncMembershipTermsFooter.hidden = false;
+        }
       }
+      updateSyncConfirmButtonState();
     }
 
     function updateSyncConfirmButtonState() {
@@ -11184,6 +11509,7 @@
       if (syncMembershipTermsCheckbox) {
         syncMembershipTermsCheckbox.checked = false;
       }
+      resetUofaLegalAgreements();
       updateSyncMembershipState();
     }
 
@@ -11311,11 +11637,19 @@
         return;
       }
       if (syncMembershipUpgradeMode && !syncMembershipTermsAccepted) {
+        const isUofaSelected = isUofaMembershipSelection();
         if (syncConfirmError) {
-          syncConfirmError.textContent =
-            "Agree to the membership terms to continue.";
+          syncConfirmError.textContent = isUofaSelected
+            ? "Agree to the Privacy Policy and Terms to continue."
+            : "Agree to the membership terms to continue.";
         }
-        if (syncMembershipTermsCheckbox) {
+        if (isUofaSelected) {
+          if (uofaPrivacyAgreeCheckbox && !uofaPrivacyAgreeCheckbox.checked) {
+            uofaPrivacyAgreeCheckbox.focus();
+          } else if (uofaTermsAgreeCheckbox && !uofaTermsAgreeCheckbox.checked) {
+            uofaTermsAgreeCheckbox.focus();
+          }
+        } else if (syncMembershipTermsCheckbox) {
           syncMembershipTermsCheckbox.focus();
         }
         return;
@@ -11451,10 +11785,24 @@
 
     if (syncMembershipTermsCheckbox) {
       syncMembershipTermsCheckbox.addEventListener("change", () => {
+        if (isUofaMembershipSelection()) {
+          syncMembershipTermsCheckbox.checked = false;
+          return;
+        }
         syncMembershipTermsAccepted = !!syncMembershipTermsCheckbox.checked;
         updateSyncConfirmButtonState();
       });
     }
+    [uofaPrivacyAgreeCheckbox, uofaTermsAgreeCheckbox].forEach((checkbox) => {
+      if (!checkbox) return;
+      checkbox.addEventListener("change", () => {
+        if (!isUofaMembershipSelection()) {
+          checkbox.checked = false;
+          return;
+        }
+        updateUofaLegalAgreementState();
+      });
+    });
 
     function hasPendingCheckoutReturn() {
       return (
