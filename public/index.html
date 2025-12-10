@@ -2690,6 +2690,47 @@
         </div>
       </div>
 
+      <div class="section-title">Pickup timing</div>
+      <div class="fare-box">
+        <div id="reserveTimeSection" class="fare-section">
+          <label class="field-label">Reserve pickup time</label>
+          <div class="reserve-mode-options">
+            <label class="reserve-mode-option">
+              <input
+                type="radio"
+                name="reserveMode"
+                value="asap"
+                id="reserveModeAsap"
+                checked
+              />
+              <span>ASAP (no reservation)</span>
+            </label>
+            <label class="reserve-mode-option">
+              <input
+                type="radio"
+                name="reserveMode"
+                value="schedule"
+                id="reserveModeSchedule"
+              />
+              <span>Schedule pickup</span>
+            </label>
+          </div>
+          <div id="reserveDateTimeRow" class="reserve-datetime-row">
+            <div class="reserve-datetime-field">
+              <label for="reserveDateInput">Date</label>
+              <input id="reserveDateInput" type="date" />
+            </div>
+            <div class="reserve-datetime-field">
+              <label for="reserveTimeInput">Pickup time</label>
+              <input id="reserveTimeInput" type="time" step="900" />
+            </div>
+          </div>
+          <p id="reserveTimeHint" class="small">
+            Schedule ahead—we'll alert drivers 30 minutes before pickup.
+          </p>
+        </div>
+      </div>
+
       <div class="section-title" id="poolGroupTitle" style="display:none;">
         U of A pool group
       </div>
@@ -3334,44 +3375,6 @@
           <div class="fare-label">Estimated total</div>
           <div class="fare-total" id="syncConfirmTotal">—</div>
         </div>
-      </div>
-
-      <div id="reserveTimeSection" class="fare-section">
-        <label class="field-label">Reserve pickup time</label>
-        <div class="reserve-mode-options">
-          <label class="reserve-mode-option">
-            <input
-              type="radio"
-              name="reserveMode"
-              value="asap"
-              id="reserveModeAsap"
-              checked
-            />
-            <span>ASAP (no reservation)</span>
-          </label>
-          <label class="reserve-mode-option">
-            <input
-              type="radio"
-              name="reserveMode"
-              value="schedule"
-              id="reserveModeSchedule"
-            />
-            <span>Schedule pickup</span>
-          </label>
-        </div>
-        <div id="reserveDateTimeRow" class="reserve-datetime-row">
-          <div class="reserve-datetime-field">
-            <label for="reserveDateInput">Date</label>
-            <input id="reserveDateInput" type="date" />
-          </div>
-          <div class="reserve-datetime-field">
-            <label for="reserveTimeInput">Pickup time</label>
-            <input id="reserveTimeInput" type="time" step="900" />
-          </div>
-        </div>
-        <p id="reserveTimeHint" class="small">
-          Schedule ahead to lock in your pickup time—no extra fee.
-        </p>
       </div>
 
       <div id="referralCodeSection" class="fare-section">
@@ -4295,7 +4298,37 @@
     );
     const RESERVE_FEE_CENTS = 0;
     const RESERVATION_MIN_LEAD_MINUTES = 30;
-    const RESERVATION_MAX_LEAD_MINUTES = 24 * 60;
+    const RESERVATION_MAX_LEAD_MINUTES = 30 * 24 * 60;
+    const RESERVATION_MAX_LEAD_DAYS = Math.max(
+      1,
+      Math.round(RESERVATION_MAX_LEAD_MINUTES / 1440)
+    );
+    const RESERVATION_MAX_WINDOW_LABEL =
+      RESERVATION_MAX_LEAD_MINUTES >= 1440
+        ? `the next ${RESERVATION_MAX_LEAD_DAYS} day${
+            RESERVATION_MAX_LEAD_DAYS === 1 ? "" : "s"
+          }`
+        : (() => {
+            const hours = Math.max(
+              1,
+              Math.round(RESERVATION_MAX_LEAD_MINUTES / 60)
+            );
+            return `the next ${hours} hour${hours === 1 ? "" : "s"}`;
+          })();
+    const RESERVATION_ADVANCE_HINT =
+      RESERVATION_MAX_LEAD_MINUTES >= 1440
+        ? `Schedule ahead—we'll alert drivers 30 minutes before pickup (up to ${RESERVATION_MAX_LEAD_DAYS} day${
+            RESERVATION_MAX_LEAD_DAYS === 1 ? "" : "s"
+          } in advance).`
+        : (() => {
+            const hours = Math.max(
+              1,
+              Math.round(RESERVATION_MAX_LEAD_MINUTES / 60)
+            );
+            return `Schedule ahead—we'll alert drivers 30 minutes before pickup (up to ${hours} hour${
+              hours === 1 ? "" : "s"
+            } in advance).`;
+          })();
 
     function normalizeStripeKeyForMode(key, mode) {
       const trimmed = typeof key === "string" ? key.trim() : "";
@@ -10975,10 +11008,12 @@
       syncMembershipList.appendChild(fragment);
     }
 
-    function resetSyncConfirmState() {
-      syncConfirmState.reserveFeeCents = 0;
-      syncConfirmState.reserveTimeIso = null;
-      syncConfirmState.reserveMode = "asap";
+    function resetSyncConfirmState({ resetReserve = false } = {}) {
+      if (resetReserve) {
+        syncConfirmState.reserveFeeCents = 0;
+        syncConfirmState.reserveTimeIso = null;
+        syncConfirmState.reserveMode = "asap";
+      }
       syncConfirmState.referral = {
         code: null,
         discountCents: 0,
@@ -11125,7 +11160,7 @@
         syncConfirmState.reserveMode !== "schedule" ||
         !syncConfirmState.reserveTimeIso
       ) {
-        reserveTimeHint.textContent = "Schedule ahead to lock in your pickup time—no extra fee.";
+        reserveTimeHint.textContent = RESERVATION_ADVANCE_HINT;
         return;
       }
       const date =
@@ -11134,8 +11169,8 @@
           : new Date(syncConfirmState.reserveTimeIso);
       const label = formatLocalPickupTimeLabel(date);
       reserveTimeHint.textContent = label
-        ? `Scheduled pickup at ${label}. We'll remind your driver at that time.`
-        : "Schedule ahead to lock in your pickup time—no extra fee.";
+        ? `Scheduled pickup at ${label}. We'll remind your driver 30 minutes before.`
+        : RESERVATION_ADVANCE_HINT;
     }
 
     function updateScheduledReserveState({ showErrors = true } = {}) {
@@ -11169,7 +11204,7 @@
         return { valid: false, message };
       }
       if (diffMinutes > RESERVATION_MAX_LEAD_MINUTES) {
-        const message = "Pick a time within the next 24 hours.";
+        const message = `Pick a time within ${RESERVATION_MAX_WINDOW_LABEL}.`;
         if (showErrors) {
           updateReserveTimeHint(null, message);
         }
@@ -11720,6 +11755,8 @@
         updateScheduledReserveState({ showErrors: true });
       });
     });
+
+    initializeReserveInputs();
 
     if (applyReferralCodeButton) {
       applyReferralCodeButton.addEventListener("click", () =>

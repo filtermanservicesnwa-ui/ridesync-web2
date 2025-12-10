@@ -2077,7 +2077,7 @@
 
     attachRideAlertUnlockHandlers();
     const EARLY_ASSIGNMENT_MINUTES = 6;
-    const RESERVED_DRIVER_RELEASE_MINUTES = 40;
+    const RESERVED_DRIVER_RELEASE_MINUTES = 30;
     const RESERVED_VISIBILITY_REFRESH_MS = 30000;
     let queuedRideGroups = [];
     let latestVisiblePendingRides = [];
@@ -3955,7 +3955,7 @@
       const pendingCount = rideOfferQueue.length + (pendingRideOffer ? 1 : 0);
       if (!visibleRides.length && pendingCount === 0) {
         ridesList.innerHTML = pendingScheduled
-          ? '<div class="small">Next reserved ride is scheduled for later. We\'ll alert you 40 minutes before pickup.</div>'
+          ? '<div class="small">Next reserved ride is scheduled for later. We\'ll alert you 30 minutes before pickup.</div>'
           : '<div class="small">Awaiting new ride requests… they will appear in your queue below.</div>';
         return;
       }
