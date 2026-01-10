@@ -2662,6 +2662,7 @@
             aria-expanded="false"
           >
             <div class="small" id="groupQrIntro">
+              Riding with friends? Share this QR as soon as you choose 2–4 riders — it updates automatically once your ride is synced.
               Tap Sync QR to open the overlay and share the code with friends. We'll track how many riders have joined below.
             </div>
             <div
@@ -5110,6 +5111,38 @@
       if (!groupQrSection) return;
       groupQrSection.classList.toggle("visible", Boolean(isVisible));
       groupQrSection.setAttribute("aria-expanded", isVisible ? "true" : "false");
+    }
+
+    function ensureGroupQrInstance(initialValue) {
+      if (!groupQrCanvas) {
+        return null;
+      }
+      if (!groupQr) {
+        groupQr = new QRious({
+          element: groupQrCanvas,
+          size: 140,
+          value:
+            initialValue ||
+            `${window.location.origin}?groupInvite=1`
+        });
+      }
+      return groupQr;
+    }
+
+    function buildPendingGroupQrValue() {
+      const inviteParams = new URLSearchParams();
+      inviteParams.set("groupInvite", "1");
+      const selectedValue = parseInt(numRidersEl?.value || "1", 10);
+      if (Number.isFinite(selectedValue) && selectedValue > 1) {
+        inviteParams.set("groupSize", String(selectedValue));
+      }
+      if (typeof resolveSyncMemberDisplayName === "function") {
+        const hostName = (resolveSyncMemberDisplayName() || "").trim();
+        if (hostName) {
+          inviteParams.set("host", hostName);
+        }
+      }
+      return `${window.location.origin}?${inviteParams.toString()}`;
     }
 
     try {
@@ -10328,6 +10361,9 @@
         groupOccupancyLabel.textContent = "";
         groupOccupancyLabel.style.display = "none";
       }
+      if (groupQrIntro) {
+        groupQrIntro.style.display = "block";
+      }
       if (groupOccupancyUnsub) {
         groupOccupancyUnsub();
         groupOccupancyUnsub = null;
@@ -10341,6 +10377,12 @@
         groupOccupancyUnsub();
         groupOccupancyUnsub = null;
       }
+      const fallbackValue = buildPendingGroupQrValue();
+      const qr = ensureGroupQrInstance(fallbackValue);
+      if (qr && fallbackValue) {
+        qr.set({ value: fallbackValue });
+      }
+      groupQrSection.style.display = "block";
       setGroupQrVisibility(true);
       if (groupQrIntro) {
         groupQrIntro.style.display = "block";
@@ -10348,6 +10390,7 @@
       if (groupQrPendingMessage) {
         const placeholderMessage =
           message ||
+          "Share this QR now so your friends can sign in. Once you sync your ride, we'll update the same code with your join link.";
           (isGuestBypassEnabled()
             ? "Guest Sync ready. Sync your ride, then tap Sync QR so friends can skip accounts and chip in."
             : "Sync your ride first, then tap Sync QR to open the overlay code.");
@@ -10355,7 +10398,7 @@
         groupQrPendingMessage.style.display = "block";
       }
       if (groupQrCanvas) {
-        groupQrCanvas.style.display = "none";
+        groupQrCanvas.style.display = "block";
       }
       if (groupOccupancyLabel) {
         groupOccupancyLabel.textContent = "";
@@ -10374,6 +10417,13 @@
       if (groupQrIntro) {
         groupQrIntro.style.display = "block";
       }
+      const joinUrl = `${window.location.origin}?join=${encodeURIComponent(rideId)}`;
+      const qr = ensureGroupQrInstance(joinUrl);
+      if (qr) {
+        qr.set({ value: joinUrl });
+      }
+      groupQrSection.style.display = "block";
+      groupQrCanvas.style.display = "block";
       if (groupQrPendingMessage) {
         groupQrPendingMessage.textContent = "";
         groupQrPendingMessage.style.display = "none";
